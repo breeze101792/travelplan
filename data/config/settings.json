@@ -1,0 +1,118 @@
+{
+  "app_name": "TravelPlan",
+  "base_currencies": ["USD", "EUR", "GBP", "JPY", "CNY", "KRW", "AUD", "CAD", "SGD", "THB", "HKD", "TWD"],
+  "item_types": {
+    "hotel": {
+      "label": "Hotel",
+      "icon": "bed",
+      "spans_days": true,
+      "fields": [
+        {"key": "hotel_name", "label": "Hotel name", "type": "text"},
+        {"key": "address", "label": "Address", "type": "text"},
+        {"key": "check_in_time", "label": "Check-in time", "type": "time"},
+        {"key": "check_out_time", "label": "Check-out time", "type": "time"},
+        {"key": "booking_ref", "label": "Booking ref", "type": "text"},
+        {"key": "price", "label": "Price", "type": "money"},
+        {"key": "currency", "label": "Currency", "type": "currency"},
+        {"key": "link", "label": "Link", "type": "url"},
+        {"key": "note", "label": "Note", "type": "textarea"}
+      ]
+    },
+    "flight": {
+      "label": "Flight",
+      "icon": "plane",
+      "spans_days": false,
+      "fields": [
+        {"key": "airline", "label": "Airline", "type": "text"},
+        {"key": "flight_no", "label": "Flight no.", "type": "text"},
+        {"key": "from", "label": "From", "type": "text"},
+        {"key": "to", "label": "To", "type": "text"},
+        {"key": "depart_time", "label": "Depart", "type": "datetime-local"},
+        {"key": "arrive_time", "label": "Arrive", "type": "datetime-local"},
+        {"key": "confirmation", "label": "Confirmation", "type": "text"},
+        {"key": "price", "label": "Price", "type": "money"},
+        {"key": "currency", "label": "Currency", "type": "currency"},
+        {"key": "link", "label": "Link", "type": "url"}
+      ]
+    },
+    "train": {
+      "label": "Train",
+      "icon": "train",
+      "spans_days": false,
+      "fields": [
+        {"key": "train_no", "label": "Train no.", "type": "text"},
+        {"key": "from", "label": "From", "type": "text"},
+        {"key": "to", "label": "To", "type": "text"},
+        {"key": "depart_time", "label": "Depart", "type": "datetime-local"},
+        {"key": "arrive_time", "label": "Arrive", "type": "datetime-local"},
+        {"key": "seat", "label": "Seat / car", "type": "text"},
+        {"key": "price", "label": "Price", "type": "money"},
+        {"key": "currency", "label": "Currency", "type": "currency"},
+        {"key": "link", "label": "Link", "type": "url"}
+      ]
+    },
+    "ticket": {
+      "label": "Ticket",
+      "icon": "ticket",
+      "spans_days": false,
+      "fields": [
+        {"key": "name", "label": "Name", "type": "text"},
+        {"key": "venue", "label": "Venue", "type": "text"},
+        {"key": "start_time", "label": "Start", "type": "datetime-local"},
+        {"key": "end_time", "label": "End", "type": "datetime-local"},
+        {"key": "qty", "label": "Qty", "type": "number"},
+        {"key": "price", "label": "Price", "type": "money"},
+        {"key": "currency", "label": "Currency", "type": "currency"},
+        {"key": "link", "label": "Link", "type": "url"}
+      ]
+    },
+    "restaurant": {
+      "label": "Restaurant",
+      "icon": "utensils",
+      "spans_days": false,
+      "fields": [
+        {"key": "name", "label": "Name", "type": "text"},
+        {"key": "address", "label": "Address", "type": "text"},
+        {"key": "time", "label": "Time", "type": "datetime-local"},
+        {"key": "party_size", "label": "Party size", "type": "number"},
+        {"key": "link", "label": "Reservation link", "type": "url"}
+      ]
+    },
+    "activity": {
+      "label": "Activity",
+      "icon": "compass",
+      "spans_days": false,
+      "fields": [
+        {"key": "name", "label": "Name", "type": "text"},
+        {"key": "location", "label": "Location", "type": "text"},
+        {"key": "start_time", "label": "Start", "type": "datetime-local"},
+        {"key": "end_time", "label": "End", "type": "datetime-local"},
+        {"key": "price", "label": "Price", "type": "money"},
+        {"key": "currency", "label": "Currency", "type": "currency"},
+        {"key": "link", "label": "Link", "type": "url"}
+      ]
+    },
+    "transport": {
+      "label": "Transport",
+      "icon": "car",
+      "spans_days": false,
+      "fields": [
+        {"key": "mode", "label": "Mode (taxi/rental/bus)", "type": "text"},
+        {"key": "from", "label": "From", "type": "text"},
+        {"key": "to", "label": "To", "type": "text"},
+        {"key": "time", "label": "Time", "type": "datetime-local"},
+        {"key": "price", "label": "Price", "type": "money"},
+        {"key": "currency", "label": "Currency", "type": "currency"},
+        {"key": "link", "label": "Link", "type": "url"}
+      ]
+    },
+    "note": {
+      "label": "Note",
+      "icon": "note",
+      "spans_days": false,
+      "fields": [
+        {"key": "text", "label": "Note", "type": "textarea"}
+      ]
+    }
+  }
+}

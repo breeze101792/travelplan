@@ -1,0 +1,341 @@
+/* dashboard.css — dashboard page styles */
+
+.dash-header {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+  margin-bottom: 1.25rem;
+}
+
+.dash-header h1 {
+  margin: 0;
+  font-size: 1.6rem;
+}
+
+.dash-header .muted {
+  margin: 0.25rem 0 0;
+}
+
+/* Buttons -------------------------------------------------------------- */
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.35rem;
+  padding: 0.5rem 0.9rem;
+  border-radius: 0.6rem;
+  border: 1px solid var(--border, #d8dee4);
+  background: var(--surface, #fff);
+  color: var(--text, #1f2328);
+  font: inherit;
+  font-size: 0.9rem;
+  line-height: 1.2;
+  cursor: pointer;
+  text-decoration: none;
+  transition: background 0.12s, border-color 0.12s, transform 0.05s;
+}
+
+.btn:hover {
+  background: var(--surface-hover, #f6f8fa);
+}
+
+.btn:active {
+  transform: translateY(1px);
+}
+
+.btn.primary {
+  background: var(--accent, #2563eb);
+  border-color: var(--accent, #2563eb);
+  color: #fff;
+}
+
+.btn.primary:hover {
+  background: var(--accent-strong, #1d4ed8);
+}
+
+.btn.ghost {
+  background: transparent;
+}
+
+.btn.danger {
+  color: var(--danger, #dc2626);
+  border-color: var(--danger-border, #fecaca);
+  background: transparent;
+}
+
+.btn.danger:hover {
+  background: var(--danger-bg, #fee2e2);
+}
+
+.btn.small {
+  padding: 0.3rem 0.6rem;
+  font-size: 0.82rem;
+}
+
+/* Trip form ------------------------------------------------------------ */
+
+.trip-form {
+  background: var(--surface, #fff);
+  border: 1px solid var(--border, #e5e7eb);
+  border-radius: 0.9rem;
+  padding: 1.25rem;
+  margin-bottom: 1.5rem;
+  box-shadow: var(--shadow-sm, 0 1px 3px rgba(0, 0, 0, 0.05));
+}
+
+.trip-form.hidden {
+  display: none;
+}
+
+.trip-form h2 {
+  margin: 0 0 1rem;
+  font-size: 1.1rem;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  margin-bottom: 0.9rem;
+}
+
+.field-label {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--text-muted, #57606a);
+}
+
+.field input,
+.field textarea,
+.field select {
+  padding: 0.5rem 0.6rem;
+  border: 1px solid var(--border, #d8dee4);
+  border-radius: 0.5rem;
+  font: inherit;
+  background: var(--input-bg, #fff);
+  color: var(--text, #1f2328);
+}
+
+.field input:focus,
+.field textarea:focus,
+.field select:focus {
+  outline: 2px solid var(--accent, #2563eb);
+  outline-offset: -1px;
+  border-color: var(--accent, #2563eb);
+}
+
+.field-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 0.9rem;
+}
+
+.form-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+}
+
+.form-msg {
+  font-size: 0.85rem;
+  color: var(--text-muted, #57606a);
+  min-height: 1.2em;
+}
+
+.form-msg.error {
+  color: var(--danger, #dc2626);
+}
+
+/* Plans grid ----------------------------------------------------------- */
+
+.plans-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 1rem;
+}
+
+.plan-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  /* Uniform card size: the title and description blocks below each reserve a
+     fixed amount of space (2 lines / 3 lines) via min-height, so a card with a
+     2-line description ends up exactly as tall as one with a 3-line
+     description. This floor sits above that constant content height, so every
+     card lands at the same height; .card-links (margin-top:auto) absorbs the
+     leftover space at the bottom. */
+  min-height: 17rem;
+  padding: 1.1rem;
+  background: var(--surface, #fff);
+  border: 1px solid var(--border, #e5e7eb);
+  border-radius: 0.9rem;
+  box-shadow: var(--shadow-sm, 0 1px 3px rgba(0, 0, 0, 0.05));
+  transition: box-shadow 0.15s, transform 0.15s, border-color 0.15s;
+}
+
+.plan-card:hover {
+  box-shadow: var(--shadow-md, 0 6px 18px rgba(0, 0, 0, 0.08));
+  transform: translateY(-2px);
+  border-color: var(--border-hover, #cbd5e1);
+}
+
+.card-head {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.card-title {
+  margin: 0;
+  font-size: 1.1rem;
+  /* Clamp to 2 lines AND reserve space for 2 lines (3em = 2 * 1.5em line-height)
+     so a one-line title is the same height as a two-line one. */
+  min-height: 3em;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.card-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  align-items: center;
+}
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.15rem 0.5rem;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  border: 1px solid var(--border, #e5e7eb);
+  background: var(--badge-bg, #f1f5f9);
+  color: var(--text-muted, #475569);
+}
+
+.badge.currency {
+  background: var(--accent-bg, #eff6ff);
+  border-color: var(--accent-border, #bfdbfe);
+  color: var(--accent, #1d4ed8);
+}
+
+.badge.role-owner {
+  background: #fef3c7;
+  border-color: #fde68a;
+  color: #92400e;
+}
+
+.badge.role-editor {
+  background: #dcfce7;
+  border-color: #bbf7d0;
+  color: #166534;
+}
+
+.badge.role-viewer {
+  background: #f1f5f9;
+  border-color: #e2e8f0;
+  color: #475569;
+}
+
+.card-dates {
+  margin: 0;
+  font-size: 0.88rem;
+  color: var(--text-muted, #57606a);
+}
+
+.card-desc {
+  margin: 0;
+  font-size: 0.9rem;
+  color: var(--text, #1f2328);
+  /* Clamp to 3 lines AND reserve space for 3 lines (4.5em = 3 * 1.5em) so a
+     2-line description occupies the same height as a 3-line one — this is what
+     makes every card the same size regardless of description length. */
+  min-height: 4.5em;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.card-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin-top: auto;
+}
+
+.card-controls {
+  display: flex;
+  gap: 0.4rem;
+  padding-top: 0.5rem;
+  border-top: 1px solid var(--border, #eef2f6);
+}
+
+.card-error {
+  margin: 0;
+}
+
+/* Inline edit form inside a card --------------------------------------- */
+
+.edit-form {
+  margin-top: 0.5rem;
+  padding: 1rem;
+  background: var(--surface-alt, #f8fafc);
+  border: 1px solid var(--border, #e5e7eb);
+  border-radius: 0.6rem;
+  box-shadow: none;
+}
+
+/* Empty + message states ----------------------------------------------- */
+
+.empty-state {
+  grid-column: 1 / -1;
+  text-align: center;
+  padding: 3rem 1rem;
+  color: var(--text-muted, #57606a);
+}
+
+.empty-state .empty-title {
+  font-size: 1.15rem;
+  font-weight: 600;
+  color: var(--text, #1f2328);
+  margin: 0 0 0.4rem;
+}
+
+.empty-state .muted {
+  margin: 0;
+}
+
+.msg.error {
+  grid-column: 1 / -1;
+  padding: 0.75rem 1rem;
+  border-radius: 0.6rem;
+  background: var(--danger-bg, #fee2e2);
+  color: var(--danger, #b91c1c);
+  border: 1px solid var(--danger-border, #fecaca);
+}
+
+.muted {
+  color: var(--text-muted, #57606a);
+}
+
+/* Responsive ----------------------------------------------------------- */
+
+@media (max-width: 540px) {
+  .dash-header {
+    align-items: stretch;
+  }
+  .field-row {
+    grid-template-columns: 1fr;
+  }
+}

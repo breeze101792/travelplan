@@ -1,0 +1,77 @@
+{% extends "layout.html" %}
+{% block title %}Members · TravelPlan{% endblock %}
+{% block page %}members{% endblock %}
+
+{% block styles %}<link rel="stylesheet" href="/static/css/auth.css">{% endblock %}
+
+{% block content %}
+<div class="auth-view">
+  <div class="page-header">
+    <div>
+      <h1>Members</h1>
+      <div class="sub">Manage member accounts that can be added to shared plans.</div>
+    </div>
+  </div>
+
+  {% if error %}<div class="error-msg">{{ error }}</div>{% endif %}
+
+  <section class="card members-section">
+    <h2 class="card-title">Create member</h2>
+    <form method="post" action="/auth/members">
+      <input type="hidden" name="action" value="create">
+      <div class="field-row">
+        <div class="field">
+          <label for="username">Username</label>
+          <input id="username" name="username" type="text" required>
+        </div>
+        <div class="field">
+          <label for="display_name">Display name</label>
+          <input id="display_name" name="display_name" type="text" required>
+        </div>
+        <div class="field">
+          <label for="password">Password</label>
+          <input id="password" name="password" type="password" required>
+        </div>
+      </div>
+      <div class="form-actions">
+        <button class="btn btn-primary" type="submit">Add member</button>
+      </div>
+    </form>
+  </section>
+
+  <section class="card members-section">
+    <h2 class="card-title">Existing accounts</h2>
+    <table>
+      <thead>
+        <tr>
+          <th>Username</th>
+          <th>Display name</th>
+          <th>Role</th>
+          <th>Created</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for m in members %}
+        <tr>
+          <td>{{ m.username }}</td>
+          <td>{{ m.display_name }}</td>
+          <td><span class="badge">{{ m.role }}</span></td>
+          <td class="muted">{{ m.created_at }}</td>
+          <td>
+            {% if m.role != 'admin' %}
+            <form method="post" action="/auth/members" style="display:inline"
+                  onsubmit="return confirm('Delete member {{ m.username|e }}?');">
+              <input type="hidden" name="action" value="delete">
+              <input type="hidden" name="member_id" value="{{ m.id }}">
+              <button class="btn btn-danger btn-sm" type="submit">Delete</button>
+            </form>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </section>
+</div>
+{% endblock %}

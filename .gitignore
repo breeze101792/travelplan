@@ -1,0 +1,20 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+
+# All user data & config (DB, uploads, secret key) live under data/
+data/travelplan.db
+data/travelplan.db-*
+data/uploads/
+data/config/secret_key
+
+# keep settings.json (shipped defaults) but ignore per-user overrides
+data/config/settings.local.json
+
+# editor
+.vscode/
+.idea/
+
+# local Claude Code config (not part of the app)
+.claude/

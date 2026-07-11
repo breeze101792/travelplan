@@ -1,0 +1,164 @@
+{% extends "layout.html" %}
+{% block title %}Share · {{ plan.title }} · TravelPlan{% endblock %}
+{% block page %}share{% endblock %}
+
+{% block styles %}<link rel="stylesheet" href="/static/css/auth.css">{% endblock %}
+
+{% block content %}
+<div class="auth-view" style="max-width:620px;">
+  <div class="page-header">
+    <div>
+      <h1>Share “{{ plan.title }}”</h1>
+      <div class="sub">Invite members to collaborate on this plan.</div>
+    </div>
+    <div class="actions">
+      <a class="btn btn-ghost" href="/plans/{{ plan.id }}">Back to plan</a>
+    </div>
+  </div>
+
+  <div id="share-root"></div>
+</div>
+
+<script>window.__CONTEXT__ = { planId: {{ plan.id }}, role: {{ plan_role|tojson|safe }} };</script>
+{% endblock %}
+
+{% block scripts %}
+<script type="module">
+import { apiGet, apiPost, apiPatch, apiDel } from '/static/js/api.js';
+import { el, clear } from '/static/js/util.js';
+
+const ctx = window.__CONTEXT__;
+const root = document.getElementById('share-root');
+const isOwner = ctx.role === 'owner';
+
+async function loadMembers() {
+  const [planMembersData, accountsData] = await Promise.all([
+    apiGet(`/api/plans/${ctx.planId}/members`),
+    apiGet('/api/members'),
+  ]);
+  const owner = planMembersData.owner;
+  const members = planMembersData.members || [];
+  const accounts = accountsData.members || [];
+  render(owner, members, accounts);
+}
+
+function render(owner, members, accounts) {
+  clear(root);
+
+  if (!isOwner) {
+    root.append(el('div', { class: 'notice' },
+      'You are a ' + ctx.role + ' of this plan. Only the owner can manage sharing.'));
+  }
+
+  // Current shared members
+  const listCard = el('section', { class: 'card' });
+  listCard.append(el('h2', { class: 'card-title', text: 'Shared with' }));
+
+  const table = el('table');
+  const thead = el('thead', {}, [el('tr', {}, [
+    el('th', { text: 'Name' }), el('th', { text: 'Role' }), el('th', {})
+  ])]);
+  const tbody = el('tbody');
+
+  // Owner row (read-only)
+  tbody.append(el('tr', {}, [
+    el('td', { text: owner.display_name + ' (' + owner.username + ')' }),
+    el('td', {}, [el('span', { class: 'badge', text: 'owner' })]),
+    el('td', { class: 'muted', text: '—' })
+  ]));
+
+  for (const m of members) {
+    const tr = el('tr');
+    tr.append(el('td', { text: m.display_name + ' (' + m.username + ')' }));
+
+    if (isOwner) {
+      const sel = el('select', { name: 'role' });
+      for (const r of ['editor', 'viewer']) {
+        const opt = el('option', { value: r, text: r });
+        if (m.role === r) opt.selected = true;
+        sel.append(opt);
+      }
+      sel.addEventListener('change', async () => {
+        try {
+          await apiPatch(`/api/plans/${ctx.planId}/members/${m.id}`, { role: sel.value });
+          m.role = sel.value;
+        } catch (e) {
+          alert(e.message);
+          loadMembers();
+        }
+      });
+      tr.append(el('td', {}, [sel]));
+
+      const delBtn = el('button', { class: 'btn btn-danger btn-sm', type: 'button', text: 'Remove' });
+      delBtn.addEventListener('click', async () => {
+        if (!confirm('Remove ' + m.username + ' from this plan?')) return;
+        try {
+          await apiDel(`/api/plans/${ctx.planId}/members/${m.id}`);
+          loadMembers();
+        } catch (e) { alert(e.message); }
+      });
+      tr.append(el('td', {}, [delBtn]));
+    } else {
+      tr.append(el('td', {}, [el('span', { class: 'badge', text: m.role })]));
+      tr.append(el('td', { class: 'muted', text: '—' }));
+    }
+    tbody.append(tr);
+  }
+
+  table.append(thead, tbody);
+  listCard.append(table);
+  root.append(listCard);
+
+  // Add member form (owner only)
+  if (isOwner) {
+    const sharedIds = new Set([owner.id, ...members.map(m => m.id)]);
+    const available = accounts.filter(a => !sharedIds.has(a.id));
+    const addCard = el('section', { class: 'card', style: 'margin-top:14px;' });
+    addCard.append(el('h2', { class: 'card-title', text: 'Add member' }));
+
+    if (available.length === 0) {
+      addCard.append(el('p', { class: 'muted', text: 'All member accounts are already shared on this plan.' }));
+    } else {
+      const memberSelect = el('select', { name: 'user_id' });
+      for (const a of available) {
+        memberSelect.append(el('option', { value: a.id, text: a.display_name + ' (' + a.username + ')' }));
+      }
+      const roleSelect = el('select', { name: 'role' });
+      for (const r of ['editor', 'viewer']) {
+        roleSelect.append(el('option', { value: r, text: r }));
+      }
+
+      const form = el('form', { onsubmit: async (ev) => {
+        ev.preventDefault();
+        try {
+          await apiPost(`/api/plans/${ctx.planId}/members`, {
+            user_id: Number(memberSelect.value),
+            role: roleSelect.value,
+          });
+          loadMembers();
+        } catch (e) { alert(e.message); }
+      }}, [
+        el('div', { class: 'field-row' }, [
+          el('div', { class: 'field' }, [
+            el('label', { for: 'user_id', text: 'Member' }), memberSelect
+          ]),
+          el('div', { class: 'field' }, [
+            el('label', { for: 'role', text: 'Role' }), roleSelect
+          ]),
+        ]),
+        el('div', { class: 'form-actions' }, [
+          el('button', { class: 'btn btn-primary', type: 'submit', text: 'Add to plan' })
+        ]),
+      ]);
+      addCard.append(form);
+    }
+    root.append(addCard);
+  }
+}
+
+loadMembers().catch(e => {
+  clear(root);
+  root.append(el('div', { class: 'error-msg', text: 'Failed to load: ' + e.message }));
+});
+</script>
+{% endblock %}

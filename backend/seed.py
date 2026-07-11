@@ -1,0 +1,284 @@
+"""Seed the database with fake data for testing.
+
+Run:  python -m backend.seed --reset      (wipes & repopulates)
+      ./seed.sh [--reset]                 (wrapper)
+
+It creates an admin + three members, two trips with full itineraries,
+expenses in four currencies using all four split methods, image/link
+attachments, exchange rates and recorded payments. Printed credentials
+let you log in and click around.
+"""
+from __future__ import annotations
+
+import json
+import struct
+import sys
+import zlib
+from pathlib import Path
+
+from .app import create_app
+from . import db as db_mod
+from .auth import hash_password
+from . import expense as ex
+
+BASE = Path(__file__).resolve().parent.parent
+DATA = BASE / "data"
+UPLOADS = DATA / "uploads"
+DB_PATH = DATA / "travelplan.db"
+
+
+# ---------------------------------------------------------------- tiny PNG
+def make_png(path: Path, rgb: tuple[int, int, int], w: int = 160, h: int = 100) -> None:
+    def chunk(typ: bytes, data: bytes) -> bytes:
+        c = typ + data
+        return struct.pack(">I", len(data)) + c + struct.pack(">I", zlib.crc32(c) & 0xFFFFFFFF)
+
+    raw = b"".join(b"\x00" + bytes(rgb) * w for _ in range(h))
+    png = (b"\x89PNG\r\n\x1a\n"
+           + chunk(b"IHDR", struct.pack(">IIBBBBB", w, h, 8, 2, 0, 0, 0))
+           + chunk(b"IDAT", zlib.compress(raw, 9))
+           + chunk(b"IEND", b""))
+    path.write_bytes(png)
+
+
+# ---------------------------------------------------------------- reset
+def reset() -> None:
+    for p in (DATA / "travelplan.db", DATA / "travelplan.db-wal", DATA / "travelplan.db-shm"):
+        if p.exists():
+            p.unlink()
+    UPLOADS.mkdir(parents=True, exist_ok=True)
+    # clear any old seeded uploads
+    for f in UPLOADS.glob("*"):
+        if f.is_file():
+            f.unlink()
+    db_mod.init_db()
+
+
+# ---------------------------------------------------------------- seed
+def seed() -> None:
+    app = create_app()
+    with app.app_context():
+        db = db_mod.get_db()
+
+        def user(username, display, role="member"):
+            db.execute(
+                "INSERT INTO users (username, password_hash, display_name, role) VALUES (?, ?, ?, ?)",
+                (username, hash_password("password"), display, role),
+            )
+            db.commit()
+            return db.execute("SELECT id FROM users WHERE username = ?", (username,)).fetchone()[0]
+
+        admin = user("admin", "Admin", "admin")
+        alice = user("alice", "Alice Wang")
+        bob = user("bob", "Bob Garcia")
+        carol = user("carol", "Carol Singh")
+        members = {"admin": admin, "alice": alice, "bob": bob, "carol": carol}
+
+        # image attachments
+        img = {}
+        for name, color in (("hotel", (99, 102, 241)),
+                            ("flight", (14, 165, 233)),
+                            ("lagoon", (45, 212, 191)),
+                            ("ramen", (244, 114, 182))):
+            fn = f"seed-{name}.png"
+            make_png(UPLOADS / fn, color)
+            img[name] = fn
+
+        def add_image(item_id, key, caption=""):
+            db.execute(
+                "INSERT INTO attachments (item_id, kind, value, caption) VALUES (?, 'image', ?, ?)",
+                (item_id, img[key], caption),
+            )
+
+        def add_link(item_id, url, caption=""):
+            db.execute(
+                "INSERT INTO attachments (item_id, kind, value, caption) VALUES (?, 'link', ?, ?)",
+                (item_id, url, caption),
+            )
+
+        def item(plan_id, itype, title, date, end=None, status="planned", details=None):
+            max_key = db.execute(
+                "SELECT COALESCE(MAX(sort_key), 0) FROM items WHERE plan_id = ? AND item_date IS ?",
+                (plan_id, date),
+            ).fetchone()[0]
+            cur = db.execute(
+                """INSERT INTO items (plan_id, item_type, title, item_date, end_date, sort_key, status, details, created_by)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (plan_id, itype, title, date, end, max_key + 1.0, status,
+                 json.dumps(details or {}), admin),
+            )
+            db.commit()
+            return cur.lastrowid
+
+        def share(plan_id, uid, role="editor"):
+            db.execute("INSERT OR IGNORE INTO plan_members (plan_id, user_id, role) VALUES (?, ?, ?)",
+                       (plan_id, uid, role))
+            db.commit()
+
+        def rate(plan_id, currency, r):
+            db.execute(
+                """INSERT INTO plan_rates (plan_id, currency, rate, updated_at)
+                   VALUES (?, ?, ?, datetime('now'))
+                   ON CONFLICT(plan_id, currency) DO UPDATE SET rate=excluded.rate, updated_at=datetime('now')""",
+                (plan_id, currency, r))
+            db.commit()
+
+        def payment(plan_id, frm, to, cents, currency, note=""):
+            db.execute(
+                "INSERT INTO payments (plan_id, from_user_id, to_user_id, amount_cents, currency, note) VALUES (?, ?, ?, ?, ?, ?)",
+                (plan_id, frm, to, cents, currency, note))
+            db.commit()
+
+        # =========================================================== Plan 1: Japan 2026 (JPY)
+        p1 = db.execute(
+            """INSERT INTO plans (title, description, owner_id, start_date, end_date, base_currency)
+               VALUES (?, ?, ?, ?, ?, ?)""",
+            ("Japan 2026", "Tokyo + Kyoto with friends. Cherry-blossom season is over but the food isn't.",
+             admin, "2026-07-01", "2026-07-07", "JPY"),
+        ).lastrowid
+        db.commit()
+        share(p1, alice, "editor")
+        share(p1, bob, "editor")
+
+        h1 = item(p1, "hotel", "Shinjuku Granvia Hotel", "2026-07-01", end="2026-07-05", status="confirmed",
+                  details={"hotel_name": "Shinjuku Granvia", "address": "3-1 Nishishinjuku, Tokyo",
+                           "check_in_time": "15:00", "check_out_time": "11:00",
+                           "booking_ref": "BK-88210", "price": "72000", "currency": "JPY",
+                           "link": "https://example.com/granvia", "note": "4 nights, breakfast included"})
+        add_image(h1, "hotel", "hotel lobby")
+        add_link(h1, "https://example.com/granvia", "booking")
+
+        f1 = item(p1, "flight", "JL 005 LAX -> NRT", "2026-07-01", status="confirmed",
+                  details={"airline": "JAL", "flight_no": "JL005", "from": "LAX", "to": "NRT",
+                           "depart_time": "2026-07-01T11:30", "arrive_time": "2026-07-02T15:45",
+                           "confirmation": "JAL-7H9XQ", "price": "820", "currency": "USD",
+                           "link": "https://example.com/jal005"})
+        add_image(f1, "flight", "boarding pass")
+
+        t1 = item(p1, "transport", "Airport limo bus to Shinjuku", "2026-07-02",
+                  details={"mode": "limo bus", "from": "NRT", "to": "Shinjuku",
+                           "time": "2026-07-02T16:30", "price": "1300", "currency": "JPY"})
+
+        rest1 = item(p1, "restaurant", "Ichiran Ramen Shibuya", "2026-07-02",
+                     details={"name": "Ichiran", "address": "Shibuya, Tokyo",
+                              "time": "2026-07-02T19:00", "party_size": 3,
+                              "link": "https://example.com/ichiran"})
+        add_image(rest1, "ramen", "tonkotsu")
+
+        tk1 = item(p1, "ticket", "TeamLab Planets", "2026-07-03", status="confirmed",
+                   details={"name": "TeamLab Planets", "venue": "Toyosu, Tokyo",
+                            "start_time": "2026-07-03T10:00", "end_time": "2026-07-03T12:30",
+                            "qty": 2, "price": "3200", "currency": "JPY",
+                            "link": "https://example.com/teamlab"})
+
+        tr1 = item(p1, "train", "Shinkansen Tokyo -> Kyoto", "2026-07-04", status="confirmed",
+                   details={"train_no": "Nozomi 7", "from": "Tokyo", "to": "Kyoto",
+                            "depart_time": "2026-07-04T08:00", "arrive_time": "2026-07-04T10:15",
+                            "seat": "12-A/B/C", "price": "14000", "currency": "JPY"})
+
+        act1 = item(p1, "activity", "Fushimi Inari shrine hike", "2026-07-05",
+                    details={"name": "Fushimi Inari Taisha", "location": "Kyoto",
+                             "start_time": "2026-07-05T07:00", "end_time": "2026-07-05T11:00"})
+
+        note1 = item(p1, "note", "Keep passport handy for hotel check-in", "2026-07-01",
+                     details={"text": "Hotels ask for the passport at check-in."})
+
+        # expenses (JPY base)
+        ex.create_expense(p1, "Hotel (4 nights)", "JPY", 72000, "EQUAL",
+                          [(admin, 72000)], [admin, alice, bob], item_id=h1, created_by=admin, decimals=0)
+        ex.create_expense(p1, "Flights LAX-NRT", "USD", 82000, "SHARES",
+                          [(alice, 82000)], [(admin, 1), (alice, 1), (bob, 1)], item_id=f1, created_by=alice, decimals=2)
+        ex.create_expense(p1, "Dinner at Ichiran", "JPY", 3900, "EQUAL",
+                          [(bob, 3900)], [admin, alice, bob], item_id=rest1, created_by=bob, decimals=0)
+        ex.create_expense(p1, "TeamLab tickets", "JPY", 6400, "EXACT",
+                          [(admin, 6400)], [(admin, 3200), (alice, 3200)], item_id=tk1, created_by=admin, decimals=0)
+        ex.create_expense(p1, "Shinkansen", "JPY", 42000, "PERCENTAGE",
+                          [(alice, 42000)], [(alice, 4000), (bob, 3000), (admin, 3000)], item_id=tr1, created_by=alice, decimals=0)
+        ex.create_expense(p1, "Airport limo bus", "JPY", 3900, "EQUAL",
+                          [(admin, 3900)], [admin, alice, bob], item_id=t1, created_by=admin, decimals=0)
+        rate(p1, "USD", 150.0)  # 1 USD = 150 JPY
+        payment(p1, alice, admin, 5000, "JPY", "partial settle")
+
+        # =========================================================== Plan 2: Iceland Ring Road (EUR)
+        p2 = db.execute(
+            """INSERT INTO plans (title, description, owner_id, start_date, end_date, base_currency)
+               VALUES (?, ?, ?, ?, ?, ?)""",
+            ("Iceland Ring Road", "7 days driving the Ring Road. Bring a raincoat.",
+             admin, "2026-08-10", "2026-08-16", "EUR"),
+        ).lastrowid
+        db.commit()
+        share(p2, alice, "editor")
+        share(p2, carol, "viewer")
+
+        h2 = item(p2, "hotel", "Kex Hostel Reykjavik", "2026-08-10", end="2026-08-13", status="confirmed",
+                  details={"hotel_name": "Kex Hostel", "address": "Skubar 28, Reykjavik",
+                           "check_in_time": "14:00", "check_out_time": "10:00",
+                           "booking_ref": "HX-44012", "price": "540", "currency": "EUR",
+                           "link": "https://example.com/kex"})
+        add_image(h2, "hotel", "hostel")
+        act2 = item(p2, "activity", "Blue Lagoon", "2026-08-10", status="confirmed",
+                    details={"name": "Blue Lagoon", "location": "Grindavik",
+                             "start_time": "2026-08-10T16:00", "end_time": "2026-08-10T19:00",
+                             "price": "90", "currency": "EUR", "link": "https://example.com/bluelagoon"})
+        add_image(act2, "lagoon", "geothermal pool")
+        t2 = item(p2, "transport", "Rental car (Dacia Duster)", "2026-08-11", end="2026-08-16",
+                  details={"mode": "rental", "from": "KEF", "to": "Ring Road",
+                           "time": "2026-08-11T09:00", "price": "420", "currency": "EUR"})
+        tk2 = item(p2, "ticket", "Glacier hike Vatnajokull", "2026-08-13", status="planned",
+                   details={"name": "Glacier hike", "venue": "Skaftafell",
+                            "start_time": "2026-08-13T10:00", "end_time": "2026-08-13T14:00",
+                            "qty": 3, "price": "150", "currency": "EUR"})
+        rest2 = item(p2, "restaurant", "Dillon whiskey bar", "2026-08-12",
+                     details={"name": "Dillon", "address": "Reykjavik", "time": "2026-08-12T21:00", "party_size": 3})
+        note2 = item(p2, "note", "Fuel up before the highland detour", "2026-08-14",
+                     details={"text": "Gas stations get sparse east of Egilsstadir."})
+
+        ex.create_expense(p2, "Kex Hostel (3 nights)", "EUR", 54000, "EQUAL",
+                          [(admin, 54000)], [admin, alice, carol], item_id=h2, created_by=admin, decimals=2)
+        ex.create_expense(p2, "Petrol", "ISK", 240000, "EQUAL",
+                          [(alice, 240000)], [admin, alice], item_id=t2, created_by=alice, decimals=0)
+        ex.create_expense(p2, "Blue Lagoon entry", "EUR", 18000, "SHARES",
+                          [(carol, 18000)], [(carol, 1), (alice, 1)], item_id=act2, created_by=carol, decimals=2)
+        ex.create_expense(p2, "Glacier hike", "EUR", 45000, "EQUAL",
+                          [(admin, 45000)], [admin, alice, carol], item_id=tk2, created_by=admin, decimals=2)
+        ex.create_expense(p2, "Dillon drinks", "EUR", 7800, "PERCENTAGE",
+                          [(alice, 7800)], [(admin, 4000), (alice, 3000), (carol, 3000)], item_id=rest2, created_by=alice, decimals=2)
+        rate(p2, "ISK", 0.0066)  # 1 ISK = 0.0066 EUR
+        payment(p2, admin, carol, 2000, "EUR", "thanks for the lagoon")
+
+    print("\nSeeded fake data. Login credentials (password for ALL accounts): password")
+    print("  admin  / password   (admin — owns both trips)")
+    print("  alice  / password   (editor on both trips)")
+    print("  bob    / password   (editor on Japan 2026)")
+    print("  carol  / password   (viewer on Iceland Ring Road)")
+    print("\nTrips:")
+    print("  Japan 2026          base JPY  (expenses in JPY + USD)")
+    print("  Iceland Ring Road   base EUR  (expenses in EUR + ISK)")
+    print("\nOpen http://127.0.0.1:5000 and sign in as admin.\n")
+
+
+def main(argv):
+    do_reset = "--reset" in argv or "-r" in argv
+    if not do_reset:
+        if DB_PATH.exists():
+            admin = None
+            try:
+                import sqlite3
+                admin = sqlite3.connect(str(DB_PATH)).execute(
+                    "SELECT 1 FROM users WHERE role='admin' LIMIT 1").fetchone()
+            except Exception:
+                pass
+            if admin:
+                print("Refusing to seed: an admin already exists (real data may be present).")
+                print("Use  python -m backend.seed --reset   to WIPE and reseed fake data.")
+                sys.exit(1)
+    print(">> seeding fake data" + (" (wiping existing DB first)" if do_reset else ""))
+    if do_reset:
+        reset()
+    else:
+        db_mod.init_db()
+    seed()
+
+
+if __name__ == "__main__":
+    main(sys.argv[1:])

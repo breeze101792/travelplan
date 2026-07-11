@@ -1,0 +1,59 @@
+{% extends "layout.html" %}
+
+{% block title %}Your trips · TravelPlan{% endblock %}
+{% block page %}dashboard{% endblock %}
+
+{% block styles %}
+<link rel="stylesheet" href="/static/css/dashboard.css">
+{% endblock %}
+
+{% block content %}
+<header class="dash-header">
+  <div class="dash-header-text">
+    <h1>Your trips</h1>
+    <p class="muted">Plan, organize, and share your travel.</p>
+  </div>
+  <button id="new-trip-toggle" class="btn primary" type="button">+ New trip</button>
+</header>
+
+<form id="new-trip-form" class="trip-form hidden" autocomplete="off">
+  <h2>Create a trip</h2>
+  <label class="field">
+    <span class="field-label">Title</span>
+    <input type="text" name="title" required placeholder="e.g. Japan in autumn">
+  </label>
+  <label class="field">
+    <span class="field-label">Description</span>
+    <textarea name="description" rows="2" placeholder="Optional notes"></textarea>
+  </label>
+  <div class="field-row">
+    <label class="field">
+      <span class="field-label">Start date</span>
+      <input type="date" name="start_date">
+    </label>
+    <label class="field">
+      <span class="field-label">End date</span>
+      <input type="date" name="end_date">
+    </label>
+    <label class="field">
+      <span class="field-label">Base currency</span>
+      <select name="base_currency"></select>
+    </label>
+  </div>
+  <div class="form-actions">
+    <button type="submit" class="btn primary">Create trip</button>
+    <button type="button" class="btn ghost" data-action="cancel-new">Cancel</button>
+    <span class="form-msg" role="status"></span>
+  </div>
+</form>
+
+<section id="plans" class="plans-grid"></section>
+{% endblock %}
+
+{% block scripts %}
+<script>window.__CONTEXT__ = {};</script>
+<script type="module">
+  import { initDashboard } from '/static/js/plans.js';
+  initDashboard(window.__CONTEXT__);
+</script>
+{% endblock %}

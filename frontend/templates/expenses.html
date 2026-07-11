@@ -1,0 +1,34 @@
+{% extends "layout.html" %}
+
+{% block title %}Expenses &middot; {{ plan.title }}{% endblock %}
+
+{% block page %}expenses{% endblock %}
+
+{% block styles %}
+<link rel="stylesheet" href="/static/css/expenses.css">
+{% endblock %}
+
+{% block content %}
+<header class="expenses-header">
+  <div class="expenses-header-main">
+    <a class="back-link" href="/plans/{{ plan.id }}">&larr; Back to plan</a>
+    <h1>{{ plan.title }}</h1>
+    <p class="expenses-sub">
+      <span class="chip">{{ plan.base_currency }}</span>
+      {% if plan.start_date %}<span>{{ plan.start_date }}</span>{% if plan.end_date %} &ndash; <span>{{ plan.end_date }}</span>{% endif %}{% endif %}
+    </p>
+  </div>
+</header>
+
+<section id="by-item" class="expenses-section"></section>
+<section id="expense-ledger" class="expenses-section"></section>
+<section id="settlement" class="expenses-section"></section>
+{% endblock %}
+
+{% block scripts %}
+<script>window.__CONTEXT__ = { planId: {{ plan.id }}, role: {{ plan_role|tojson|safe }} };</script>
+<script type="module">
+  import { initExpenses } from '/static/js/expenses.js';
+  initExpenses(window.__CONTEXT__);
+</script>
+{% endblock %}
