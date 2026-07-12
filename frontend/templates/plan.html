@@ -23,12 +23,9 @@
     </p>
     <p class="plan-currency">Base currency: <strong id="plan-currency">{{ plan.base_currency }}</strong></p>
   </div>
-  <nav class="plan-nav">
-    <a class="pn-link" href="/plans/{{ plan.id }}/expenses">Expenses</a>
-    {%- if plan_role == 'owner' %}
-    <a class="pn-link" href="/plans/{{ plan.id }}/share">Share</a>
-    {%- endif %}
-    <a class="pn-link" href="/">All plans</a>
+  <nav class="plan-nav-wrap">
+    {% set plan_active_page = 'board' %}
+    {% include "_plan_nav.html" %}
   </nav>
 </header>
 

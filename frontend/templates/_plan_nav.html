@@ -1,0 +1,14 @@
+{# Per-plan tab nav, used on every plan page (Board / Timeline / Expenses / Share / All plans).
+   Included from each plan template. The current page is highlighted via aria-current="page"
+   + .pn-link[aria-current=page] styling. Share is only shown to the owner. #}
+<nav class="plan-nav" aria-label="Plan views">
+  {%- set pid = plan.id -%}
+  {%- set active = plan_active_page or '' -%}
+  <a class="pn-link{% if active == 'board' %} active{% endif %}" href="/plans/{{ pid }}"{% if active == 'board' %} aria-current="page"{% endif %}>Board</a>
+  <a class="pn-link{% if active == 'timeline' %} active{% endif %}" href="/plans/{{ pid }}/timeline"{% if active == 'timeline' %} aria-current="page"{% endif %}>Timeline</a>
+  <a class="pn-link{% if active == 'expenses' %} active{% endif %}" href="/plans/{{ pid }}/expenses"{% if active == 'expenses' %} aria-current="page"{% endif %}>Expenses</a>
+  {%- if plan_role == 'owner' %}
+  <a class="pn-link{% if active == 'share' %} active{% endif %}" href="/plans/{{ pid }}/share"{% if active == 'share' %} aria-current="page"{% endif %}>Share</a>
+  {%- endif %}
+  <a class="pn-link pn-link--muted" href="/">All plans</a>
+</nav>

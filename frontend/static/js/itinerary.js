@@ -86,17 +86,38 @@ function detailLines(item, settings) {
 }
 
 export async function initItinerary(ctx) {
-  const settings = await loadSettings();
-  const planRes = await apiGet(`/api/plans/${ctx.planId}`);
-  const plan = planRes.plan;
-  const memRes = await apiGet(`/api/plans/${ctx.planId}/members`);
-  const allMembers = [memRes.owner, ...memRes.members];
-
-  const days = buildDays(plan);
-  const base = plan.base_currency;
-  let focusedDay = days.length ? days[0].date : '';
+  // Boot fetches fire in parallel. They used to await one at a time
+  // (settings -> plan -> members -> items -> by-item), so entering a plan
+  // waited for 5 sequential round-trips. None of these depend on each other,
+  // so they go in a single Promise.all — the page is ready when the slowest
+  // one returns instead of the sum of all of them.
+  let settings, plan, allMembers, days, base;
+  let focusedDay = '';
   let items = [];
   let expenseByItem = new Map(); // itemId -> { total, missing }
+
+  try {
+    const [, planRes, memRes, itemsRes, expRes] = await Promise.all([
+      loadSettings().then((s) => { settings = s; }),
+      apiGet(`/api/plans/${ctx.planId}`),
+      apiGet(`/api/plans/${ctx.planId}/members`),
+      apiGet(`/api/plans/${ctx.planId}/items`),
+      apiGet(`/api/plans/${ctx.planId}/expenses/by-item`).catch(() => ({ items: [] })),
+    ]);
+    plan = planRes.plan;
+    allMembers = [memRes.owner, ...memRes.members];
+    days = buildDays(plan);
+    base = plan.base_currency;
+    focusedDay = days.length ? days[0].date : '';
+    items = itemsRes.items;
+    expenseByItem = new Map((expRes.items || []).map(
+      (x) => [x.item_id, { total: x.grand_total_base_cents, missing: x.has_missing_rate }]
+    ));
+  } catch (e) {
+    const board = document.getElementById('board');
+    if (board) { clear(board); board.appendChild(el('p', { class: 'muted', text: 'Failed to load: ' + e.message })); }
+    return;
+  }
 
   /* ----- rendering ----- */
 
@@ -338,7 +359,9 @@ export async function initItinerary(ctx) {
   }
 
   /* ----- boot ----- */
-  await reload();
+  // items + expense totals were already fetched in parallel above, so just
+  // render — no second round-trip. (reload() is still used after mutations.)
+  render();
   wireHeader();
   renderToolbar();
   enableDragDrop(document.getElementById('board'), { onMove, onUpload });

@@ -1,11 +1,11 @@
 {% extends "layout.html" %}
-
-{% block title %}Expenses &middot; {{ plan.title }}{% endblock %}
-
-{% block page %}expenses{% endblock %}
+{% block title %}{{ plan.title }} — Timeline — TravelPlan{% endblock %}
+{% block page %}timeline{% endblock %}
 
 {% block styles %}
-<link rel="stylesheet" href="/static/css/expenses.css">
+<link rel="stylesheet" href="/static/css/timeline.css">
+{# Per-page context consumed by timeline.js. Same shape as the board. #}
+<script>window.__CONTEXT__ = { planId: {{ plan.id }}, role: {{ plan_role|tojson|safe }} };</script>
 {% endblock %}
 
 {% block content %}
@@ -24,20 +24,17 @@
     <p class="plan-currency">Base currency: <strong id="plan-currency">{{ plan.base_currency }}</strong></p>
   </div>
   <nav class="plan-nav-wrap">
-    {% set plan_active_page = 'expenses' %}
+    {% set plan_active_page = 'timeline' %}
     {% include "_plan_nav.html" %}
   </nav>
 </header>
 
-<section id="by-item" class="expenses-section"></section>
-<section id="expense-ledger" class="expenses-section"></section>
-<section id="settlement" class="expenses-section"></section>
+<div id="timeline" class="timeline"></div>
 {% endblock %}
 
 {% block scripts %}
-<script>window.__CONTEXT__ = { planId: {{ plan.id }}, role: {{ plan_role|tojson|safe }} };</script>
 <script type="module">
-  import { initExpenses } from '/static/js/expenses.js';
-  initExpenses(window.__CONTEXT__);
+import { initTimeline } from '/static/js/timeline.js';
+initTimeline(window.__CONTEXT__);
 </script>
 {% endblock %}

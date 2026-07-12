@@ -1,0 +1,196 @@
+/* timeline.css — 24-hour timeline view for a plan.
+ * Day columns laid out horizontally. Inside each column, time runs top→bottom
+ * (0:00 at the top, 24:00 at the bottom). Items are absolute-positioned bars
+ * whose top/height come from their start/end time-of-day.
+ */
+
+:root {
+  --tl-h: 36px;          /* pixels per hour (timeline scale) */
+  --tl-day-min: 180px;   /* minimum column width */
+  --tl-gutter: 8px;
+  --tl-border: 1px solid var(--border, #e5e7eb);
+  --tl-muted: var(--muted, #64748b);
+  --tl-bar-radius: 4px;
+  --tl-hour-color: #94a3b8;
+  --tl-half-color: #cbd5e1;
+}
+
+/* Outer scroll container: scrolls horizontally if many days don't fit. */
+.timeline {
+  display: flex;
+  align-items: stretch;
+  gap: var(--tl-gutter);
+  overflow-x: auto;
+  padding: 12px 4px 28px;
+  position: relative;
+}
+
+/* The left hour-label column is sticky so it stays visible while
+ * scrolling through long plans or when you scroll horizontally. */
+.timeline .hour-col {
+  position: sticky;
+  left: 0;
+  z-index: 3;
+  background: var(--surface, #fff);
+  flex: 0 0 44px;
+  border-right: var(--tl-border);
+  display: flex;
+  flex-direction: column;
+  font-size: 11px;
+  color: var(--tl-muted);
+}
+.timeline .hour-col .hour-label {
+  height: var(--tl-h);
+  display: flex;
+  align-items: flex-start;
+  justify-content: flex-end;
+  padding-right: 6px;
+  border-bottom: 1px dashed transparent;
+  transform: translateY(-6px); /* anchor labels to the gridline, not the cell */
+}
+.timeline .hour-col .hour-label.major { color: var(--tl-hour-color); font-weight: 500; }
+
+/* Each day is a column with a header + the 24h grid below it. */
+.timeline .day {
+  flex: 0 0 var(--tl-day-min);
+  display: flex;
+  flex-direction: column;
+  border: var(--tl-border);
+  border-radius: 10px;
+  background: var(--surface, #fff);
+  overflow: hidden;
+}
+.timeline .day-head {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: var(--surface, #fff);
+  padding: 8px 10px 6px;
+  border-bottom: var(--tl-border);
+}
+.timeline .day-head .date { font-weight: 600; font-size: .92rem; }
+.timeline .day-head .sub  { font-size: .74rem; color: var(--tl-muted); margin-top: 1px; }
+
+/* The grid: relative container that the bars are positioned within. */
+.timeline .day-grid {
+  position: relative;
+  height: calc(var(--tl-h) * 24);
+  background:
+    repeating-linear-gradient(
+      to bottom,
+      transparent 0,
+      transparent calc(var(--tl-h) - 1px),
+      #eef2f7 calc(var(--tl-h) - 1px),
+      #eef2f7 var(--tl-h)
+    );
+}
+.timeline .day-grid .half-gridline {
+  position: absolute;
+  left: 0; right: 0;
+  height: 0;
+  border-top: 1px dashed var(--tl-half-color);
+  pointer-events: none;
+}
+.timeline .day-grid .hour-label {
+  position: absolute;
+  left: 4px;
+  font-size: 10px;
+  color: var(--tl-hour-color);
+  transform: translateY(-5px);
+  pointer-events: none;
+}
+.timeline .day-grid .hour-label.major { color: var(--ink, #1f2937); font-weight: 500; }
+
+/* "Now" indicator on each day (only present if it lines up with the day). */
+.timeline .now-line {
+  position: absolute;
+  left: 0; right: 0;
+  height: 0;
+  border-top: 2px solid #ef4444;
+  z-index: 1;
+  pointer-events: none;
+}
+.timeline .now-line::before {
+  content: 'now';
+  position: absolute;
+  left: 4px;
+  top: -7px;
+  font-size: 10px;
+  color: #ef4444;
+  background: var(--surface, #fff);
+  padding: 0 3px;
+  border-radius: 3px;
+}
+
+/* ----- item bars ----- */
+.tl-item {
+  position: absolute;
+  left: 22px; right: 4px;
+  border-radius: var(--tl-bar-radius);
+  padding: 2px 6px;
+  font-size: 11px;
+  line-height: 1.2;
+  color: #fff;
+  background: #64748b;
+  border: 1px solid rgba(0,0,0,.05);
+  cursor: default;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  z-index: 2;
+}
+.tl-item .tl-item-title { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tl-item .tl-item-time  { opacity: .85; font-size: 10px; }
+.tl-item:hover { filter: brightness(1.05); box-shadow: 0 2px 8px rgba(15, 23, 42, .15); }
+.tl-item.empty { background: #94a3b8; color: #1f2937; }
+.tl-item.multi { box-shadow: inset 3px 0 0 rgba(255,255,255,.45); } /* marker when stacked side-by-side */
+
+/* type accents — same palette as the board */
+.tl-item.hotel      { background: #6366f1; }
+.tl-item.flight     { background: #0ea5e9; }
+.tl-item.train      { background: #10b981; }
+.tl-item.ticket     { background: #f59e0b; }
+.tl-item.restaurant { background: #ef4444; }
+.tl-item.activity   { background: #8b5cf6; }
+.tl-item.transport  { background: #14b8a6; }
+.tl-item.note       { background: #64748b; }
+
+/* Hotel middle-night "stay" indicator: a short bar pinned to 00:00 with the
+ * hotel name and "night N of M". Looks like the other item bars (same
+ * indigo), but compact — the height of 1 hour block is intentional. */
+.tl-item.hotel-stay { height: 20px !important; }
+
+/* No-time items (notes) appear as a small chip strip below the grid. */
+.tl-untimed {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 6px 8px;
+  border-top: var(--tl-border);
+  background: #f8fafc;
+  min-height: 28px;
+  align-items: center;
+}
+.tl-untimed .chip {
+  font-size: 11px;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: #e2e8f0;
+  color: #334155;
+}
+
+/* Empty state for plans with no date range. */
+.timeline .empty-state {
+  flex: 1;
+  text-align: center;
+  color: var(--tl-muted);
+  padding: 40px 16px;
+  font-size: .95rem;
+}
+
+/* On narrow screens, shrink the day min-width a bit so 3-4 days still fit. */
+@media (max-width: 720px) {
+  :root { --tl-day-min: 150px; }
+  .timeline .hour-col { flex-basis: 36px; }
+}

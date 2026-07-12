@@ -17,6 +17,9 @@ img { max-width: 100%; display: block; }
   --line: #e5e7eb;
   --accent: #2563eb;
   --accent-weak: #dbeafe;
+  --accent-strong: #1d4ed8;
+  --surface-2: #f1f5f9;
+  --surface-3: #e2e8f0;
   --danger: #dc2626;
   --danger-weak: #fee2e2;
   --ok: #16a34a;
@@ -255,6 +258,71 @@ tr:last-child td { border-bottom: none; }
 .row { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
 .between { justify-content: space-between; }
 .spacer { flex: 1; }
+
+/* Plan page header + tab nav ---------------------------------------------
+ * Shared by Board / Timeline / Expenses / Share so the look is uniform and
+ * the user can switch between the four views from any of them. The tabs
+ * render the same on every page; the current page is highlighted (filled).
+ */
+.plan-header {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  align-items: flex-end;
+  justify-content: space-between;
+  padding: 20px 24px 12px;
+  border-bottom: 1px solid var(--line);
+  background: var(--card);
+}
+.plan-head-main { min-width: 220px; }
+.plan-title { margin: 0; font-size: 1.6rem; line-height: 1.2; color: var(--ink); }
+.plan-title.editable { cursor: text; outline: 1px dashed transparent; border-radius: 4px; padding: 2px 4px; }
+.plan-title.editable:hover { outline-color: var(--line); background: rgba(0,0,0,.02); }
+.title-edit { font-size: 1.6rem; font-weight: 600; padding: 2px 4px; width: 100%; max-width: 420px; }
+.plan-dates { margin: 4px 0 0; color: var(--muted); font-size: .95rem; }
+.plan-currency { margin: 2px 0 0; color: var(--muted); font-size: .9rem; }
+.plan-currency strong { color: var(--ink); }
+
+.plan-nav-wrap { display: flex; }
+.plan-nav {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+  padding: 4px;
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+}
+.pn-link {
+  display: inline-flex;
+  align-items: center;
+  padding: 6px 14px;
+  border-radius: 999px;
+  text-decoration: none;
+  color: var(--ink);
+  font-size: .9rem;
+  font-weight: 500;
+  white-space: nowrap;
+  transition: background .12s, color .12s;
+}
+.pn-link:hover { background: var(--surface-3); text-decoration: none; }
+/* Active tab: filled with the accent color, white text. */
+.pn-link.active,
+.pn-link[aria-current="page"] {
+  background: var(--accent);
+  color: #fff;
+  box-shadow: 0 1px 2px rgba(16, 24, 40, .12);
+}
+.pn-link.active:hover,
+.pn-link[aria-current="page"]:hover {
+  background: var(--accent-strong);
+  color: #fff;
+}
+/* "All plans" sits visually slightly apart from the plan-specific tabs. */
+.pn-link--muted { color: var(--muted); }
+.pn-link--muted:hover { color: var(--ink); }
+
+.share-root { max-width: 720px; margin: 0 auto; padding: 0 4px; }
 
 /* Responsive */
 @media (max-width: 640px) {

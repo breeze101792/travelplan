@@ -82,5 +82,5 @@ if __name__ == "__main__":
     import os
     debug = os.environ.get("DEBUG", "") == "1"
     host = os.environ.get("HOST", "0.0.0.0")
-    port = int(os.environ.get("PORT", "5000"))
+    port = int(os.environ.get("PORT", "5050"))
     app.run(host=host, port=port, debug=debug, use_reloader=debug)

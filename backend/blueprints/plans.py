@@ -57,6 +57,12 @@ def expenses_page(plan_id):
     return render_template("expenses.html", plan=g.plan, plan_role=g.plan_role)
 
 
+@plans_bp.route("/plans/<int:plan_id>/timeline")
+@plan_access()
+def timeline_page(plan_id):
+    return render_template("timeline.html", plan=g.plan, plan_role=g.plan_role)
+
+
 @plans_bp.route("/plans/<int:plan_id>/share")
 @plan_access()
 def share_page(plan_id):

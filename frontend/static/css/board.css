@@ -1,33 +1,8 @@
 /* board.css — plan board (day columns + cards), toolbar, add bar, item editor modal.
- * Base .modal/.btn/.input/.status-badge come from base.css; this file adds board-
- * specific layout and editor specifics scoped under the page or .item-editor.
+ * Base .plan-header / .plan-nav / .modal / .btn / .input / .status-badge come
+ * from base.css; this file adds board-specific layout and editor specifics
+ * scoped under the page or .item-editor.
  */
-
-/* ---------- plan header ---------- */
-.plan-header {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 16px;
-  align-items: flex-end;
-  justify-content: space-between;
-  padding: 20px 24px 12px;
-  border-bottom: 1px solid var(--border, #e5e7eb);
-}
-.plan-head-main { min-width: 220px; }
-.plan-title { margin: 0; font-size: 1.6rem; line-height: 1.2; }
-.plan-title.editable { cursor: text; outline: 1px dashed transparent; border-radius: 4px; padding: 2px 4px; }
-.plan-title.editable:hover { outline-color: var(--border, #cbd5e1); background: rgba(0,0,0,.02); }
-.title-edit { font-size: 1.6rem; font-weight: 600; padding: 2px 4px; width: 100%; max-width: 420px; }
-.plan-dates { margin: 4px 0 0; color: var(--muted, #64748b); font-size: .95rem; }
-.plan-currency { margin: 2px 0 0; color: var(--muted, #64748b); font-size: .9rem; }
-.plan-currency strong { color: var(--text, #111827); }
-.plan-nav { display: flex; gap: 8px; flex-wrap: wrap; }
-.pn-link {
-  padding: 7px 14px; border-radius: 8px; text-decoration: none;
-  background: var(--surface-2, #f1f5f9); color: var(--text, #1f2937);
-  font-size: .9rem; font-weight: 500;
-}
-.pn-link:hover { background: var(--surface-3, #e2e8f0); }
 
 /* ---------- add toolbar ---------- */
 .add-toolbar {

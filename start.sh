@@ -2,7 +2,7 @@
 # start.sh — set up the Python environment and run TravelPlan.
 #
 # Usage:
-#   ./start.sh [PORT]        Start the server on PORT (default 5000)
+#   ./start.sh [PORT]        Start the server on PORT (default 5050)
 #   PORT=8080 ./start.sh     Set the port via environment instead
 #   DEBUG=1 ./start.sh       Enable Flask debug + auto-reload (local dev only)
 #   ./start.sh -h|--help     Show this help message
@@ -18,14 +18,14 @@ usage() {
 TravelPlan — start the server.
 
 Usage:
-  ./start.sh [PORT]            Start on PORT (default 5000)
+  ./start.sh [PORT]            Start on PORT (default 5050)
   PORT=8080 ./start.sh          Start on port 8080 via env var
   DEBUG=1 ./start.sh [PORT]     Enable auto-reload/debug (local dev only)
   ./start.sh -h | --help        Show this help message
 
 Arguments / environment:
   PORT   Port to listen on (1-65535). Positional arg wins over the env var.
-         Env: PORT   Default: 5000
+         Env: PORT   Default: 5050
   HOST   Bind address.          Env: HOST  Default: 0.0.0.0  (all interfaces,
          so friends on the same network can reach it)
   DEBUG  Set to 1 to enable the Flask debugger + auto-reload. Off by default
@@ -35,15 +35,15 @@ Data lives under ./data/ (SQLite DB, uploads, config). It is created on first
 run and is gitignored. Stop the server with Ctrl-C.
 
 Examples:
-  ./start.sh                 # http://0.0.0.0:5000
+  ./start.sh                 # http://0.0.0.0:5050
   ./start.sh 8080            # http://0.0.0.0:8080
   PORT=9000 ./start.sh       # http://0.0.0.0:9000
-  DEBUG=1 ./start.sh 5000    # dev mode with auto-reload
+  DEBUG=1 ./start.sh 5050    # dev mode with auto-reload
 EOF
 }
 
 # ---- parse args ----
-PORT="${PORT:-5000}"
+PORT="${PORT:-5050}"
 if [[ $# -ge 1 ]]; then
   case "$1" in
     -h|--help) usage; exit 0 ;;

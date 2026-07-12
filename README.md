@@ -22,7 +22,7 @@ data/         SQLite DB, uploads, config (secret key + settings.json)
 ## Run
 
 ```bash
-./start.sh              # http://0.0.0.0:5000
+./start.sh              # http://0.0.0.0:5050
 ./start.sh 8080         # listen on a custom port
 PORT=9000 ./start.sh    # or set it via the PORT env var
 ./start.sh --help       # full usage / help message

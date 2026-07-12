@@ -1,11 +1,22 @@
 """Database access for TravelPlan.
 
-One connection per request, stored on Flask ``g``. WAL mode + foreign keys on.
-The DB file lives at ``data/travelplan.db`` (see :func:`db_path`).
+A single shared SQLite connection is reused across requests (created lazily on
+first use). Opening a fresh connection per request was the bottleneck on slow
+disks: the first query on a brand-new WAL connection pays ~30ms to set up the
+WAL shared-memory index, so every API request cost ~33ms instead of ~1ms. A
+reused connection answers in ~1ms.
+
+Because the connection is shared across request threads, access is serialized
+with a lock held for the duration of each request (acquired in :func:`get_db`,
+released in :func:`close_db`). For a low-traffic friends app this is fine and
+keeps the connection (and its WAL index) warm. On teardown we rollback so a
+request that died mid-write can't leak an open transaction onto the next one
+(rollback is a no-op when the request already committed).
 """
 from __future__ import annotations
 
 import sqlite3
+import threading
 from pathlib import Path
 
 from flask import g, current_app
@@ -14,6 +25,9 @@ BASE_DIR = Path(__file__).resolve().parent.parent          # travelplan/
 DATA_DIR = BASE_DIR / "data"
 DB_PATH = DATA_DIR / "travelplan.db"
 SCHEMA_PATH = Path(__file__).resolve().parent / "schema.sql"
+
+_lock = threading.Lock()        # serializes access to the shared connection
+_conn: sqlite3.Connection | None = None
 
 
 def db_path() -> Path:
@@ -24,29 +38,51 @@ def db_path() -> Path:
 
 
 def get_db() -> sqlite3.Connection:
-    """Return a request-scoped SQLite connection (created once per request)."""
+    """Return the shared SQLite connection, holding the DB lock for this request.
+
+    The lock is acquired on the first ``get_db()`` of a request (marked by
+    ``g.db``) and released in :func:`close_db` at request teardown. The
+    connection itself is created once, under the lock.
+    """
+    global _conn
     if "db" not in g:
-        conn = sqlite3.connect(str(db_path()))
-        conn.row_factory = sqlite3.Row
-        conn.execute("PRAGMA journal_mode=WAL;")
-        conn.execute("PRAGMA foreign_keys=ON;")
-        g.db = conn
+        _lock.acquire()
+        try:
+            if _conn is None:
+                _conn = sqlite3.connect(str(db_path()), check_same_thread=False)
+                _conn.row_factory = sqlite3.Row
+                # foreign_keys is per-connection and cheap. WAL is a persistent
+                # property of the DB file (set once in init_db), not re-set here.
+                _conn.execute("PRAGMA foreign_keys=ON;")
+            g.db = _conn
+        except BaseException:
+            _lock.release()
+            raise
     return g.db
 
 
 def close_db(_exc=None) -> None:
-    conn = g.pop("db", None)
-    if conn is not None:
-        conn.close()
+    """Release the DB lock held by this request and discard any open txn."""
+    if g.pop("db", None) is not None:
+        try:
+            if _conn is not None:
+                _conn.rollback()   # no-op when the request already committed
+        except Exception:
+            pass
+        _lock.release()
 
 
 def init_db() -> None:
-    """Create ``data/`` and apply ``schema.sql`` (idempotent — CREATE IF NOT EXISTS)."""
+    """Create ``data/`` and apply ``schema.sql`` (idempotent — CREATE IF NOT EXISTS).
+
+    Also sets WAL journal mode once here; it persists in the DB file, so the
+    shared connection in :func:`get_db` does not need to re-set it."""
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     (DATA_DIR / "uploads").mkdir(exist_ok=True)
     (DATA_DIR / "config").mkdir(exist_ok=True)
     conn = sqlite3.connect(str(DB_PATH))
     try:
+        conn.execute("PRAGMA journal_mode=WAL;")
         conn.executescript(SCHEMA_PATH.read_text(encoding="utf-8"))
         conn.commit()
     finally:
