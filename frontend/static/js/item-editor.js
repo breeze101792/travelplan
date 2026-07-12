@@ -26,28 +26,38 @@ export function openItemEditor(ctx, { plan, item, settings, members, onSave }) {
   const body = el('div', { class: 'modal-body' });
   modal.appendChild(body);
 
-  // title
-  body.appendChild(el('label', { class: 'field', text: 'Title' }));
+  // Two columns: type-specific fields on the left, status/dates/attachments/expense
+  // on the right. Falls back to a single column on narrow screens (CSS handles it).
+  const grid = el('div', { class: 'ie-grid' });
+  const colMain = el('div', { class: 'ie-col' });  // title + type-specific fields
+  const colSide = el('div', { class: 'ie-col' });  // status, dates, attachments, expense
+  body.appendChild(grid);
+  grid.appendChild(colMain);
+  grid.appendChild(colSide);
+
+  // title (left col — it's the primary thing)
+  colMain.appendChild(el('label', { class: 'field', text: 'Title' }));
   const titleInput = document.createElement('input');
   titleInput.type = 'text';
   titleInput.className = 'input';
   titleInput.value = item.title || '';
   if (readOnly) titleInput.disabled = true;
-  body.appendChild(titleInput);
+  colMain.appendChild(titleInput);
 
-  // type-specific fields
+  // type-specific fields (left col)
   const fieldInputs = {};
   for (const f of (ti.fields || [])) {
-    body.appendChild(el('label', { class: 'field', text: f.label }));
+    colMain.appendChild(el('label', { class: 'field', text: f.label }));
     const inp = makeFieldInput(f, item.details, settings, plan);
     if (readOnly) inp.disabled = true;
     fieldInputs[f.key] = inp;
-    body.appendChild(inp);
+    colMain.appendChild(inp);
   }
 
-  // status
-  body.appendChild(el('label', { class: 'field', text: 'Status' }));
+  // status + dates (right col — they belong with the item's metadata, not its description)
+  colSide.appendChild(el('label', { class: 'field', text: 'Status' }));
   const statusSel = document.createElement('select');
+  statusSel.className = 'input';
   for (const s of ['planned', 'confirmed', 'done']) {
     const o = document.createElement('option');
     o.value = s; o.textContent = s;
@@ -55,32 +65,31 @@ export function openItemEditor(ctx, { plan, item, settings, members, onSave }) {
     statusSel.appendChild(o);
   }
   if (readOnly) statusSel.disabled = true;
-  body.appendChild(statusSel);
+  colSide.appendChild(statusSel);
 
-  // dates
-  body.appendChild(el('label', { class: 'field', text: 'Date' }));
+  colSide.appendChild(el('label', { class: 'field', text: 'Date' }));
   const dateInput = document.createElement('input');
   dateInput.type = 'date';
   dateInput.className = 'input';
   dateInput.value = item.item_date || '';
   if (readOnly) dateInput.disabled = true;
-  body.appendChild(dateInput);
+  colSide.appendChild(dateInput);
 
   let endInput = null;
   if (ti.spans_days) {
-    body.appendChild(el('label', { class: 'field', text: 'End date (checkout)' }));
+    colSide.appendChild(el('label', { class: 'field', text: 'End date (checkout)' }));
     endInput = document.createElement('input');
     endInput.type = 'date';
     endInput.className = 'input';
     endInput.value = item.end_date || '';
     if (readOnly) endInput.disabled = true;
-    body.appendChild(endInput);
+    colSide.appendChild(endInput);
   }
 
-  // attachments
-  body.appendChild(el('h4', { class: 'section-title', text: 'Attachments' }));
+  // attachments (right col)
+  colSide.appendChild(el('h4', { class: 'section-title', text: 'Attachments' }));
   const attList = el('div', { class: 'att-list' });
-  body.appendChild(attList);
+  colSide.appendChild(attList);
   renderAttachments();
 
   if (!readOnly) {
@@ -103,7 +112,7 @@ export function openItemEditor(ctx, { plan, item, settings, members, onSave }) {
       } catch (e) { alert(e.message); }
     });
     const linkRow = el('div', { class: 'link-row' }, [linkUrl, linkCap, linkBtn]);
-    body.appendChild(linkRow);
+    colSide.appendChild(linkRow);
 
     // file upload input (also the touch fallback for drag/drop)
     const fileLabel = el('label', { class: 'file-label', text: 'Upload image: ' });
@@ -114,11 +123,11 @@ export function openItemEditor(ctx, { plan, item, settings, members, onSave }) {
       fileInput.value = '';
     });
     fileLabel.appendChild(fileInput);
-    body.appendChild(fileLabel);
+    colSide.appendChild(fileLabel);
 
-    // compact expense form
-    body.appendChild(el('h4', { class: 'section-title', text: 'Add expense for this item' }));
-    body.appendChild(renderExpenseForm());
+    // compact expense form (right col, below attachments)
+    colSide.appendChild(el('h4', { class: 'section-title', text: 'Add expense for this item' }));
+    colSide.appendChild(renderExpenseForm());
   }
 
   // footer
@@ -172,16 +181,22 @@ export function openItemEditor(ctx, { plan, item, settings, members, onSave }) {
     }
     for (const a of attachments) {
       const row = el('div', { class: 'att-row' });
+      const meta = el('div', { class: 'att-meta' });
       if (a.kind === 'image') {
         const im = document.createElement('img');
         im.src = `/uploads/${a.value}`; im.className = 'att-thumb'; im.alt = a.caption || '';
         row.appendChild(im);
+        meta.appendChild(el('span', {
+          class: 'att-caption',
+          text: a.caption || '(image, no caption)',
+        }));
       } else {
         const ael = document.createElement('a');
         ael.href = a.value; ael.target = '_blank'; ael.rel = 'noopener';
         ael.textContent = a.caption || a.value; ael.className = 'att-link';
-        row.appendChild(ael);
+        meta.appendChild(ael);
       }
+      row.appendChild(meta);
       if (!readOnly) {
         const del = document.createElement('button');
         del.type = 'button'; del.className = 'btn btn-ghost att-del'; del.textContent = 'Delete';
@@ -287,6 +302,7 @@ function makeFieldInput(f, details, settings, plan) {
   }
   if (f.type === 'currency') {
     const s = document.createElement('select');
+    s.className = 'input';
     const blank = document.createElement('option');
     blank.value = ''; blank.textContent = '—'; s.appendChild(blank);
     const preferred = val || (plan && plan.base_currency) || '';

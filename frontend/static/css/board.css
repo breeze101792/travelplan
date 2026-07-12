@@ -117,7 +117,9 @@
 /* ---------- item editor modal (scope under .item-editor to avoid clashing) ---------- */
 .editor-backdrop { position: fixed; inset: 0; background: rgba(15, 23, 42, .55); display: flex; align-items: flex-start; justify-content: center; padding: 5vh 16px; overflow-y: auto; z-index: 100; }
 .modal.item-editor {
-  width: min(560px, 100%);
+  /* The item editor needs real space — type-specific fields, attachments grid,
+   * expense form, all in one modal. 880px on desktop, full width on mobile. */
+  width: min(880px, 100%);
   background: var(--surface, #fff); border-radius: 14px;
   box-shadow: 0 20px 60px rgba(15,23,42,.3);
   display: flex; flex-direction: column;
@@ -125,19 +127,31 @@
 }
 .modal.item-editor .modal-header {
   display: flex; align-items: center; justify-content: space-between;
-  padding: 16px 20px; border-bottom: 1px solid var(--border, #eef2f7);
+  padding: 16px 22px; border-bottom: 1px solid var(--border, #eef2f7);
 }
-.modal.item-editor .modal-header h3 { margin: 0; font-size: 1.1rem; }
+.modal.item-editor .modal-header h3 { margin: 0; font-size: 1.15rem; }
 .modal-close {
   border: none; background: transparent; font-size: 1.4rem; line-height: 1; cursor: pointer;
   color: var(--muted, #64748b); padding: 2px 6px; border-radius: 6px;
 }
 .modal-close:hover { background: var(--surface-2, #f1f5f9); color: var(--text, #111827); }
-.modal.item-editor .modal-body { padding: 16px 20px; overflow-y: auto; }
+.modal.item-editor .modal-body { padding: 18px 22px; overflow-y: auto; }
 .modal.item-editor .modal-footer {
   display: flex; justify-content: flex-end; gap: 8px;
-  padding: 12px 20px; border-top: 1px solid var(--border, #eef2f7);
+  padding: 12px 22px; border-top: 1px solid var(--border, #eef2f7);
 }
+
+/* Two-column form layout: type-specific fields on the left, meta + attachments
+ * on the right. Falls back to a single column on narrow screens. */
+.modal.item-editor .ie-grid {
+  display: grid;
+  grid-template-columns: 1.4fr 1fr;
+  gap: 0 24px;
+}
+@media (max-width: 720px) {
+  .modal.item-editor .ie-grid { grid-template-columns: 1fr; }
+}
+.modal.item-editor .ie-col { min-width: 0; }
 
 .modal.item-editor .field { display: block; font-size: .8rem; font-weight: 600; color: var(--muted, #475569); margin: 12px 0 4px; }
 .modal.item-editor .field:first-child { margin-top: 0; }
@@ -145,19 +159,22 @@
   width: 100%; box-sizing: border-box; padding: 8px 10px; font-size: .92rem;
   border: 1px solid var(--border, #cbd5e1); border-radius: 8px; background: var(--surface, #fff);
 }
-.modal.item-editor select.input { width: auto; }
+.modal.item-editor select.input { width: 100%; }
+.modal.item-editor textarea.input { resize: vertical; min-height: 60px; }
 .modal.item-editor .section-title { margin: 18px 0 6px; font-size: .95rem; border-top: 1px solid var(--border, #eef2f7); padding-top: 14px; }
 
 .att-list { display: flex; flex-direction: column; gap: 8px; }
-.att-row { display: flex; align-items: center; gap: 10px; }
-.att-thumb { width: 56px; height: 56px; object-fit: cover; border-radius: 6px; border: 1px solid var(--border, #e5e7eb); }
-.att-link { color: var(--accent, #2563eb); text-decoration: none; word-break: break-all; font-size: .88rem; }
+.att-row { display: flex; align-items: center; gap: 12px; padding: 6px 0; }
+.att-thumb { width: 72px; height: 72px; object-fit: cover; border-radius: 8px; border: 1px solid var(--border, #e5e7eb); flex-shrink: 0; }
+.att-meta { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.att-caption { font-size: .85rem; color: var(--ink, #1f2937); word-break: break-word; }
+.att-link { color: var(--accent, #2563eb); text-decoration: none; word-break: break-all; font-size: .85rem; }
 .att-link:hover { text-decoration: underline; }
-.att-del { margin-left: auto; font-size: .78rem; padding: 3px 8px; }
+.att-del { font-size: .78rem; padding: 3px 8px; flex-shrink: 0; }
 .muted { color: var(--muted, #94a3b8); font-size: .85rem; }
 
-.link-row { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
-.link-row .input { flex: 1 1 160px; }
+.link-row { display: grid; grid-template-columns: 1fr 1fr auto; gap: 8px; margin-top: 8px; }
+@media (max-width: 540px) { .link-row { grid-template-columns: 1fr; } }
 .file-label { display: inline-block; margin-top: 10px; font-size: .85rem; color: var(--muted, #475569); cursor: pointer; }
 .file-label input[type=file] { margin-left: 6px; }
 
