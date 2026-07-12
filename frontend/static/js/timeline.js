@@ -194,62 +194,42 @@ function renderDay(day, items, settings, nowFraction) {
     grid.appendChild(el('div', { class: 'now-line', style: `top: ${nowFraction * 24 * HOUR_PX}px;` }));
   }
 
-  // Hotels covering this day: first night = check-in bar (real .tl-item),
-  // last night = check-out bar (real .tl-item), middle nights = small "stay"
-  // bar at 00:00 showing which hotel + "Night N of M". All of these are
-  // treated as timed bars so they stack with the rest of the day.
+  // Hotel stays: every night the trip is in the hotel, draw ONE compact bar
+  // pinned to 23:00→24:00 at the bottom of the day (the "you'll be sleeping
+  // here" indicator). Hotels are an overnight thing — they should never fight
+  // for daytime space with flights, activities, or meals. The label on the
+  // bar says what's happening that night: check-in time on the first night,
+  // check-out time on the last night, "night N of M" in the middle.
+  const HOTEL_TOP = 23;  // 23:00
+  const HOTEL_END = 24;  // 24:00
   const tiHotel = settings.item_types.hotel || { label: 'Hotel' };
   const hotelsHere = items.filter((i) => i.item_type === 'hotel' && hotelPosition(i, day.date));
   for (const h of hotelsHere) {
     const d = h.details || {};
     const position = hotelPosition(h, day.date);  // 'first' | 'middle' | 'last' | 'only'
     const nights = hotelNights(h).length;
-    const inTime = timeOfDay(d.check_in_time) ?? 15;  // default 15:00
-    const outTime = timeOfDay(d.check_out_time) ?? 11; // default 11:00
     const label = d.hotel_name || h.title || tiHotel.label;
-
+    let time, titleText;
     if (position === 'only') {
-      // single-night: show the bar from check-in to check-out on the same day
-      const start = inTime, end = outTime > inTime ? outTime : inTime + 1;
-      const startTxt = String(d.check_in_time || '15:00');
-      const endTxt = String(d.check_out_time || '11:00');
-      grid.appendChild(makeBar({
-        kind: 'hotel', top: start, end, totalCols: 1, col: 0,
-        title: `🏨 ${label}`,
-        time: `${startTxt} → ${endTxt}`,
-        titleText: `Hotel: ${label} (${startTxt}–${endTxt})`,
-      }));
+      time = `check-in ${d.check_in_time || '15:00'} → check-out ${d.check_out_time || '11:00'}`;
+      titleText = `Hotel: ${label} (single night — check in ${d.check_in_time || '15:00'}, check out ${d.check_out_time || '11:00'})`;
     } else if (position === 'first') {
-      // check-in: bar from check-in time to end-of-day, with a "→ next" hint
-      const start = inTime, end = 24;
-      const startTxt = String(d.check_in_time || '15:00');
-      grid.appendChild(makeBar({
-        kind: 'hotel', top: start, end, totalCols: 1, col: 0,
-        title: `🏨 ${label}`,
-        time: `check-in ${startTxt} · ${nights} night${nights > 1 ? 's' : ''} →`,
-        titleText: `Hotel: ${label} — check in ${startTxt}, ${nights} nights`,
-      }));
+      time = `check-in ${d.check_in_time || '15:00'} · ${nights} night${nights > 1 ? 's' : ''}`;
+      titleText = `Hotel: ${label} — check in ${d.check_in_time || '15:00'}, ${nights} nights`;
     } else if (position === 'last') {
-      // check-out: bar from 00:00 to check-out time
-      const start = 0, end = outTime;
-      const endTxt = String(d.check_out_time || '11:00');
-      const nightNum = nights;
-      grid.appendChild(makeBar({
-        kind: 'hotel', top: start, end, totalCols: 1, col: 0,
-        title: `🏨 ${label}`,
-        time: `← last night · check-out ${endTxt}`,
-        titleText: `Hotel: ${label} — check out ${endTxt}`,
-      }));
+      time = `check-out ${d.check_out_time || '11:00'}`;
+      titleText = `Hotel: ${label} — check out ${d.check_out_time || '11:00'}`;
     } else {
-      // middle night: small bar at 00:00 showing "Night N of M @ hotel"
       const nightIdx = hotelNights(h).indexOf(day.date) + 1;
-      grid.appendChild(makeBar({
-        kind: 'hotel-stay', top: 0, end: 0.5, totalCols: 1, col: 0,
-        title: `🏨 ${label}`,
-        time: `night ${nightIdx} of ${nights}`,
-        titleText: `Hotel: ${label} (night ${nightIdx} of ${nights})`,
-      }));
+      time = `night ${nightIdx} of ${nights}`;
+      titleText = `Hotel: ${label} (night ${nightIdx} of ${nights})`;
     }
+    grid.appendChild(makeBar({
+      kind: 'hotel', top: HOTEL_TOP, end: HOTEL_END, totalCols: 1, col: 0,
+      title: `🏨 ${label}`,
+      time,
+      titleText,
+    }));
   }
 
   // Timed bars: collect intervals, stack, draw. Hotels are handled above

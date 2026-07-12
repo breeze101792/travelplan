@@ -156,10 +156,13 @@
 .tl-item.transport  { background: #14b8a6; }
 .tl-item.note       { background: #64748b; }
 
-/* Hotel middle-night "stay" indicator: a short bar pinned to 00:00 with the
- * hotel name and "night N of M". Looks like the other item bars (same
- * indigo), but compact — the height of 1 hour block is intentional. */
-.tl-item.hotel-stay { height: 20px !important; }
+/* Hotel stays: one compact bar pinned to 23:00→24:00 at the bottom of each
+ * night in [check-in, check-out). It overlaps the bottom-most hour (23–24)
+ * because hotels are an overnight thing — they share the grid with timed
+ * items during the day, but they own this 1-hour slot every night. The bar
+ * stays at the same height regardless of total cols (so it doesn't shrink
+ * on busy days). */
+.tl-item.hotel[data-hotel-stay] { /* reserved for future hook */ }
 
 /* No-time items (notes) appear as a small chip strip below the grid. */
 .tl-untimed {
