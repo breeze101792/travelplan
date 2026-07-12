@@ -164,6 +164,32 @@
  * on busy days). */
 .tl-item.hotel[data-hotel-stay] { /* reserved for future hook */ }
 
+/* Backup / alternative items: same color as the type (so you can still tell
+ * flights from trains) but with a dashed border + lower opacity so the eye
+ * reads them as "the plan B, not the plan A". The diagonal stripes are
+ * drawn by a ::before overlay so they layer on top of whatever background
+ * color the type's rule set. */
+.tl-item.tl-item-backup {
+  opacity: .68;
+  border-style: dashed;
+  border-color: rgba(255,255,255,.85);
+  border-width: 1px;
+}
+.tl-item.tl-item-backup::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: repeating-linear-gradient(
+    -45deg,
+    rgba(255,255,255,0) 0,
+    rgba(255,255,255,0) 5px,
+    rgba(255,255,255,0.18) 5px,
+    rgba(255,255,255,0.18) 9px
+  );
+  border-radius: var(--tl-bar-radius);
+}
+
 /* No-time items (notes) appear as a small chip strip below the grid. */
 .tl-untimed {
   display: flex;

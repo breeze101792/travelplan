@@ -44,6 +44,21 @@ export function openItemEditor(ctx, { plan, item, settings, members, onSave }) {
   if (readOnly) titleInput.disabled = true;
   colMain.appendChild(titleInput);
 
+  // "This is a backup" checkbox — shown right under the title because it's
+  // a property of the item as a whole (not a type-specific field), and it's
+  // something the user is likely to toggle on creation. Stored in
+  // details.is_backup so the timeline can read it without a DB migration.
+  const isBackup = !!(item.details && item.details.is_backup);
+  const backupLabel = document.createElement('label');
+  backupLabel.className = 'checkbox-line';
+  const backupInput = document.createElement('input');
+  backupInput.type = 'checkbox';
+  backupInput.checked = isBackup;
+  if (readOnly) backupInput.disabled = true;
+  backupLabel.appendChild(backupInput);
+  backupLabel.appendChild(document.createTextNode(' This is a backup / alternative plan (shown after the main item on the timeline)'));
+  colMain.appendChild(backupLabel);
+
   // type-specific fields (left col)
   const fieldInputs = {};
   for (const f of (ti.fields || [])) {
@@ -214,11 +229,19 @@ export function openItemEditor(ctx, { plan, item, settings, members, onSave }) {
   }
 
   async function save() {
-    const details = {};
+    // Start from the full existing details so fields the form doesn't show
+    // (like the `is_backup` flag we just added, or any future ad-hoc fields)
+    // survive a save. Then overlay the type-specific field values from the
+    // form so the user can still edit them.
+    const details = Object.assign({}, item.details || {});
     for (const [k, inp] of Object.entries(fieldInputs)) {
       const v = inp.value;
       if (v !== null && v !== undefined && String(v).trim() !== '') details[k] = v;
+      else delete details[k];
     }
+    // The backup flag is a per-item property stored in details, not a
+    // type-specific field, so handle it explicitly.
+    details.is_backup = !!backupInput.checked;
     const body = {
       title: titleInput.value.trim() || item.title,
       item_date: dateInput.value || null,

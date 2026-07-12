@@ -114,13 +114,21 @@ function hotelPosition(hotelItem, date) {
 // Stack overlapping bars side-by-side within a day. Each bar gets a
 // "column index" in [0..maxCols) so its horizontal width is colWidth.
 //
-// Algorithm: sort by start, then by descending duration. For each bar, find
-// the lowest column index whose previous occupant ends at or before the new
-// bar's start; if none, append a new column. This is the standard interval
+// Algorithm: sort by start, then by descending duration, then by main-vs-backup
+// (main items claim the leftmost columns first — so the plan is always
+// to the left of the alternative). For each bar, find the lowest column
+// index whose previous occupant ends at or before the new bar's start;
+// if none, append a new column. This is the standard interval
 // graph-coloring / strip-packing approach.
 function assignColumns(intervals) {
-  // intervals: [{start, end}], returns same array augmented with .col
-  const sorted = intervals.slice().sort((a, b) => a.start - b.start || (b.end - b.start) - (a.end - a.start));
+  // intervals: [{start, end, isBackup}], returns same array augmented with .col
+  const sorted = intervals.slice().sort((a, b) => {
+    if (a.start !== b.start) return a.start - b.start;
+    // longer first so the bigger bar gets the better column
+    if ((b.end - b.start) !== (a.end - a.start)) return (b.end - b.start) - (a.end - a.start);
+    // main before backup at the same start + duration
+    return (a.isBackup ? 1 : 0) - (b.isBackup ? 1 : 0);
+  });
   const cols = []; // cols[i] = end of the rightmost bar in column i
   for (const it of sorted) {
     let placed = -1;
@@ -142,14 +150,16 @@ function assignColumns(intervals) {
 
 // Build one .tl-item bar positioned in the day column. Shared by every item
 // type (hotels, flights, etc.) so they all share the same visual language.
-function makeBar({ kind, top, end, totalCols, col, title, time, titleText }) {
+// `extraClass` lets callers add additional classes (e.g. .tl-item-backup
+// for alternative/backup items).
+function makeBar({ kind, top, end, totalCols, col, title, time, titleText, extraClass = '' }) {
   const w = totalCols || 1;
   const left = 22 + (col / w) * (100 - 22 - 4) + '%';
   const width = (1 / w) * (100 - 22 - 4) + '%';
   const topPx = top * HOUR_PX;
   const height = Math.max(20, (end - top) * HOUR_PX);
   return el('div', {
-    class: `tl-item ${kind}` + (w > 1 ? ' multi' : ''),
+    class: `tl-item ${kind}` + (w > 1 ? ' multi' : '') + extraClass,
     style: `top:${topPx}px; height:${height}px; left:${left}; width:calc(${width} - 2px);`,
     title: titleText,
   }, [
@@ -234,13 +244,16 @@ function renderDay(day, items, settings, nowFraction) {
 
   // Timed bars: collect intervals, stack, draw. Hotels are handled above
   // (each night draws its own bar/segment), so we skip them here.
+  // isBackup is read from details.is_backup (set via the item editor's
+  // 'backup' checkbox). Mains get the leftmost column when bars overlap.
   const timed = [];
   for (const it of items) {
     if (it.item_type === 'hotel') continue;
     if (it.item_date !== day.date) continue;
     const w = itemTimeWindow(it);
     if (!w) continue;
-    timed.push({ item: it, start: w.start, end: w.end });
+    const d = it.details || {};
+    timed.push({ item: it, start: w.start, end: w.end, isBackup: !!d.is_backup });
   }
   const stacked = assignColumns(timed);
   for (const s of stacked) {
@@ -250,18 +263,15 @@ function renderDay(day, items, settings, nowFraction) {
     const f = TIME_FIELDS[it.item_type] || {};
     const startTxt = f.start ? (d[f.start] || '').replace('T', ' ') : '';
     const endTxt   = f.end   ? (d[f.end]   || '').replace('T', ' ') : '';
-    const w = s.totalCols || 1;
-    const left = 22 + (s.col / w) * (100 - 22 - 4) + '%';  // skip the "hour-label gutter"
-    const width = (1 / w) * (100 - 22 - 4) + '%';
-    const top = s.start * HOUR_PX;
-    const height = Math.max(20, (s.end - s.start) * HOUR_PX);
-
+    const isBackup = s.isBackup;
     grid.appendChild(makeBar({
       kind: it.item_type,
       top: s.start, end: s.end, totalCols: s.totalCols, col: s.col,
-      title: it.title || ti.label,
+      title: (isBackup ? '⤷ ' : '') + (it.title || ti.label),
       time: startTxt + (endTxt ? ' → ' + endTxt.split(' ').pop() : ''),
-      titleText: `${ti.label}: ${it.title}` + (startTxt ? ` (${startTxt}${endTxt ? ' – ' + endTxt : ''})` : ''),
+      titleText: (isBackup ? '[BACKUP] ' : '') + `${ti.label}: ${it.title}`
+                 + (startTxt ? ` (${startTxt}${endTxt ? ' – ' + endTxt : ''})` : ''),
+      extraClass: isBackup ? ' tl-item-backup' : '',
     }));
   }
 

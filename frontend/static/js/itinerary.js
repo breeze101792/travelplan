@@ -131,6 +131,9 @@ export async function initItinerary(ctx) {
 
     card.appendChild(el('div', { class: 'card-head' }, [
       el('span', { class: 'card-type', text: ti.label }),
+      (item.details && item.details.is_backup)
+        ? el('span', { class: 'card-badge card-badge-alt', text: 'alt', title: 'Backup / alternative plan — shown after the main item on the timeline' })
+        : null,
       statusBadge(item.status),
     ]));
     card.appendChild(el('h4', { class: 'card-title', text: item.title }));

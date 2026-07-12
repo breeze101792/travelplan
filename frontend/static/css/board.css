@@ -84,6 +84,13 @@
 .status-confirmed { background: #e0f2fe; color: #0369a1; }
 .status-done      { background: #dcfce7; color: #15803d; }
 
+/* "alt" badge for backup/alternative items on the board */
+.card-badge { font-size: .68rem; padding: 2px 7px; border-radius: 999px; font-weight: 600; }
+.card-badge-alt {
+  background: #fff7ed; color: #9a3412;
+  border: 1px dashed #fdba74;
+}
+
 /* ---------- drag states ---------- */
 .card.item.dragging { opacity: .4; }
 .day-items.drag-over {
@@ -155,6 +162,17 @@
 
 .modal.item-editor .field { display: block; font-size: .8rem; font-weight: 600; color: var(--muted, #475569); margin: 12px 0 4px; }
 .modal.item-editor .field:first-child { margin-top: 0; }
+.modal.item-editor .checkbox-line {
+  display: flex; align-items: flex-start; gap: 8px;
+  margin: 8px 0 4px;
+  padding: 8px 10px;
+  border: 1px dashed var(--border, #cbd5e1);
+  border-radius: 8px;
+  background: var(--surface-2, #f8fafc);
+  font-size: .85rem; color: var(--muted, #475569);
+  cursor: pointer;
+}
+.modal.item-editor .checkbox-line input[type=checkbox] { margin: 2px 0 0; flex-shrink: 0; }
 .modal.item-editor .input {
   width: 100%; box-sizing: border-box; padding: 8px 10px; font-size: .92rem;
   border: 1px solid var(--border, #cbd5e1); border-radius: 8px; background: var(--surface, #fff);
