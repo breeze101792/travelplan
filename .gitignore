@@ -2,6 +2,7 @@
 __pycache__/
 *.pyc
 .venv/
+.venv_*/
 
 # All user data & config (DB, uploads, secret key) live under data/
 data/travelplan.db

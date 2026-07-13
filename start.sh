@@ -67,22 +67,25 @@ HOST="${HOST:-0.0.0.0}"
 DEBUG_VAL="${DEBUG:-0}"
 
 # ---- Python environment ----
-if [[ ! -d ".venv" ]]; then
-  echo ">> creating virtualenv (.venv)"
-  python3 -m venv .venv
+# Per-host venv so the same checkout works across machines without
+# collisions. Override with VENV_DIR=/path/to/venv if you need to pin it.
+VENV_DIR="${VENV_DIR:-.venv_$(hostname)}"
+if [[ ! -d "$VENV_DIR" ]]; then
+  echo ">> creating virtualenv (${VENV_DIR})"
+  python3 -m venv "$VENV_DIR"
 fi
 # some installs ship a venv without pip; bootstrap it
-if ! .venv/bin/python -m pip --version >/dev/null 2>&1; then
-  .venv/bin/python -m ensurepip --upgrade >/dev/null
+if ! "$VENV_DIR/bin/python" -m pip --version >/dev/null 2>&1; then
+  "$VENV_DIR/bin/python" -m ensurepip --upgrade >/dev/null
 fi
-if ! .venv/bin/python -c "import flask" >/dev/null 2>&1; then
+if ! "$VENV_DIR/bin/python" -c "import flask" >/dev/null 2>&1; then
   echo ">> installing dependencies (flask)"
-  .venv/bin/python -m pip install -q -r backend/requirements.txt
+  "$VENV_DIR/bin/python" -m pip install -q -r backend/requirements.txt
 fi
 
 # ---- self-tests (run quietly; surface output only on failure) ----
 echo ">> running expense engine self-tests"
-if ! out=$(.venv/bin/python -m backend.expense 2>&1); then
+if ! out=$("$VENV_DIR/bin/python" -m backend.expense 2>&1); then
   echo "!! self-tests FAILED:" >&2
   printf '%s\n' "$out" >&2
   exit 1
@@ -93,8 +96,9 @@ cat <<EOF
 >> TravelPlan starting
    URL:    http://${HOST}:${PORT}
    Data:   ${ROOT}/data
+   Venv:   ${ROOT}/${VENV_DIR}
    Debug:  ${DEBUG_VAL}    (DEBUG=1 for auto-reload)
    Tip:    first run? open the URL and create the admin account.
            stop with Ctrl-C.
 EOF
-PORT="$PORT" HOST="$HOST" DEBUG="$DEBUG_VAL" exec .venv/bin/python -m backend.app
+PORT="$PORT" HOST="$HOST" DEBUG="$DEBUG_VAL" exec "$VENV_DIR/bin/python" -m backend.app
