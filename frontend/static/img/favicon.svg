@@ -1,0 +1,71 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  TravelPlan favicon. Single SVG; scales cleanly to every size browsers ask for.
+  Concept: a small plane in the upper-left flies along a curving route that
+  ends in a location pin in the lower-right. Indigo on a soft circular
+  background so it reads as an app icon when added to a phone home screen.
+
+  ViewBox is 64x64; everything is integer-aligned to grid lines for sharp
+  rendering at 16/32/48px.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="TravelPlan">
+  <defs>
+    <!-- Indigo gradient for the disc; matches the app's --accent / #6366f1 -->
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#6366f1"/>
+      <stop offset="100%" stop-color="#4f46e5"/>
+    </linearGradient>
+    <!-- Subtle drop shadow for the plane so it lifts off the disc -->
+    <filter id="planeShadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur in="SourceAlpha" stdDeviation="0.6"/>
+      <feOffset dx="0" dy="0.6" result="off"/>
+      <feComponentTransfer><feFuncA type="linear" slope="0.35"/></feComponentTransfer>
+      <feMerge><feMergeNode/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+  </defs>
+
+  <!-- Circular background (rounded-square clip for iOS-like feel) -->
+  <rect x="0" y="0" width="64" height="64" rx="14" fill="url(#bg)"/>
+
+  <!-- Route: dashed curve from upper-left to lower-right pin.
+       Cubic Bezier with two control points; stroke is dashed, white, with
+       a soft 0.55 opacity so it sits behind the plane + pin. -->
+  <path d="M 14 18
+           C 22 24, 30 14, 38 24
+           S 50 40, 48 46"
+        fill="none"
+        stroke="#ffffff"
+        stroke-width="2.5"
+        stroke-linecap="round"
+        stroke-dasharray="2 3"
+        opacity="0.55"/>
+
+  <!-- Plane, in the upper-left, pointing toward the route's start.
+       Built from simple shapes so it renders sharp at 16px. -->
+  <g transform="translate(10 10) rotate(35)" filter="url(#planeShadow)">
+    <!-- fuselage (long pill) -->
+    <rect x="-1.4" y="-1" width="14" height="2" rx="1" fill="#ffffff"/>
+    <!-- nose triangle -->
+    <polygon points="12.6,-1 16,0 12.6,1" fill="#ffffff"/>
+    <!-- main wing (perpendicular) -->
+    <polygon points="4,-1 7,-6 9,-6 9,-1" fill="#ffffff"/>
+    <polygon points="4,1  7,6  9,6  9,1"  fill="#ffffff"/>
+    <!-- tail fin -->
+    <polygon points="-1.4,-1 -2.5,-4 -0.5,-4 -0.5,-1" fill="#ffffff"/>
+  </g>
+
+  <!-- Pin, lower-right at the route's end. Teardrop with a hole. -->
+  <g transform="translate(48 46)">
+    <!-- shadow underneath the pin -->
+    <ellipse cx="0" cy="9" rx="4.5" ry="1.3" fill="#000000" opacity="0.18"/>
+    <!-- teardrop body -->
+    <path d="M 0 -8
+             C 4.4 -8, 7 -4.4, 7 0
+             C 7 4.5, 2.5 7.5, 0 9
+             C -2.5 7.5, -7 4.5, -7 0
+             C -7 -4.4, -4.4 -8, 0 -8 Z"
+          fill="#ffffff"/>
+    <!-- pin hole (the indigo of the disc shows through) -->
+    <circle cx="0" cy="-1" r="2.4" fill="url(#bg)"/>
+  </g>
+</svg>
