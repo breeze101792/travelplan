@@ -69,13 +69,10 @@ return a tuple from a helper. The DOM-shim test is the safety net.
 ### `getBoundingClientRect` in the DOM shim
 
 Node has no layout, so tests that read `getBoundingClientRect` need
-either an explicit rect on the element or a zero-rect default. The
-shim supports both: set `el._rect = { left, top, width, height }` to
-simulate a laid-out box, or leave it unset to get `{0,0,0,0}`. The
-item-editor's board-fit logic (see below) relies on this — the
-itinerary test sets `board._rect = { left: 64, top: 180, width: 1200,
-height: 640 }` to simulate a desktop layout and asserts the editor's
-inline `width` matches.
+either an explicit rect on the element or a zero-rect default. If the
+shim ever needs to support this, the pattern is: set
+`el._rect = { left, top, width, height }` to simulate a laid-out box,
+or leave it unset to get `{0,0,0,0}`.
 
 ### Per-test fresh data dir + `db.reset_for_tests()`
 
@@ -127,23 +124,6 @@ constrains the element. `width` won, `max-width` didn't. Override
 both. (The fix is in `board.css` `.modal.item-editor` with explicit
 `max-width: min(90vw, 1800px)` plus `padding` and `margin` so the
 wide layout is fully self-styled.)
-
-### Item editor: match the board region, not the viewport
-
-A viewport-relative width (`80vw`) still left unused space on either
-side of the modal and felt like a centered pop-up. The user wanted
-"as wide as the board page." The fix: on open, measure
-`document.getElementById('board').getBoundingClientRect()` and apply
-`left/top/width/height` directly to both the backdrop and the modal
-via inline styles (which beat the class rules). Lock
-`document.body.style.overflow = 'hidden'` so the board doesn't
-scroll while the modal is open, and restore the previous overflow on
-close. The modal now feels like the board itself expanding into the
-editor.
-
-Fallback: if `#board` isn't on the page (shouldn't happen — the
-editor is only opened from the plan board), the CSS default
-(`min(90vw, 1800px)`, centered) applies.
 
 ### `/auth/settings` is self-serve only
 
