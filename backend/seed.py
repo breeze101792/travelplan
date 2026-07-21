@@ -246,14 +246,78 @@ def seed() -> None:
         rate(p2, "ISK", 0.0066)  # 1 ISK = 0.0066 EUR
         payment(p2, admin, carol, 2000, "EUR", "thanks for the lagoon")
 
+        # =========================================================== Plan 3: Beijing 2026 (CNY)
+        p3 = db.execute(
+            """INSERT INTO plans (title, description, owner_id, start_date, end_date, base_currency)
+               VALUES (?, ?, ?, ?, ?, ?)""",
+            ("Beijing 2026", "Forbidden City, Great Wall, Peking duck. Five days in the capital.",
+             admin, "2026-09-10", "2026-09-15", "CNY"),
+        ).lastrowid
+        db.commit()
+        share(p3, alice, "editor")
+
+        h3 = item(p3, "hotel", "王府井饭店 Wangfujing Hotel", "2026-09-10", end="2026-09-15", status="confirmed",
+                  details={"hotel_name": "Wangfujing Hotel", "address": "88 Wangfujing Dajie, Dongcheng, Beijing",
+                           "check_in_time": "14:00", "check_out_time": "12:00",
+                           "booking_ref": "WH-30187", "price": "4500", "currency": "CNY",
+                           "link": "https://example.com/wangfujing", "note": "5 nights, breakfast included"})
+        add_image(h3, "hotel", "hotel lobby")
+
+        f3 = item(p3, "flight", "CA 985 SFO -> PEK", "2026-09-10", status="confirmed",
+                  details={"airline": "Air China", "flight_no": "CA985", "from": "SFO", "to": "PEK",
+                           "depart_time": "2026-09-10T13:00", "arrive_time": "2026-09-11T17:00",
+                           "confirmation": "CA-9F4K2", "price": "700", "currency": "USD",
+                           "link": "https://example.com/ca985"})
+        add_image(f3, "flight", "boarding pass")
+
+        t3 = item(p3, "transport", "DiDi from PEK to hotel", "2026-09-11",
+                  details={"mode": "taxi", "from": "PEK", "to": "Wangfujing",
+                           "time": "2026-09-11T17:30", "price": "200", "currency": "CNY"})
+
+        rest3 = item(p3, "restaurant", "全聚德烤鸭 Quanjude (Wangfujing)", "2026-09-11",
+                     details={"name": "Quanjude", "address": "9 Wangfujing Dajie, Beijing",
+                              "time": "2026-09-11T19:00", "party_size": 2,
+                              "link": "https://example.com/quanjude"})
+
+        act3 = item(p3, "activity", "故宫 Forbidden City", "2026-09-11",
+                    details={"name": "Forbidden City", "location": "Dongcheng, Beijing",
+                             "start_time": "2026-09-11T09:00", "end_time": "2026-09-11T13:00"})
+
+        act4 = item(p3, "activity", "慕田峪长城 Great Wall (Mutianyu)", "2026-09-12", status="confirmed",
+                    details={"name": "Mutianyu Great Wall", "location": "Huairou, Beijing",
+                             "start_time": "2026-09-12T08:00", "end_time": "2026-09-12T16:00",
+                             "price": "180", "currency": "CNY",
+                             "link": "https://example.com/mutianyu"})
+
+        tk3 = item(p3, "ticket", "天坛 Temple of Heaven", "2026-09-13",
+                   details={"name": "Temple of Heaven", "venue": "Tiantan, Dongcheng",
+                            "start_time": "2026-09-13T09:00", "end_time": "2026-09-13T11:00",
+                            "qty": 2, "price": "70", "currency": "CNY",
+                            "link": "https://example.com/tiantan"})
+
+        note3 = item(p3, "note", "24小时内到酒店登记 Register at hotel within 24h", "2026-09-10",
+                     details={"text": "Foreign visitors must register their passport at the hotel within 24 hours of arrival."})
+
+        ex.create_expense(p3, "Wangfujing Hotel (5 nights)", "CNY", 450000, "EQUAL",
+                          [(admin, 450000)], [admin, alice], item_id=h3, created_by=admin, decimals=2)
+        ex.create_expense(p3, "Flights SFO-PEK", "USD", 140000, "SHARES",
+                          [(alice, 140000)], [(admin, 1), (alice, 1)], item_id=f3, created_by=alice, decimals=2)
+        ex.create_expense(p3, "Forbidden City tickets", "CNY", 12000, "EXACT",
+                          [(admin, 12000)], [(admin, 8000), (alice, 4000)], item_id=act3, created_by=admin, decimals=2)
+        ex.create_expense(p3, "Quanjude dinner", "CNY", 48000, "PERCENTAGE",
+                          [(alice, 48000)], [(admin, 5000), (alice, 5000)], item_id=rest3, created_by=alice, decimals=2)
+        rate(p3, "USD", 7.2)  # 1 USD = 7.2 CNY
+        payment(p3, alice, admin, 20000, "CNY", "settle duck")
+
     print("\nSeeded fake data. Login credentials (password for ALL accounts): password")
-    print("  admin  / password   (admin — owns both trips)")
-    print("  alice  / password   (editor on both trips)")
+    print("  admin  / password   (admin — owns all three trips)")
+    print("  alice  / password   (editor on all three trips)")
     print("  bob    / password   (editor on Japan 2026)")
     print("  carol  / password   (viewer on Iceland Ring Road)")
     print("\nTrips:")
     print("  Japan 2026          base JPY  (expenses in JPY + USD)")
     print("  Iceland Ring Road   base EUR  (expenses in EUR + ISK)")
+    print("  Beijing 2026        base CNY  (expenses in CNY + USD; rate 1 USD = 7.2 CNY)")
     print("\nOpen http://127.0.0.1:5000 and sign in as admin.\n")
 
 
