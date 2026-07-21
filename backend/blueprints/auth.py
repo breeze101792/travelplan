@@ -7,6 +7,7 @@ Routes:
   GET     /auth/logout                    log out
   GET/POST /auth/members                  admin: list / create member accounts (legacy)
   POST    /auth/members (action=delete)   admin: remove a member (legacy)
+  POST    /auth/members/edit              admin: edit a user's display name and/or password
   GET     /auth/settings                  self-serve profile + password (any user)
   POST    /auth/settings/profile          change own display name
   POST    /auth/settings/password         change own password (requires current)
@@ -22,7 +23,8 @@ from flask import (Blueprint, render_template, request, redirect, url_for,
 
 from ..auth import (hash_password, verify_password, login_user, logout_user,
                     current_user, login_required, admin_required, admin_exists,
-                    validate_password, update_user, refresh_session_display_name)
+                    validate_password, update_user, refresh_session_display_name,
+                    get_user)
 from ..db import get_db
 from ..util import ok, err
 
@@ -124,6 +126,43 @@ def members():
                                    members=list_users(db))
         return redirect(url_for("auth.members"))
     return render_template("members.html", error=None, members=list_users(db))
+
+
+@auth_bp.route("/auth/members/edit", methods=["POST"])
+@admin_required
+def members_edit():
+    """Admin edit: change a user's display name and/or password.
+
+    The settings page is strictly self-serve, so this is where an admin
+    resets someone else's password or fixes a display name. Blank fields
+    mean "don't change" (password is intentionally optional so the admin
+    doesn't have to re-type a password just to fix a name). Self-edit of
+    the admin is allowed; role changes are intentionally not exposed.
+    """
+    try:
+        user_id = int(request.form.get("user_id") or 0)
+    except ValueError:
+        return redirect(url_for("auth.members", error="Invalid user."))
+    target = get_user(user_id)
+    if target is None:
+        return redirect(url_for("auth.members", error="User not found."))
+    # display_name: present in form -> set (trimmed). Absent -> leave alone.
+    display_name = request.form.get("display_name")
+    if display_name is not None:
+        display_name = display_name.strip()
+    # new_password: present AND non-blank -> set. Blank -> leave alone.
+    new_pw = request.form.get("new_password") or ""
+    if new_pw:
+        pw_err = validate_password(new_pw)
+        if pw_err:
+            return redirect(url_for("auth.members", error=pw_err))
+    if (display_name is None or display_name == "") and not new_pw:
+        return redirect(url_for("auth.members", info="No changes to save."))
+    update_user(user_id=user_id, display_name=display_name, password=new_pw or None)
+    # If the admin edited their own display name, refresh the topbar.
+    if user_id == current_user()["id"]:
+        refresh_session_display_name()
+    return redirect(url_for("auth.members", info=f"Updated “{target['username']}”."))
 
 
 def list_users(db):

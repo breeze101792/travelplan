@@ -14,6 +14,7 @@
   </div>
 
   {% if error %}<div class="error-msg">{{ error }}</div>{% endif %}
+  {% if info %}<div class="notice">{{ info }}</div>{% endif %}
 
   <section class="card members-section">
     <h2 class="card-title">Create member</h2>
@@ -58,7 +59,8 @@
           <td>{{ m.display_name }}</td>
           <td><span class="badge">{{ m.role }}</span></td>
           <td class="muted">{{ m.created_at }}</td>
-          <td>
+          <td style="white-space: nowrap;">
+            <button type="button" class="btn btn-sm" data-action="members-edit" data-user-id="{{ m.id }}">Edit</button>
             {% if m.role != 'admin' %}
             <form method="post" action="/auth/members" style="display:inline"
                   onsubmit="return confirm('Delete member {{ m.username|e }}?');">
@@ -69,9 +71,55 @@
             {% endif %}
           </td>
         </tr>
+        <tr id="members-edit-row-{{ m.id }}" data-members-edit-row="{{ m.id }}" hidden>
+          <td colspan="5" style="background: var(--surface-2, #f1f5f9); padding: 16px;">
+            <form method="post" action="/auth/members/edit" class="edit-member-form">
+              <input type="hidden" name="user_id" value="{{ m.id }}">
+              <div class="field-row">
+                <div class="field" style="flex: 2;">
+                  <label>Display name</label>
+                  <input name="display_name" type="text" value="{{ m.display_name }}">
+                </div>
+                <div class="field" style="flex: 2;">
+                  <label>New password (leave blank to keep)</label>
+                  <input name="new_password" type="password" minlength="8" autocomplete="new-password">
+                </div>
+              </div>
+              <div class="form-actions">
+                <button class="btn btn-primary" type="submit">Save</button>
+                <button type="button" class="btn btn-ghost" data-action="members-edit-cancel" data-user-id="{{ m.id }}">Cancel</button>
+              </div>
+            </form>
+          </td>
+        </tr>
         {% endfor %}
       </tbody>
     </table>
   </section>
 </div>
+{% endblock %}
+
+{% block scripts %}
+<script type="module">
+  for (const btn of document.querySelectorAll('[data-action="members-edit"]')) {
+    btn.addEventListener('click', () => {
+      const id = btn.getAttribute('data-user-id');
+      const row = document.getElementById('members-edit-row-' + id);
+      if (row) row.hidden = false;
+      btn.disabled = true;
+      const firstInput = row && row.querySelector('input[name="display_name"]');
+      if (firstInput) firstInput.focus();
+    });
+  }
+  for (const btn of document.querySelectorAll('[data-action="members-edit-cancel"]')) {
+    btn.addEventListener('click', () => {
+      const id = btn.getAttribute('data-user-id');
+      const row = document.getElementById('members-edit-row-' + id);
+      if (row) row.hidden = true;
+      const editBtn = document.querySelector(
+        '[data-action="members-edit"][data-user-id="' + id + '"]');
+      if (editBtn) editBtn.disabled = false;
+    });
+  }
+</script>
 {% endblock %}

@@ -176,6 +176,68 @@ class AuthSettingsTests(unittest.TestCase):
         _logout(self.client)
         self.assertEqual(_login(self.client, "alice", "password").status_code, 302)
 
+    # ---- admin: edit any user (display name and/or password) on /auth/members/edit ----
+    def test_admin_changes_alice_password_via_members_edit(self):
+        _login(self.client, "admin", "password")
+        with self.app.app_context():
+            alice_id = db_mod.get_db().execute("SELECT id FROM users WHERE username='alice'").fetchone()["id"]
+        r = self.client.post("/auth/members/edit", data={
+            "user_id": str(alice_id), "display_name": "Alice (admin reset)", "new_password": "aliceadminpw1",
+        }, follow_redirects=False)
+        self.assertEqual(r.status_code, 302)
+        # New password works, old one doesn't.
+        _logout(self.client)
+        self.assertEqual(_login(self.client, "alice", "aliceadminpw1").status_code, 302)
+        _logout(self.client)
+        self.assertEqual(_login(self.client, "alice", "password").status_code, 200)
+
+    def test_admin_edit_blank_fields_is_noop(self):
+        _login(self.client, "admin", "password")
+        with self.app.app_context():
+            alice_id = db_mod.get_db().execute("SELECT id FROM users WHERE username='alice'").fetchone()["id"]
+        r = self.client.post("/auth/members/edit", data={
+            "user_id": str(alice_id), "display_name": "", "new_password": "",
+        }, follow_redirects=False)
+        self.assertEqual(r.status_code, 302)
+        # Password unchanged, name unchanged.
+        _logout(self.client)
+        self.assertEqual(_login(self.client, "alice", "password").status_code, 302)
+
+    def test_admin_edit_rejects_short_password(self):
+        _login(self.client, "admin", "password")
+        with self.app.app_context():
+            alice_id = db_mod.get_db().execute("SELECT id FROM users WHERE username='alice'").fetchone()["id"]
+        r = self.client.post("/auth/members/edit", data={
+            "user_id": str(alice_id), "display_name": "x", "new_password": "short",
+        }, follow_redirects=False)
+        self.assertEqual(r.status_code, 302)
+        self.assertIn("error=", r.headers["Location"])
+
+    def test_member_cannot_edit(self):
+        _login(self.client, "alice", "password")
+        with self.app.app_context():
+            admin_id = db_mod.get_db().execute("SELECT id FROM users WHERE username='admin'").fetchone()["id"]
+        r = self.client.post("/auth/members/edit", data={
+            "user_id": str(admin_id), "display_name": "hacker", "new_password": "hackerpw1",
+        })
+        self.assertEqual(r.status_code, 403)
+
+    def test_admin_edits_own_password_via_members_edit(self):
+        # The admin changing their own password is a common case (the
+        # original "fix password" scenario the user reported). Use the
+        # new /auth/members/edit route.
+        _login(self.client, "admin", "password")
+        with self.app.app_context():
+            admin_id = db_mod.get_db().execute("SELECT id FROM users WHERE username='admin'").fetchone()["id"]
+        r = self.client.post("/auth/members/edit", data={
+            "user_id": str(admin_id), "display_name": "Admin", "new_password": "newadminpw1",
+        }, follow_redirects=False)
+        self.assertEqual(r.status_code, 302)
+        _logout(self.client)
+        self.assertEqual(_login(self.client, "admin", "newadminpw1").status_code, 302)
+        _logout(self.client)
+        self.assertEqual(_login(self.client, "admin", "password").status_code, 200)
+
 
 if __name__ == "__main__":
     unittest.main()
