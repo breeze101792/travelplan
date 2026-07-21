@@ -122,20 +122,32 @@
 .add-type:hover { background: var(--surface-2, #f1f5f9); border-color: var(--accent, #6366f1); }
 
 /* ---------- item editor modal (scope under .item-editor to avoid clashing) ---------- */
-.editor-backdrop { position: fixed; inset: 0; background: rgba(15, 23, 42, .55); display: flex; align-items: flex-start; justify-content: center; padding: 5vh clamp(16px, 3vw, 40px); overflow-y: auto; z-index: 100; }
+.editor-backdrop { position: fixed; inset: 0; background: rgba(15, 23, 42, .55); display: flex; align-items: flex-start; justify-content: center; padding: 5vh clamp(8px, 1.5vw, 24px); overflow-y: auto; z-index: 100; }
 .modal.item-editor {
   /* The item editor needs real space — type-specific fields, attachments
-   * grid, expense form, all in one modal. Sized to ~80% of the viewport
-   * (capped at 1600px) so it feels like a proper desktop panel rather
-   * than a phone-sized pop-up, while still shrinking gracefully on
+   * grid, expense form, all in one modal. Sized to ~90% of the viewport
+   * (capped at 1800px) so it feels like a proper desktop panel that
+   * uses the available width, rather than a phone-sized pop-up with
+   * wasted space on either side, while still shrinking gracefully on
    * narrower windows and filling the screen on phones. Collapses to a
    * single column only when the modal itself is too narrow to fit both
-   * columns comfortably. */
-  width: min(80vw, 1600px);
+   * columns comfortably.
+   *
+   * NOTE: the item-editor markup carries BOTH `.modal` (from base.css)
+   * and `.modal.item-editor`. base.css's `.modal` is a generic
+   * small-dialog style with `max-width: 540px`; without these explicit
+   * overrides below, the higher-specificity `.modal` width would lose
+   * to the base.css `max-width: 540px`, capping this wide panel at
+   * phone size. We override width + max-width + padding + margin so the
+   * item editor is fully self-styled. */
+  width: min(90vw, 1800px);
+  max-width: min(90vw, 1800px);
   background: var(--surface, #fff); border-radius: 14px;
   box-shadow: 0 20px 60px rgba(15,23,42,.3);
   display: flex; flex-direction: column;
   max-height: 90vh;
+  padding: 0;
+  margin: 0 0 40px 0;
 }
 .modal.item-editor .modal-header {
   display: flex; align-items: center; justify-content: space-between;
