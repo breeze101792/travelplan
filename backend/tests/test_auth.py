@@ -1,7 +1,8 @@
-"""Tests for the auth blueprint: login, self-serve settings, and admin user
-management. Uses Flask's built-in test client + unittest (no pytest, no
-extra dependencies). Run with: ``python -m backend.tests`` from the
-project root.
+"""Tests for the auth self-serve settings page: anonymous redirect, the
+display-name and password change forms, and every rejection path for the
+password change. Admin user management is covered by the legacy
+/auth/members page and is not exercised here (the new settings page is
+self-serve only).
 """
 from __future__ import annotations
 
@@ -46,7 +47,6 @@ def _fresh_app():
 
 
 def _create_user(app, *, username, password, display_name, role="member"):
-    """Create a user via the model (skipping the signup flow)."""
     from backend.auth import hash_password
     with app.app_context():
         db_mod.get_db().execute(
@@ -73,7 +73,6 @@ class AuthSettingsTests(unittest.TestCase):
         self.client = self.app.test_client()
         _create_user(self.app, username="admin", password="password", display_name="Admin", role="admin")
         _create_user(self.app, username="alice", password="password", display_name="Alice Wang", role="member")
-        _create_user(self.app, username="bob", password="password", display_name="Bob Garcia", role="member")
 
     def tearDown(self):
         shutil.rmtree(getattr(self.app, "_test_tmp", None) or "/tmp/__none__", ignore_errors=True)
@@ -89,6 +88,7 @@ class AuthSettingsTests(unittest.TestCase):
         r = self.client.get("/auth/settings")
         self.assertEqual(r.status_code, 200)
         self.assertIn(b"Your account", r.data)
+        # The page is self-serve only; no member-management UI.
         self.assertNotIn(b"Existing accounts", r.data)
         self.assertNotIn(b"Create member", r.data)
 
@@ -96,8 +96,12 @@ class AuthSettingsTests(unittest.TestCase):
         _login(self.client, "admin", "password")
         r = self.client.get("/auth/settings")
         self.assertEqual(r.status_code, 200)
-        self.assertIn(b"Existing accounts", r.data)
-        self.assertIn(b"Create member", r.data)
+        self.assertIn(b"Your account", r.data)
+        # Admins still don't see member management here — that's on /auth/members.
+        self.assertNotIn(b"Existing accounts", r.data)
+        self.assertNotIn(b"Create member", r.data)
+        # A small hint links to the members page instead.
+        self.assertIn(b"/auth/members", r.data)
 
     # ---- self-serve: change own display name ----
     def test_change_own_display_name_updates_session(self):
@@ -171,86 +175,6 @@ class AuthSettingsTests(unittest.TestCase):
         self.assertIn("error=", r.headers["Location"])
         _logout(self.client)
         self.assertEqual(_login(self.client, "alice", "password").status_code, 302)
-
-    # ---- admin: create member ----
-    def test_admin_creates_member(self):
-        _login(self.client, "admin", "password")
-        r = self.client.post("/auth/settings/admin/create-user", data={
-            "username": "carol", "display_name": "Carol Singh", "password": "carolpass1",
-        }, follow_redirects=False)
-        self.assertEqual(r.status_code, 302)
-        _logout(self.client)
-        self.assertEqual(_login(self.client, "carol", "carolpass1").status_code, 302)
-
-    def test_admin_cannot_create_with_short_password(self):
-        _login(self.client, "admin", "password")
-        r = self.client.post("/auth/settings/admin/create-user", data={
-            "username": "shorty", "display_name": "Short", "password": "abc",
-        }, follow_redirects=False)
-        self.assertEqual(r.status_code, 302)
-        self.assertIn("error=", r.headers["Location"])
-
-    def test_member_cannot_create_user(self):
-        _login(self.client, "alice", "password")
-        r = self.client.post("/auth/settings/admin/create-user", data={
-            "username": "evil", "display_name": "Evil", "password": "evilpass1",
-        })
-        self.assertEqual(r.status_code, 403)
-
-    # ---- admin: edit another user (display name + password) ----
-    def test_admin_edits_user_name_and_password(self):
-        _login(self.client, "admin", "password")
-        with self.app.app_context():
-            bob_id = db_mod.get_db().execute("SELECT id FROM users WHERE username='bob'").fetchone()["id"]
-        r = self.client.post("/auth/settings/admin/edit-user", data={
-            "user_id": str(bob_id), "display_name": "Bob the Builder", "new_password": "bobnewpw1",
-        }, follow_redirects=False)
-        self.assertEqual(r.status_code, 302)
-        with self.app.app_context():
-            row = db_mod.get_db().execute("SELECT display_name FROM users WHERE id = ?", (bob_id,)).fetchone()
-            self.assertEqual(row["display_name"], "Bob the Builder")
-        _logout(self.client)
-        self.assertEqual(_login(self.client, "bob", "bobnewpw1").status_code, 302)
-
-    def test_admin_edit_no_change_is_noop(self):
-        _login(self.client, "admin", "password")
-        with self.app.app_context():
-            bob_id = db_mod.get_db().execute("SELECT id FROM users WHERE username='bob'").fetchone()["id"]
-        r = self.client.post("/auth/settings/admin/edit-user", data={
-            "user_id": str(bob_id), "display_name": "", "new_password": "",
-        }, follow_redirects=False)
-        self.assertEqual(r.status_code, 302)
-
-    # ---- admin: delete safety ----
-    def test_admin_cannot_delete_self(self):
-        _login(self.client, "admin", "password")
-        with self.app.app_context():
-            admin_id = db_mod.get_db().execute("SELECT id FROM users WHERE username='admin'").fetchone()["id"]
-        r = self.client.post("/auth/settings/admin/delete-user", data={"user_id": str(admin_id)},
-                             follow_redirects=False)
-        self.assertEqual(r.status_code, 302)
-        self.assertIn("error=", r.headers["Location"])
-        with self.app.app_context():
-            row = db_mod.get_db().execute("SELECT id FROM users WHERE username='admin'").fetchone()
-            self.assertEqual(row["id"], admin_id)
-
-    def test_admin_can_delete_a_member(self):
-        _login(self.client, "admin", "password")
-        with self.app.app_context():
-            bob_id = db_mod.get_db().execute("SELECT id FROM users WHERE username='bob'").fetchone()["id"]
-        r = self.client.post("/auth/settings/admin/delete-user", data={"user_id": str(bob_id)},
-                             follow_redirects=False)
-        self.assertEqual(r.status_code, 302)
-        with self.app.app_context():
-            row = db_mod.get_db().execute("SELECT id FROM users WHERE username='bob'").fetchone()
-            self.assertIsNone(row)
-
-    def test_member_cannot_delete(self):
-        _login(self.client, "alice", "password")
-        with self.app.app_context():
-            bob_id = db_mod.get_db().execute("SELECT id FROM users WHERE username='bob'").fetchone()["id"]
-        r = self.client.post("/auth/settings/admin/delete-user", data={"user_id": str(bob_id)})
-        self.assertEqual(r.status_code, 403)
 
 
 if __name__ == "__main__":

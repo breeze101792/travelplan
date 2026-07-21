@@ -1,20 +1,17 @@
-"""Auth blueprint: first-run admin setup, login/logout, member management (admin),
-self-serve settings (any logged-in user), and admin user management.
+"""Auth blueprint: first-run admin setup, login/logout, self-serve settings,
+and the legacy members page (admin user management).
 
 Routes:
-  GET/POST /auth/setup                           create the admin (only when none exists)
-  GET/POST /auth/login                           log in
-  GET     /auth/logout                           log out
-  GET/POST /auth/members                         admin: list / create member accounts (legacy)
-  POST    /auth/members (action=delete)          admin: remove a member (legacy)
-  GET     /auth/settings                         self-serve profile + password + (admin) members
-  POST    /auth/settings/profile                 change own display name
-  POST    /auth/settings/password                change own password (requires current)
-  POST    /auth/settings/admin/create-user       admin: create a member
-  POST    /auth/settings/admin/edit-user         admin: edit a user's display name and/or password
-  POST    /auth/settings/admin/delete-user       admin: delete a user (with safety checks)
-  GET     /api/me                                current session (401 if anonymous)
-  GET     /api/members                           admin: all member accounts (for the share dialog)
+  GET/POST /auth/setup                    create the admin (only when none exists)
+  GET/POST /auth/login                    log in
+  GET     /auth/logout                    log out
+  GET/POST /auth/members                  admin: list / create member accounts (legacy)
+  POST    /auth/members (action=delete)   admin: remove a member (legacy)
+  GET     /auth/settings                  self-serve profile + password (any user)
+  POST    /auth/settings/profile          change own display name
+  POST    /auth/settings/password         change own password (requires current)
+  GET     /api/me                         current session (401 if anonymous)
+  GET     /api/members                    admin: all member accounts (for the share dialog)
 """
 from __future__ import annotations
 
@@ -25,8 +22,7 @@ from flask import (Blueprint, render_template, request, redirect, url_for,
 
 from ..auth import (hash_password, verify_password, login_user, logout_user,
                     current_user, login_required, admin_required, admin_exists,
-                    validate_password, update_user, refresh_session_display_name,
-                    get_user)
+                    validate_password, update_user, refresh_session_display_name)
 from ..db import get_db
 from ..util import ok, err
 
@@ -150,25 +146,16 @@ def api_members():
 
 # ---------------------------------------------------------------- settings
 #
-# The /auth/settings page is the primary UI for the user to change their
-# own display name and password, and (for admins) to manage all accounts.
-# Older /auth/members page is kept for back-compat.
-
-def _all_users():
-    return [dict(r) for r in get_db().execute(
-        "SELECT id, username, display_name, role, created_at FROM users ORDER BY created_at"
-    ).fetchall()]
-
+# Self-serve: any logged-in user can change their own display name and
+# password here. Admin user management lives on the legacy /auth/members
+# page (kept for back-compat and linked from the topbar for admins).
 
 @auth_bp.route("/auth/settings", methods=["GET"])
 @login_required
 def settings():
-    me = current_user()
     return render_template(
         "settings.html",
-        me=me,
-        is_admin=(me["role"] == "admin"),
-        users=_all_users() if me["role"] == "admin" else [],
+        me=current_user(),
         error=request.args.get("error"),
         info=request.args.get("info"),
     )
@@ -205,84 +192,3 @@ def settings_password():
         return redirect(url_for("auth.settings", error="Current password is incorrect."))
     update_user(user_id=current_user()["id"], password=new_pw)
     return redirect(url_for("auth.settings", info="Password updated."))
-
-
-@auth_bp.route("/auth/settings/admin/create-user", methods=["POST"])
-@admin_required
-def settings_create_user():
-    username = (request.form.get("username") or "").strip()
-    password = request.form.get("password") or ""
-    display_name = (request.form.get("display_name") or "").strip()
-    if not username or not password:
-        return redirect(url_for("auth.settings", error="Username and password are required."))
-    pw_err = validate_password(password)
-    if pw_err:
-        return redirect(url_for("auth.settings", error=pw_err))
-    db = get_db()
-    try:
-        db.execute(
-            "INSERT INTO users (username, password_hash, display_name, role) VALUES (?, ?, ?, 'member')",
-            (username, hash_password(password), display_name or username),
-        )
-        db.commit()
-    except sqlite3.IntegrityError:
-        return redirect(url_for("auth.settings", error="That username is taken."))
-    return redirect(url_for("auth.settings", info=f"Created member “{username}”."))
-
-
-@auth_bp.route("/auth/settings/admin/edit-user", methods=["POST"])
-@admin_required
-def settings_edit_user():
-    try:
-        user_id = int(request.form.get("user_id") or 0)
-    except ValueError:
-        return redirect(url_for("auth.settings", error="Invalid user."))
-    target = get_user(user_id)
-    if target is None:
-        return redirect(url_for("auth.settings", error="User not found."))
-    display_name = request.form.get("display_name")
-    new_pw = request.form.get("new_password") or ""
-    if display_name is not None:
-        display_name = display_name.strip()
-    if new_pw:
-        pw_err = validate_password(new_pw)
-        if pw_err:
-            return redirect(url_for("auth.settings", error=pw_err))
-    # No-op if both fields are blank.
-    if (display_name is None or display_name == "") and not new_pw:
-        return redirect(url_for("auth.settings", info="No changes to save."))
-    update_user(user_id=user_id, display_name=display_name, password=new_pw or None)
-    # If the admin edited their own display name, refresh the topbar.
-    if user_id == current_user()["id"]:
-        refresh_session_display_name()
-    return redirect(url_for("auth.settings", info=f"Updated “{target['username']}”."))
-
-
-@auth_bp.route("/auth/settings/admin/delete-user", methods=["POST"])
-@admin_required
-def settings_delete_user():
-    try:
-        user_id = int(request.form.get("user_id") or 0)
-    except ValueError:
-        return redirect(url_for("auth.settings", error="Invalid user."))
-    if user_id == current_user()["id"]:
-        return redirect(url_for("auth.settings", error="You can't delete your own account here."))
-    target = get_user(user_id)
-    if target is None:
-        return redirect(url_for("auth.settings", error="User not found."))
-    # The self-delete check above already prevents an admin from reducing
-    # the admin count to zero (admins cannot delete themselves), so an
-    # explicit "last admin" check would be unreachable. The safety here is
-    # therefore the self-delete guard plus the ownership/share guard below
-    # (a user with plans or shares can't be silently deleted).
-    # plan_members / items / expenses have ON DELETE CASCADE? (no — we don't
-    # define any). To avoid orphaning plan ownership or shares, refuse to
-    # delete a user who owns plans or has plan_members rows.
-    owns = get_db().execute("SELECT COUNT(*) AS c FROM plans WHERE owner_id = ?", (user_id,)).fetchone()["c"]
-    shared = get_db().execute("SELECT COUNT(*) AS c FROM plan_members WHERE user_id = ?", (user_id,)).fetchone()["c"]
-    if owns or shared:
-        return redirect(url_for("auth.settings",
-            error=f"Refusing to delete: {target['username']} owns {owns} plan(s) and is shared on {shared}. Reassign or delete those first."))
-    get_db().execute("DELETE FROM users WHERE id = ?", (user_id,))
-    get_db().commit()
-    return redirect(url_for("auth.settings", info=f"Deleted “{target['username']}”."))
