@@ -1,11 +1,17 @@
-/* itinerary.js — renders the plan board (day columns + item cards), wires up
- * inline title editing, the add-item toolbar, drag/drop and the item editor.
+/* itinerary.js — renders the plan board (day columns + item cards) and wires
+ * the pending-changes bar. All mutations on the page go through the Staging
+ * engine; nothing reaches the server until the user clicks Save in the bar.
+ *
  * Page contract: window.__CONTEXT__ = { planId, role }.
  */
-import { apiGet, apiPost, apiPatch, apiUpload } from '/static/js/api.js';
+import { apiGet, apiPatch } from '/static/js/api.js';
 import { el, clear, fmtDate, money, statusBadge, loadSettings } from '/static/js/util.js';
 import { enableDragDrop } from '/static/js/dragdrop.js';
 import { openItemEditor } from '/static/js/item-editor.js';
+import {
+  Staging, createBlankItemOp, saveItemOp, updateItemOp, updatePlanTitleOp,
+  moveItemOp, uploadImageOp, addLinkOp, deleteAttachmentOp, addExpenseOp,
+} from '/static/js/staging.js';
 
 /* JPY/KRW have 0 minor units; everything else uses 2. Matches backend. */
 function decimalsFor(cur) {
@@ -86,15 +92,11 @@ function detailLines(item, settings) {
 }
 
 export async function initItinerary(ctx) {
-  // Boot fetches fire in parallel. They used to await one at a time
-  // (settings -> plan -> members -> items -> by-item), so entering a plan
-  // waited for 5 sequential round-trips. None of these depend on each other,
-  // so they go in a single Promise.all — the page is ready when the slowest
-  // one returns instead of the sum of all of them.
+  // Boot fetches fire in parallel.
   let settings, plan, allMembers, days, base;
   let focusedDay = '';
-  let items = [];
-  let expenseByItem = new Map(); // itemId -> { total, missing }
+  let expenseByItem = new Map();
+  let staging;
 
   try {
     const [, planRes, memRes, itemsRes, expRes] = await Promise.all([
@@ -109,7 +111,6 @@ export async function initItinerary(ctx) {
     days = buildDays(plan);
     base = plan.base_currency;
     focusedDay = days.length ? days[0].date : '';
-    items = itemsRes.items;
     expenseByItem = new Map((expRes.items || []).map(
       (x) => [x.item_id, { total: x.grand_total_base_cents, missing: x.has_missing_rate }]
     ));
@@ -119,7 +120,54 @@ export async function initItinerary(ctx) {
     return;
   }
 
+  // Staging holds the local pending changes. Base = last server-confirmed
+  // state. Subscribing to changes triggers a board re-render.
+  staging = new Staging({
+    baseItems: itemsRes.items,
+    basePlan: plan,
+    onChange: () => render(),
+  });
+  staging.subscribe(() => renderPendingBar());
+
+  // expenseByItem is read-only display state; not part of staging base. After
+  // a successful save the server is the source of truth, so we re-fetch.
+  async function refreshExpenseTotals() {
+    try {
+      const expRes = await apiGet(`/api/plans/${ctx.planId}/expenses/by-item`).catch(() => ({ items: [] }));
+      expenseByItem = new Map(
+        (expRes.items || []).map(x => [x.item_id, { total: x.grand_total_base_cents, missing: x.has_missing_rate }])
+      );
+    } catch (e) { /* non-fatal */ }
+  }
+
   /* ----- rendering ----- */
+
+  function render() {
+    const board = document.getElementById('board');
+    if (!board) return;
+    clear(board);
+    const items = staging.viewItems();
+    const grouped = groupByDay(items, days, settings);
+    for (const day of days) {
+      const sec = el('section', { class: 'day', dataset: { date: day.date } });
+      sec.addEventListener('click', () => setFocusedDay(day.date));
+      sec.appendChild(el('h3', {
+        class: 'day-title',
+        text: day.index ? `Day ${day.index} · ${day.label}` : day.label,
+      }));
+      const itemsBox = el('div', { class: 'day-items', dataset: { date: day.date } });
+      for (const item of grouped.get(day.date)) {
+        itemsBox.appendChild(renderCard(item, day.date));
+      }
+      sec.appendChild(itemsBox);
+      const bar = makeAddBar(day.date);
+      if (bar) sec.appendChild(bar);
+      board.appendChild(sec);
+    }
+    // Repaint the plan title (in case a title edit was staged or undone).
+    const titleEl = document.getElementById('plan-title');
+    if (titleEl) titleEl.textContent = staging.viewPlan().title || '';
+  }
 
   function renderCard(item, dayDate) {
     const ti = settings.item_types[item.item_type] || { label: item.item_type };
@@ -128,6 +176,7 @@ export async function initItinerary(ctx) {
       dataset: { itemId: String(item.id), date: dayDate, end: item.end_date || '', type: item.item_type },
     });
     if (ctx.role !== 'viewer') card.draggable = true;
+    if (item.isLocal) card.classList.add('is-local');
 
     card.appendChild(el('div', { class: 'card-head' }, [
       el('span', { class: 'card-type', text: ti.label }),
@@ -147,13 +196,15 @@ export async function initItinerary(ctx) {
 
     const img = firstImage(item);
     if (img) {
-      const im = el('img', { class: 'card-thumb', src: `/uploads/${img.value}`, alt: '' });
+      const im = el('img', { class: 'card-thumb', src: img.value, alt: '' });
       im.loading = 'lazy';
       card.appendChild(im);
     }
 
     const ex = expenseByItem.get(item.id);
-    if (ex) {
+    if (ex && !item.isLocal) {
+      // Don't show expense totals for unsaved items (the server has no
+      // totals for them). They'll appear after Save + a fresh load.
       card.appendChild(el('div', {
         class: 'card-expense',
         text: ex.missing ? '—' : money(ex.total, decimalsFor(base), base),
@@ -180,42 +231,72 @@ export async function initItinerary(ctx) {
     return det;
   }
 
-  function render() {
-    const board = document.getElementById('board');
-    if (!board) return;
-    clear(board);
-    const grouped = groupByDay(items, days, settings);
-    for (const day of days) {
-      const sec = el('section', { class: 'day', dataset: { date: day.date } });
-      sec.addEventListener('click', () => setFocusedDay(day.date));
-      sec.appendChild(el('h3', {
-        class: 'day-title',
-        text: day.index ? `Day ${day.index} · ${day.label}` : day.label,
-      }));
-      const itemsBox = el('div', { class: 'day-items', dataset: { date: day.date } });
-      for (const item of grouped.get(day.date)) {
-        itemsBox.appendChild(renderCard(item, day.date));
-      }
-      sec.appendChild(itemsBox);
-      const bar = makeAddBar(day.date);
-      if (bar) sec.appendChild(bar);
-      board.appendChild(sec);
-    }
-  }
+  /* ----- pending-changes bar ----- */
 
-  function renderToolbar() {
-    const tb = document.getElementById('add-toolbar');
-    if (!tb) return;
-    clear(tb);
-    if (ctx.role === 'viewer') return;
-    const day = days.find(d => d.date === focusedDay) || days[0];
-    tb.appendChild(el('span', { class: 'toolbar-label', text: `Quick add${day && day.index ? ` (Day ${day.index})` : ''}:` }));
+  function renderPendingBar() {
+    const bar = document.getElementById('pending-bar');
+    if (!bar) return;
+    clear(bar);
+    if (ctx.role === 'viewer') { bar.hidden = true; return; }
+
+    const hasPending = staging.hasPending;
+    const lastLabel = hasPending
+      ? staging.ops[staging.pointer - 1].label
+      : 'All changes saved';
+    const canUndo = staging.canUndo;
+    const canRedo = staging.canRedo;
+    const canSave = hasPending && !staging.saving;
+    const failed = staging.failedOpIndex >= 0;
+    const failedOp = failed ? staging.ops[staging.failedOpIndex] : null;
+    const failedLabel = failedOp ? ` (failed: ${failedOp.label})` : '';
+
+    // Type picker for the Add button. Opens on click; selecting a type
+    // stages a blank item and opens the editor for it.
+    const addDet = el('details', { class: 'pb-add' });
+    addDet.appendChild(el('summary', { class: 'pb-btn pb-add-btn', text: '+ Add' }));
+    const addMenu = el('div', { class: 'pb-add-menu' });
     for (const [type, ti] of Object.entries(settings.item_types)) {
-      const b = el('button', { class: 'toolbar-btn', text: ti.label, title: `Add ${ti.label}` });
-      b.type = 'button';
-      b.addEventListener('click', () => createItem(type, focusedDay));
-      tb.appendChild(b);
+      const b = el('button', { type: 'button', class: 'add-type', text: ti.label });
+      b.addEventListener('click', () => { addDet.removeAttribute('open'); createItem(type, focusedDay); });
+      addMenu.appendChild(b);
     }
+    addDet.appendChild(addMenu);
+
+    const undoBtn = el('button', {
+      type: 'button', class: 'pb-btn',
+      text: '↶ Revert',
+      title: 'Undo the last pending change (Ctrl/Cmd+Z)',
+      disabled: !canUndo,
+      onclick: () => { staging.undo(); },
+    });
+    const redoBtn = el('button', {
+      type: 'button', class: 'pb-btn',
+      text: '↷ Redo',
+      title: 'Redo the last undone change (Ctrl/Cmd+Shift+Z)',
+      disabled: !canRedo,
+      onclick: () => { staging.redo(); },
+    });
+    const saveBtn = el('button', {
+      type: 'button', class: 'pb-btn pb-save',
+      text: staging.saving ? 'Saving…' : 'Save',
+      title: 'Commit all pending changes to the server (Ctrl/Cmd+S)',
+      disabled: !canSave,
+      onclick: () => doSave(),
+    });
+
+    const status = el('span', {
+      class: 'pb-status' + (failed ? ' pb-failed' : ''),
+      text: staging.saving
+        ? 'Saving changes…'
+        : failed
+          ? `Save failed: ${staging.failedError}${failedLabel}`
+          : hasPending
+            ? `${staging.pendingCount} pending change${staging.pendingCount === 1 ? '' : 's'} — last: ${lastLabel}`
+            : 'All changes saved',
+    });
+
+    bar.append(addDet, undoBtn, redoBtn, saveBtn, status);
+    bar.hidden = false;
   }
 
   function setFocusedDay(date) {
@@ -230,12 +311,18 @@ export async function initItinerary(ctx) {
   /* ----- data actions ----- */
 
   async function reload() {
+    // After a successful save, re-fetch items + expenses so the post-save
+    // view reflects the canonical server state (including updated
+    // timestamps, sort keys, etc.). Staging's base is reset to the new
+    // server state.
     try {
       const [itemsRes, expRes] = await Promise.all([
         apiGet(`/api/plans/${ctx.planId}/items`),
         apiGet(`/api/plans/${ctx.planId}/expenses/by-item`).catch(() => ({ items: [] })),
       ]);
-      items = itemsRes.items;
+      const planRes = await apiGet(`/api/plans/${ctx.planId}`).catch(() => ({ plan: staging.base.plan }));
+      staging.base = { items: itemsRes.items, plan: planRes.plan };
+      staging.ops = []; staging.pointer = 0; staging.sessionOps.clear();
       expenseByItem = new Map(
         (expRes.items || []).map(x => [x.item_id, { total: x.grand_total_base_cents, missing: x.has_missing_rate }])
       );
@@ -247,61 +334,95 @@ export async function initItinerary(ctx) {
   }
 
   function openEditorFor(item) {
-    openItemEditor(ctx, { plan, item, settings, members: allMembers, onSave: reload });
+    // Each editor session gets a unique id. The editor stages ops with this
+    // id; on Cancel, the session is discarded (so e.g. a freshly-added blank
+    // item created via the global Add button is removed on Cancel).
+    const sessionId = 'sess-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 8);
+    openItemEditor(ctx, {
+      plan,
+      item,
+      settings,
+      members: allMembers,
+      staging,
+      sessionId,
+      onApplied: () => { render(); renderPendingBar(); },
+    });
   }
 
-  async function createItem(type, dayDate) {
-    // Pre-fill cells the app already knows: the item's date is the day column
-    // it was added from, and a spanning item (hotel) gets a 1-night checkout
-    // (check-in day + 1) so the user doesn't have to type it.
+  function createItem(type, dayDate) {
+    // Pre-fill cells the app already knows. The editor will run for the user
+    // to enter title/details. Stage a blank item so the user sees it on the
+    // board immediately and Cancel removes it. Spanning items (hotels) get
+    // a 1-night default checkout so the user doesn't have to type it.
     const ti = settings.item_types[type];
-    const body = {
-      item_type: type,
-      title: '(Untitled)',
-      item_date: dayDate || null,
-    };
+    let defaultEnd = null;
     if (ti && ti.spans_days && dayDate) {
       const d = new Date(dayDate + 'T00:00:00');
       d.setDate(d.getDate() + 1);
-      body.end_date = isoOf(d);
+      defaultEnd = isoOf(d);
     }
+    const sessionId = 'sess-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 8);
+    const op = createBlankItemOp({
+      planId: ctx.planId, item_type: type, item_date: dayDate || null,
+      end_date: defaultEnd, sessionId,
+    });
+    staging.add(op);
+    const draft = staging.viewItems().find(x => x.id === op._draftId);
+    if (draft) {
+      openItemEditor(ctx, {
+        plan, item: draft, settings, members: allMembers,
+        staging, sessionId,
+        onApplied: () => { render(); renderPendingBar(); },
+      });
+    }
+  }
+
+  async function doSave() {
+    if (staging.saving) return;
     try {
-      const res = await apiPost(`/api/plans/${ctx.planId}/items`, body);
+      const apiMod = await import('/static/js/api.js');
+      await staging.saveAll({
+        post: apiMod.apiPost, patch: apiMod.apiPatch, del: apiMod.apiDel, upload: apiMod.apiUpload,
+      });
       await reload();
-      openEditorFor(res.item);
+      // Brief "Saved" status is rendered by renderPendingBar (it reads
+      // staging.hasPending which is now false).
     } catch (e) {
-      alert(e.message);
+      renderPendingBar();
     }
   }
 
   /* drag/drop callbacks */
-  async function onMove(itemId, { item_date, before_id, after_id }) {
-    const item = items.find(i => String(i.id) === String(itemId));
+
+  function onMove(itemId, { item_date, before_id, after_id }) {
+    const item = staging.viewItems().find(i => String(i.id) === String(itemId));
     if (!item) return;
-    const body = {
-      item_date: item_date || null,
-      before_id: before_id || null,
-      after_id: after_id || null,
-    };
-    const ti = settings.item_types[item.item_type];
-    if (ti && ti.spans_days) body.end_date = item.end_date || null; // hotels: shift start, keep length
-    try {
-      await apiPost(`/api/items/${itemId}/move`, body);
-    } catch (e) {
-      alert(e.message);
-    } finally {
-      await reload();
+    // Drag/drop on a not-yet-saved item: open the editor instead of
+    // staging a move, since the move's effect is captured when the user
+    // Applies (the editor's snapshot includes the new date).
+    if (item.isLocal || (typeof itemId === 'string' && itemId.startsWith('_'))) {
+      openEditorFor(item);
+      return;
     }
+    const ti = settings.item_types[item.item_type];
+    const end_date = (ti && ti.spans_days) ? (item.end_date || null) : null;
+    staging.add(moveItemOp({
+      itemId, item_date, before_id, after_id, end_date,
+    }));
   }
 
-  async function onUpload(itemId, file) {
-    try {
-      await apiUpload(`/api/items/${itemId}/upload`, file);
-    } catch (e) {
-      alert(e.message);
-    } finally {
-      await reload();
+  function onUpload(itemId, file) {
+    const item = staging.viewItems().find(i => String(i.id) === String(itemId));
+    if (!item) return;
+    if (item.isLocal || (typeof itemId === 'string' && itemId.startsWith('_'))) {
+      // Uploading to a not-yet-saved item: open the editor so the upload is
+      // bundled into the Apply (otherwise the file would be sent to a
+      // non-existent server id).
+      openEditorFor(item);
+      return;
     }
+    const previewUrl = URL.createObjectURL(file);
+    staging.add(uploadImageOp({ itemId, file, previewUrl, caption: file.name }));
   }
 
   /* ----- inline plan title editing (owner only) ----- */
@@ -320,7 +441,7 @@ export async function initItinerary(ctx) {
     const titleEl = document.getElementById('plan-title');
     if (titleEl && ctx.role === 'owner') {
       titleEl.classList.add('editable');
-      titleEl.title = 'Click to edit title';
+      titleEl.title = 'Click to edit title (saves on click Save in the bar)';
       titleEl.addEventListener('click', () => beginTitleEdit(titleEl));
     }
   }
@@ -337,18 +458,13 @@ export async function initItinerary(ctx) {
     input.focus();
     input.select();
 
-    async function commit() {
+    function commit() {
       const v = input.value.trim();
       if (v && v !== cur) {
-        try {
-          const res = await apiPatch(`/api/plans/${ctx.planId}`, { title: v });
-          titleEl.textContent = res.plan.title;
-          return;
-        } catch (e) {
-          alert(e.message);
-        }
+        staging.add(updatePlanTitleOp({ planId: ctx.planId, title: v }));
+      } else {
+        titleEl.textContent = cur;
       }
-      titleEl.textContent = cur;
     }
 
     input.addEventListener('blur', commit, { once: true });
@@ -361,11 +477,39 @@ export async function initItinerary(ctx) {
     });
   }
 
+  /* ----- keyboard shortcuts ----- */
+  // Cmd/Ctrl+Z = undo, Cmd/Ctrl+Shift+Z (or Ctrl+Y) = redo, Cmd/Ctrl+S = save.
+  // Ignored when the user is typing in a form field, so they don't conflict
+  // with text editing.
+  function isTypingTarget(t) {
+    if (!t) return false;
+    if (t.matches && t.matches('input, textarea, select, [contenteditable]')) return true;
+    return false;
+  }
+  function onKeydown(e) {
+    if (isTypingTarget(e.target)) return;
+    const mod = e.metaKey || e.ctrlKey;
+    if (!mod) return;
+    const k = e.key.toLowerCase();
+    if (k === 'z' && !e.shiftKey) { e.preventDefault(); staging.undo(); }
+    else if ((k === 'z' && e.shiftKey) || k === 'y') { e.preventDefault(); staging.redo(); }
+    else if (k === 's') { e.preventDefault(); doSave(); }
+  }
+
+  /* ----- beforeunload guard ----- */
+  function onBeforeUnload(e) {
+    if (staging && staging.hasPending) {
+      e.preventDefault();
+      e.returnValue = '';
+      return '';
+    }
+  }
+
   /* ----- boot ----- */
-  // items + expense totals were already fetched in parallel above, so just
-  // render — no second round-trip. (reload() is still used after mutations.)
   render();
   wireHeader();
-  renderToolbar();
+  renderPendingBar();
   enableDragDrop(document.getElementById('board'), { onMove, onUpload });
+  document.addEventListener('keydown', onKeydown);
+  window.addEventListener('beforeunload', onBeforeUnload);
 }

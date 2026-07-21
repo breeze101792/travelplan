@@ -1,17 +1,41 @@
 /* item-editor.js — modal editor for a single itinerary item.
  *
- * openItemEditor(ctx, { plan, item, settings, members, onSave })
- *   ctx      = { planId, role }
- *   members  = [{ id, username, display_name, role }] (owner + shared) for the expense form
- *   onSave   = async callback (board re-render) invoked after save / expense add
+ * In the new staged model, the editor's "Apply" button stages a SAVE_ITEM op
+ * (composite: create-or-patch + bundled sub-effects for new attachments,
+ * uploaded images, and a new expense). Nothing reaches the server until the
+ * user clicks the global Save button in the pending bar.
+ *
+ * "Cancel" discards the entire session: any DELETE_ATTACHMENT op the user
+ * staged, plus the CREATE_BLANK_ITEM op (if the editor was opened for a new
+ * item), plus the SAVE_ITEM op (if Apply was already clicked).
+ *
+ * openItemEditor(ctx, { plan, item, settings, members, staging, sessionId, onApplied })
+ *   ctx        = { planId, role }
+ *   item       = the current view of the item (may have pending changes)
+ *   members    = [{ id, username, display_name, role }]
+ *   staging    = the Staging engine
+ *   sessionId  = unique id for this editor session (for Cancel-discard)
+ *   onApplied  = callback invoked after a successful Apply
  */
-import { apiPost, apiPatch, apiUpload, apiDel } from '/static/js/api.js';
 import { el, clear } from '/static/js/util.js';
+import {
+  saveItemOp, uploadImageOp, addLinkOp, deleteAttachmentOp, addExpenseOp,
+} from '/static/js/staging.js';
 
-export function openItemEditor(ctx, { plan, item, settings, members, onSave }) {
+export function openItemEditor(ctx, { plan, item, settings, members, staging, sessionId, onApplied }) {
   const ti = settings.item_types[item.item_type] || { label: item.item_type, fields: [] };
   const readOnly = ctx.role === 'viewer';
-  let attachments = (item.attachments || []).slice();
+  const isNew = !!item.isNew || (typeof item.id === 'string' && item.id.startsWith('_-'));
+  // Local in-editor state. The user can add attachments, upload images, and
+  // add an expense here; they are bundled into the SAVE_ITEM op on Apply.
+  // Existing attachments (with real ids) are also tracked here so we can
+  // detect deletes and stage DELETE_ATTACHMENT ops for them.
+  let pendingSubEffects = [];      // sub-ops to bundle into SAVE_ITEM (new link/image/expense)
+  // Track the "current" attachment list for the editor: starts with the
+  // item's attachments, mutated by Add Link / Upload / Delete.
+  let attachments = (item.attachments || []).slice().map(a => Object.assign({}, a));
+  // Files queued for upload (kept in editor until Apply so a Cancel discards them).
+  let pendingFiles = [];           // { file, previewUrl, caption, kind: 'image' }
 
   /* ----- structure ----- */
   const backdrop = el('div', { class: 'modal-backdrop editor-backdrop' });
@@ -20,7 +44,7 @@ export function openItemEditor(ctx, { plan, item, settings, members, onSave }) {
 
   modal.appendChild(el('div', { class: 'modal-header' }, [
     el('h3', { text: ti.label + (readOnly ? ' (read-only)' : '') }),
-    el('button', { class: 'modal-close', text: '×', onclick: close }),
+    el('button', { class: 'modal-close', text: '×', onclick: onCancel }),
   ]));
 
   const body = el('div', { class: 'modal-body' });
@@ -29,13 +53,13 @@ export function openItemEditor(ctx, { plan, item, settings, members, onSave }) {
   // Two columns: type-specific fields on the left, status/dates/attachments/expense
   // on the right. Falls back to a single column on narrow screens (CSS handles it).
   const grid = el('div', { class: 'ie-grid' });
-  const colMain = el('div', { class: 'ie-col' });  // title + type-specific fields
-  const colSide = el('div', { class: 'ie-col' });  // status, dates, attachments, expense
+  const colMain = el('div', { class: 'ie-col' });
+  const colSide = el('div', { class: 'ie-col' });
   body.appendChild(grid);
   grid.appendChild(colMain);
   grid.appendChild(colSide);
 
-  // title (left col — it's the primary thing)
+  // title (left col)
   colMain.appendChild(el('label', { class: 'field', text: 'Title' }));
   const titleInput = document.createElement('input');
   titleInput.type = 'text';
@@ -44,10 +68,7 @@ export function openItemEditor(ctx, { plan, item, settings, members, onSave }) {
   if (readOnly) titleInput.disabled = true;
   colMain.appendChild(titleInput);
 
-  // "This is a backup" checkbox — shown right under the title because it's
-  // a property of the item as a whole (not a type-specific field), and it's
-  // something the user is likely to toggle on creation. Stored in
-  // details.is_backup so the timeline can read it without a DB migration.
+  // "This is a backup" checkbox
   const isBackup = !!(item.details && item.details.is_backup);
   const backupLabel = document.createElement('label');
   backupLabel.className = 'checkbox-line';
@@ -69,7 +90,7 @@ export function openItemEditor(ctx, { plan, item, settings, members, onSave }) {
     colMain.appendChild(inp);
   }
 
-  // status + dates (right col — they belong with the item's metadata, not its description)
+  // status + dates (right col)
   colSide.appendChild(el('label', { class: 'field', text: 'Status' }));
   const statusSel = document.createElement('select');
   statusSel.className = 'input';
@@ -115,34 +136,58 @@ export function openItemEditor(ctx, { plan, item, settings, members, onSave }) {
     linkCap.type = 'text'; linkCap.className = 'input'; linkCap.placeholder = 'Caption';
     const linkBtn = document.createElement('button');
     linkBtn.type = 'button'; linkBtn.className = 'btn'; linkBtn.textContent = 'Add link';
-    linkBtn.addEventListener('click', async () => {
+    linkBtn.addEventListener('click', () => {
       const v = linkUrl.value.trim();
       if (!v) return;
-      try {
-        const res = await apiPost(`/api/items/${item.id}/attachments`,
-          { kind: 'link', value: v, caption: linkCap.value.trim() || undefined });
-        attachments.push(res.attachment);
-        linkUrl.value = ''; linkCap.value = '';
-        renderAttachments();
-      } catch (e) { alert(e.message); }
+      // Add to the editor's local attachment list; the sub-op is built
+      // lazily on Apply, capturing the local id.
+      const localId = '__pending__' + Math.random().toString(36).slice(2, 10);
+      attachments.push({
+        id: localId,
+        item_id: item.id,
+        kind: 'link',
+        value: v,
+        caption: linkCap.value.trim() || '',
+        isLocal: true,
+        _pendingUrl: v,
+        _pendingCaption: linkCap.value.trim(),
+      });
+      linkUrl.value = ''; linkCap.value = '';
+      renderAttachments();
     });
     const linkRow = el('div', { class: 'link-row' }, [linkUrl, linkCap, linkBtn]);
     colSide.appendChild(linkRow);
 
-    // file upload input (also the touch fallback for drag/drop)
+    // file upload input
     const fileLabel = el('label', { class: 'file-label', text: 'Upload image: ' });
     const fileInput = document.createElement('input');
     fileInput.type = 'file'; fileInput.accept = 'image/*';
     fileInput.addEventListener('change', () => {
-      if (fileInput.files[0]) uploadFile(fileInput.files[0]);
-      fileInput.value = '';
+      if (fileInput.files[0]) {
+        const f = fileInput.files[0];
+        const previewUrl = URL.createObjectURL(f);
+        const localId = '__pending__' + Math.random().toString(36).slice(2, 10);
+        pendingFiles.push({ file: f, previewUrl });
+        attachments.push({
+          id: localId,
+          item_id: item.id,
+          kind: 'image',
+          value: previewUrl,
+          caption: f.name,
+          isLocal: true,
+          _pendingFileIdx: pendingFiles.length - 1,
+        });
+        fileInput.value = '';
+        renderAttachments();
+      }
     });
     fileLabel.appendChild(fileInput);
     colSide.appendChild(fileLabel);
 
     // compact expense form (right col, below attachments)
     colSide.appendChild(el('h4', { class: 'section-title', text: 'Add expense for this item' }));
-    colSide.appendChild(renderExpenseForm());
+    const expenseSection = renderExpenseForm();
+    colSide.appendChild(expenseSection);
   }
 
   // footer
@@ -150,42 +195,128 @@ export function openItemEditor(ctx, { plan, item, settings, members, onSave }) {
   if (readOnly) {
     const closeBtn = document.createElement('button');
     closeBtn.type = 'button'; closeBtn.className = 'btn'; closeBtn.textContent = 'Close';
-    closeBtn.addEventListener('click', close);
+    closeBtn.addEventListener('click', onCancel);
     footer.appendChild(closeBtn);
   } else {
     const cancelBtn = document.createElement('button');
     cancelBtn.type = 'button'; cancelBtn.className = 'btn btn-ghost'; cancelBtn.textContent = 'Cancel';
-    cancelBtn.addEventListener('click', close);
-    const saveBtn = document.createElement('button');
-    saveBtn.type = 'button'; saveBtn.className = 'btn btn-primary'; saveBtn.textContent = 'Save';
-    saveBtn.addEventListener('click', save);
-    footer.append(cancelBtn, saveBtn);
+    cancelBtn.addEventListener('click', onCancel);
+    const applyBtn = document.createElement('button');
+    applyBtn.type = 'button'; applyBtn.className = 'btn btn-primary';
+    applyBtn.textContent = 'Apply';
+    applyBtn.title = 'Apply changes to the staging area. Click Save in the top bar to commit.';
+    applyBtn.addEventListener('click', onApply);
+    footer.append(cancelBtn, applyBtn);
   }
   modal.appendChild(footer);
 
-  // allow dropping an image file directly onto the modal to upload it
+  // allow dropping an image file directly onto the modal to add it
   modal.addEventListener('dragover', (e) => {
     if (!readOnly && e.dataTransfer.types.includes('Files')) e.preventDefault();
   });
   modal.addEventListener('drop', (e) => {
-    if (readOnly || !e.dataTransfer.files || !e.dataTransfer.files.length) return;
+    if (readOnly || !e.dataTransfer || !e.dataTransfer.files || !e.dataTransfer.files.length) return;
     e.preventDefault();
-    for (const f of e.dataTransfer.files) if (f.type.startsWith('image/')) uploadFile(f);
+    for (const f of e.dataTransfer.files) {
+      if (!f.type.startsWith('image/')) continue;
+      const previewUrl = URL.createObjectURL(f);
+      const localId = '__pending__' + Math.random().toString(36).slice(2, 10);
+      pendingFiles.push({ file: f, previewUrl });
+      attachments.push({
+        id: localId,
+        item_id: item.id,
+        kind: 'image',
+        value: previewUrl,
+        caption: f.name,
+        isLocal: true,
+        _pendingFileIdx: pendingFiles.length - 1,
+      });
+    }
+    renderAttachments();
   });
 
   document.body.appendChild(backdrop);
-  backdrop.addEventListener('click', (e) => { if (e.target === backdrop) close(); });
+  backdrop.addEventListener('click', (e) => { if (e.target === backdrop) onCancel(); });
 
   /* ----- handlers ----- */
 
-  function close() { backdrop.remove(); }
+  function onCancel() {
+    // Discard the entire session: any ops staged during this editor session
+    // (including a CREATE_BLANK_ITEM from the global Add button, a
+    // DELETE_ATTACHMENT for a removed attachment, or a SAVE_ITEM if Apply
+    // was already clicked) are removed. The user can re-open the editor
+    // for the same item to start over.
+    staging.discardSession(sessionId);
+    // Clean up any object URLs we created (for staged image previews).
+    for (const f of pendingFiles) URL.revokeObjectURL(f.previewUrl);
+    backdrop.remove();
+    if (onApplied) onApplied();
+  }
 
-  async function uploadFile(file) {
-    try {
-      const res = await apiUpload(`/api/items/${item.id}/upload`, file);
-      attachments.push(res.attachment);
-      renderAttachments();
-    } catch (e) { alert(e.message); }
+  function onApply() {
+    // Build the snapshot from the form.
+    const details = Object.assign({}, item.details || {});
+    for (const [k, inp] of Object.entries(fieldInputs)) {
+      const v = inp.value;
+      if (v !== null && v !== undefined && String(v).trim() !== '') details[k] = v;
+      else delete details[k];
+    }
+    details.is_backup = !!backupInput.checked;
+    const snapshot = {
+      id: item.id,
+      item_type: item.item_type,
+      title: titleInput.value.trim() || item.title || '(Untitled)',
+      item_date: dateInput.value || null,
+      end_date: endInput ? (endInput.value || null) : (item.end_date || null),
+      status: statusSel.value,
+      details,
+      // Include the up-to-date attachment list so the staged view shows the
+      // editor's additions and the SAVE_ITEM.apply re-derives correctly.
+      attachments: attachments.slice(),
+    };
+    // For non-new items, also propagate the type (the backend may need it
+    // for some fields, but PATCH currently doesn't accept it; safe to omit).
+    // Build the bundled sub-effects: new links, new image uploads, new expense.
+    // DELETE_ATTACHMENT ops are staged directly when the user clicks Delete,
+    // not bundled here.
+    for (const att of attachments) {
+      if (att.isLocal && att._pendingUrl) {
+        pendingSubEffects.push(addLinkOp({
+          itemId: item.id, url: att._pendingUrl, caption: att._pendingCaption,
+          sessionId,
+        }));
+      } else if (att.isLocal && att._pendingFileIdx != null) {
+        const f = pendingFiles[att._pendingFileIdx];
+        if (f) {
+          pendingSubEffects.push(uploadImageOp({
+            itemId: item.id, file: f.file, previewUrl: f.previewUrl,
+            caption: f.file.name, sessionId,
+          }));
+        }
+      }
+    }
+    if (pendingExpenses.length) {
+      for (const e of pendingExpenses) {
+        pendingSubEffects.push(addExpenseOp({
+          planId: ctx.planId, itemId: item.id,
+          description: e.description,
+          currency: e.currency,
+          amountCents: e.amountCents,
+          payerId: e.payerId,
+          participantIds: e.participantIds,
+          sessionId,
+        }));
+      }
+    }
+    staging.add(saveItemOp({
+      planId: ctx.planId,
+      item: snapshot,
+      isNew,
+      sideEffects: pendingSubEffects,
+      sessionId,
+    }));
+    backdrop.remove();
+    if (onApplied) onApplied();
   }
 
   function renderAttachments() {
@@ -199,7 +330,7 @@ export function openItemEditor(ctx, { plan, item, settings, members, onSave }) {
       const meta = el('div', { class: 'att-meta' });
       if (a.kind === 'image') {
         const im = document.createElement('img');
-        im.src = `/uploads/${a.value}`; im.className = 'att-thumb'; im.alt = a.caption || '';
+        im.src = a.value; im.className = 'att-thumb'; im.alt = a.caption || '';
         row.appendChild(im);
         meta.appendChild(el('span', {
           class: 'att-caption',
@@ -215,12 +346,18 @@ export function openItemEditor(ctx, { plan, item, settings, members, onSave }) {
       if (!readOnly) {
         const del = document.createElement('button');
         del.type = 'button'; del.className = 'btn btn-ghost att-del'; del.textContent = 'Delete';
-        del.addEventListener('click', async () => {
-          try {
-            await apiDel(`/api/attachments/${a.id}`);
-            attachments = attachments.filter((x) => x.id !== a.id);
-            renderAttachments();
-          } catch (e) { alert(e.message); }
+        del.addEventListener('click', () => {
+          // Remove from the editor's local list.
+          attachments = attachments.filter((x) => x.id !== a.id);
+          // If this is an existing attachment (real id), stage a DELETE op
+          // immediately so the view reflects the removal. If it's a pending
+          // (local) attachment, just remove from the list — no op needed.
+          if (!a.isLocal && typeof a.id === 'number') {
+            staging.add(deleteAttachmentOp({
+              itemId: item.id, attachmentId: a.id, sessionId,
+            }));
+          }
+          renderAttachments();
         });
         row.appendChild(del);
       }
@@ -228,33 +365,10 @@ export function openItemEditor(ctx, { plan, item, settings, members, onSave }) {
     }
   }
 
-  async function save() {
-    // Start from the full existing details so fields the form doesn't show
-    // (like the `is_backup` flag we just added, or any future ad-hoc fields)
-    // survive a save. Then overlay the type-specific field values from the
-    // form so the user can still edit them.
-    const details = Object.assign({}, item.details || {});
-    for (const [k, inp] of Object.entries(fieldInputs)) {
-      const v = inp.value;
-      if (v !== null && v !== undefined && String(v).trim() !== '') details[k] = v;
-      else delete details[k];
-    }
-    // The backup flag is a per-item property stored in details, not a
-    // type-specific field, so handle it explicitly.
-    details.is_backup = !!backupInput.checked;
-    const body = {
-      title: titleInput.value.trim() || item.title,
-      item_date: dateInput.value || null,
-      status: statusSel.value,
-      details,
-    };
-    if (endInput) body.end_date = endInput.value || null;
-    try {
-      await apiPatch(`/api/items/${item.id}`, body);
-      close();
-      if (onSave) await onSave();
-    } catch (e) { alert(e.message); }
-  }
+  // The expense form queues pending expenses (added on Apply, discarded on
+  // Cancel). Multiple expenses can be queued; each is bundled into the
+  // SAVE_ITEM op as a separate sub-effect.
+  let pendingExpenses = [];
 
   function renderExpenseForm() {
     const wrap = el('div', { class: 'expense-mini' });
@@ -284,31 +398,43 @@ export function openItemEditor(ctx, { plan, item, settings, members, onSave }) {
     const addBtn = document.createElement('button');
     addBtn.type = 'button'; addBtn.className = 'btn'; addBtn.textContent = 'Add expense';
     const statusMsg = el('p', { class: 'muted' });
+    const queuedList = el('ul', { class: 'queued-list' });
 
-    addBtn.addEventListener('click', async () => {
+    function refreshList() {
+      clear(queuedList);
+      pendingExpenses.forEach((e, idx) => {
+        const li = el('li', { class: 'queued-row' }, [
+          el('span', { text: `${e.currency} ${(e.amountCents / 100).toFixed(2)} for ${e.description}` }),
+          el('button', {
+            type: 'button', class: 'btn btn-ghost att-del', text: 'Remove',
+            onclick: () => { pendingExpenses.splice(idx, 1); refreshList(); },
+          }),
+        ]);
+        queuedList.appendChild(li);
+      });
+    }
+
+    addBtn.addEventListener('click', () => {
       const amt = amtInput.value.trim();
       if (!amt) { statusMsg.textContent = 'Enter an amount.'; return; }
-      const payerId = Number(payerSel.value);
-      const participants = members.map((m) => m.id);
-      try {
-        await apiPost(`/api/plans/${ctx.planId}/expenses`, {
-          item_id: item.id,
-          description: descInput.value.trim() || item.title,
-          currency: curSel.value,
-          amount: amt,
-          split_method: 'EQUAL',
-          payers: [{ user_id: payerId, amount: amt }],
-          participants,
-        });
-        statusMsg.textContent = 'Expense added.';
-        amtInput.value = '';
-        if (onSave) await onSave();
-      } catch (e) { statusMsg.textContent = e.message; }
+      const cents = Math.round(parseFloat(amt) * 100);
+      if (!isFinite(cents) || cents <= 0) { statusMsg.textContent = 'Enter a positive amount.'; return; }
+      pendingExpenses.push({
+        description: descInput.value.trim() || item.title || '',
+        currency: curSel.value,
+        amountCents: cents,
+        payerId: Number(payerSel.value),
+        participantIds: members.map((m) => m.id),
+      });
+      statusMsg.textContent = 'Expense queued.';
+      amtInput.value = '';
+      refreshList();
     });
 
     wrap.appendChild(el('div', { class: 'row' }, [descInput]));
     wrap.appendChild(el('div', { class: 'row' }, [amtInput, curSel, payerSel, addBtn]));
     wrap.appendChild(statusMsg);
+    wrap.appendChild(queuedList);
     return wrap;
   }
 }
