@@ -52,6 +52,18 @@ body[data-page="members"] #view.auth-view {
   margin-bottom: 12px;
 }
 
+/* Settings page is wider still (member table) and uses the same card
+ * sections as the members page. */
+body[data-page="settings"] #view {
+  max-width: 820px;
+}
+body[data-page="settings"] #view.auth-view {
+  justify-content: flex-start;
+  padding-top: 32px;
+}
+body[data-page="settings"] .members-section .field-row { gap: 16px; }
+body[data-page="settings"] .members-section .field { min-width: 0; }
+
 @media (max-width: 640px) {
   .auth-card { padding: 20px; }
 }

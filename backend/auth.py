@@ -35,12 +35,75 @@ def ensure_secret_key() -> str:
 
 # ---------------------------------------------------------------- passwords
 
+# Minimum length enforced on every password set or change (own or admin-set
+# on another user). The signup flow uses the same minimum via the helpers
+# below. Keep the constant here so the rule is defined in one place.
+MIN_PASSWORD_LENGTH = 8
+
+
 def hash_password(password: str) -> str:
     return generate_password_hash(password)
 
 
 def verify_password(password: str, password_hash: str) -> bool:
     return check_password_hash(password_hash, password)
+
+
+def validate_password(password: str) -> str | None:
+    """Return an error message if the password is invalid, else None."""
+    if not password:
+        return "Password is required."
+    if len(password) < MIN_PASSWORD_LENGTH:
+        return f"Password must be at least {MIN_PASSWORD_LENGTH} characters."
+    return None
+
+
+# ---------------------------------------------------------------- user updates
+
+def update_display_name(user_id: int, display_name: str) -> None:
+    """Set a user's display name. Empty values fall back to the username."""
+    get_db().execute(
+        "UPDATE users SET display_name = ? WHERE id = ?",
+        (display_name, user_id),
+    )
+    get_db().commit()
+
+
+def update_password(user_id: int, new_password: str) -> None:
+    """Replace a user's password (already validated by validate_password)."""
+    get_db().execute(
+        "UPDATE users SET password_hash = ? WHERE id = ?",
+        (hash_password(new_password), user_id),
+    )
+    get_db().commit()
+
+
+def update_user(user_id: int, *, display_name=None, password=None) -> None:
+    """Apply optional display_name and/or password to a user in one UPDATE.
+
+    Empty/None values for password are a no-op (admin can change just the
+    name). Empty string for display_name clears it (login_user falls back
+    to username). The caller is responsible for password policy; for the
+    self-serve path also require the current password before calling this.
+    """
+    sets, args = [], []
+    if display_name is not None:
+        sets.append("display_name = ?"); args.append(display_name)
+    if password:
+        sets.append("password_hash = ?"); args.append(hash_password(password))
+    if not sets:
+        return
+    args.append(user_id)
+    get_db().execute(f"UPDATE users SET {', '.join(sets)} WHERE id = ?", args)
+    get_db().commit()
+
+
+def get_user(user_id: int) -> dict | None:
+    row = get_db().execute(
+        "SELECT id, username, display_name, role FROM users WHERE id = ?",
+        (user_id,),
+    ).fetchone()
+    return dict(row) if row else None
 
 
 # ---------------------------------------------------------------- sessions
@@ -67,6 +130,23 @@ def current_user() -> dict | None:
         "display_name": session.get("display_name") or session["username"],
         "role": session["role"],
     }
+
+
+def refresh_session_display_name() -> None:
+    """Re-read the current user's display_name from the DB into the session.
+
+    Call after a self-serve rename so the topbar shows the new name without
+    requiring the user to log out and back in. Cheap (single-row lookup).
+    """
+    if "user_id" not in session:
+        return
+    row = get_db().execute(
+        "SELECT display_name, username FROM users WHERE id = ?",
+        (session["user_id"],),
+    ).fetchone()
+    if row is None:
+        return
+    session["display_name"] = row["display_name"] or row["username"]
 
 
 def load_user_record(user_id: int) -> dict | None:

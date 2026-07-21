@@ -24,7 +24,29 @@ export class El {
     this.tagName = String(tag).toUpperCase();
     this.children = [];
     this.parentNode = null;
-    this.dataset = {};
+    // dataset proxies to attrs['data-*'] so that setting
+    // `node.dataset.userId = '1'` (a) makes `node.dataset.userId` return
+    // '1' and (b) makes `node.getAttribute('data-user-id')` return '1',
+    // matching the real DOM. Convert camelCase key to data-kebab-case.
+    const self = this;
+    this.dataset = new Proxy({}, {
+      get(_t, key) {
+        if (key === '_isDataset') return true;
+        const attr = 'data-' + String(key).replace(/[A-Z]/g, (c) => '-' + c.toLowerCase());
+        return Object.prototype.hasOwnProperty.call(self.attrs, attr) ? self.attrs[attr] : undefined;
+      },
+      set(_t, key, value) {
+        if (key === '_isDataset') return true;
+        const attr = 'data-' + String(key).replace(/[A-Z]/g, (c) => '-' + c.toLowerCase());
+        self.attrs[attr] = String(value);
+        return true;
+      },
+      has(_t, key) {
+        if (key === '_isDataset') return true;
+        const attr = 'data-' + String(key).replace(/[A-Z]/g, (c) => '-' + c.toLowerCase());
+        return Object.prototype.hasOwnProperty.call(self.attrs, attr);
+      },
+    });
     this.style = {};
     this.attrs = {};
     this._listeners = {};
@@ -86,9 +108,52 @@ export class El {
   closest(sel) { let p = this; while (p) { if (matches(p, sel)) return p; p = p.parentNode; } return null; }
 }
 
+function matchAttr(node, sel) {
+  // Parse a (compound) selector into tag + any number of attribute groups.
+  // Supports: [attr] [attr="v"] [attr='v'] [attr~=v] [attr|=v] [attr^=v]
+  // [attr$=v] [attr*=v], and the same prefixed by a tag (e.g.
+  // 'button[data-action="x"][data-user-id="1"]'). Returns null if the
+  // string doesn't look like a tag+attrs compound.
+  const m = sel.match(/^([a-zA-Z][a-zA-Z0-9]*)?((?:\[[^\]]+\])+)$/);
+  if (!m) return null;
+  const [, tagPart, attrsPart] = m;
+  if (tagPart && node.tagName !== tagPart.toUpperCase()) return false;
+  const attrRe = /\[([a-zA-Z0-9_-]+)(?:([~|^$*]?=)(?:"([^"]*)"|'([^']*)'))?\]/g;
+  let am;
+  while ((am = attrRe.exec(attrsPart)) !== null) {
+    const attr = am[1];
+    const op = am[2] || null;
+    const expected = am[3] != null ? am[3] : (am[4] != null ? am[4] : null);
+    const dsKey = attr.startsWith('data-')
+      ? attr.slice(5).replace(/-(.)/g, (_, c) => c.toUpperCase())
+      : attr.replace(/-(.)/g, (_, c) => c.toUpperCase());
+    let actual;
+    if (node.dataset && (dsKey in node.dataset)) actual = node.dataset[dsKey];
+    else if (node.attrs && attr in node.attrs) actual = node.attrs[attr];
+    let ok;
+    if (op == null) ok = actual != null;
+    else if (expected == null) ok = false;
+    else if (op === '=') ok = actual === expected;
+    else if (op === '^=') ok = typeof actual === 'string' && actual.startsWith(expected);
+    else if (op === '$=') ok = typeof actual === 'string' && actual.endsWith(expected);
+    else if (op === '*=') ok = typeof actual === 'string' && actual.includes(expected);
+    else if (op === '~=') ok = typeof actual === 'string' && actual.split(/\s+/).includes(expected);
+    else if (op === '|=') ok = typeof actual === 'string' && (actual === expected || actual.startsWith(expected + '-'));
+    else ok = false;
+    if (!ok) return false;
+  }
+  return true;
+}
+
 function matchSimple(node, sel) {
-  // Support compounds: 'tag', '.class', '#id', 'tag.class', 'tag.class.a.b',
-  // '#id.class'. Attribute selectors are not needed by the app.
+  // Attribute selector? delegate.
+  if (sel.startsWith('[')) return matchAttr(node, sel);
+  // Compound with tag + attribute (e.g. 'button[data-action="x"]').
+  if (sel.includes('[')) {
+    const r = matchAttr(node, sel);
+    if (r != null) return r;
+  }
+  // Tag + class/id compounds.
   let rest = sel;
   let tag = null;
   const tagM = rest.match(/^[a-zA-Z][a-zA-Z0-9]*/);

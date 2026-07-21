@@ -1,0 +1,150 @@
+{% extends "layout.html" %}
+{% block title %}Settings · TravelPlan{% endblock %}
+{% block page %}settings{% endblock %}
+
+{% block styles %}<link rel="stylesheet" href="/static/css/auth.css">{% endblock %}
+
+{% block content %}
+<div class="auth-view">
+  <div class="page-header">
+    <div>
+      <h1>Settings</h1>
+      <div class="sub">Update your display name and password{% if is_admin %}, and manage member accounts{% endif %}.</div>
+    </div>
+  </div>
+
+  {% if error %}<div class="error-msg">{{ error }}</div>{% endif %}
+  {% if info %}<div class="notice">{{ info }}</div>{% endif %}
+
+  <section class="card members-section">
+    <h2 class="card-title">Your account</h2>
+    <p class="muted" style="margin-bottom: 16px;">
+      Signed in as <strong>{{ me.username }}</strong>{% if me.role == 'admin' %} (admin){% endif %}.
+    </p>
+
+    <form method="post" action="/auth/settings/profile" style="margin-bottom: 24px;">
+      <div class="field-row">
+        <div class="field" style="flex: 1;">
+          <label for="display_name">Display name</label>
+          <input id="display_name" name="display_name" type="text" required value="{{ me.display_name }}">
+        </div>
+      </div>
+      <div class="form-actions">
+        <button class="btn btn-primary" type="submit">Save name</button>
+      </div>
+    </form>
+
+    <form method="post" action="/auth/settings/password">
+      <div class="field-row">
+        <div class="field">
+          <label for="current_password">Current password</label>
+          <input id="current_password" name="current_password" type="password" required autocomplete="current-password">
+        </div>
+        <div class="field">
+          <label for="new_password">New password</label>
+          <input id="new_password" name="new_password" type="password" required minlength="8" autocomplete="new-password">
+        </div>
+        <div class="field">
+          <label for="confirm_password">Confirm new password</label>
+          <input id="confirm_password" name="confirm_password" type="password" required minlength="8" autocomplete="new-password">
+        </div>
+      </div>
+      <div class="form-actions">
+        <button class="btn btn-primary" type="submit">Change password</button>
+      </div>
+    </form>
+  </section>
+
+  {% if is_admin %}
+  <section class="card members-section">
+    <h2 class="card-title">Create member</h2>
+    <p class="muted" style="margin-bottom: 12px;">
+      Members can be added as editors or viewers on plans you own. For the legacy members page,
+      see <a href="/auth/members">Members</a>.
+    </p>
+    <form method="post" action="/auth/settings/admin/create-user">
+      <div class="field-row">
+        <div class="field">
+          <label for="new-username">Username</label>
+          <input id="new-username" name="username" type="text" required autocomplete="off">
+        </div>
+        <div class="field">
+          <label for="new-display_name">Display name</label>
+          <input id="new-display_name" name="display_name" type="text" required>
+        </div>
+        <div class="field">
+          <label for="new-password">Password</label>
+          <input id="new-password" name="password" type="password" required minlength="8" autocomplete="new-password">
+        </div>
+      </div>
+      <div class="form-actions">
+        <button class="btn btn-primary" type="submit">Add member</button>
+      </div>
+    </form>
+  </section>
+
+  <section class="card members-section">
+    <h2 class="card-title">Existing accounts</h2>
+    <table>
+      <thead>
+        <tr>
+          <th>Username</th>
+          <th>Display name</th>
+          <th>Role</th>
+          <th>Created</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for u in users %}
+        <tr data-user-row="{{ u.id }}">
+          <td>{{ u.username }}</td>
+          <td>{{ u.display_name }}</td>
+          <td><span class="badge">{{ u.role }}</span></td>
+          <td class="muted">{{ u.created_at }}</td>
+          <td style="white-space: nowrap;">
+            <button type="button" class="btn btn-sm" data-action="edit-user" data-user-id="{{ u.id }}">Edit</button>
+            {% if u.id != me.id %}
+            <form method="post" action="/auth/settings/admin/delete-user" style="display:inline"
+                  onsubmit="return confirm('Delete {{ u.username }}? This cannot be undone.');">
+              <input type="hidden" name="user_id" value="{{ u.id }}">
+              <button class="btn btn-danger btn-sm" type="submit">Delete</button>
+            </form>
+            {% endif %}
+          </td>
+        </tr>
+        <tr id="edit-row-{{ u.id }}" data-edit-row="{{ u.id }}" hidden>
+          <td colspan="5" style="background: var(--surface-2, #f1f5f9); padding: 16px;">
+            <form method="post" action="/auth/settings/admin/edit-user" class="edit-user-form">
+              <input type="hidden" name="user_id" value="{{ u.id }}">
+              <div class="field-row">
+                <div class="field" style="flex: 2;">
+                  <label>Display name</label>
+                  <input name="display_name" type="text" value="{{ u.display_name }}">
+                </div>
+                <div class="field" style="flex: 2;">
+                  <label>New password (leave blank to keep)</label>
+                  <input name="new_password" type="password" minlength="8" autocomplete="new-password">
+                </div>
+              </div>
+              <div class="form-actions">
+                <button class="btn btn-primary" type="submit">Save</button>
+                <button type="button" class="btn btn-ghost" data-action="cancel-edit" data-user-id="{{ u.id }}">Cancel</button>
+              </div>
+            </form>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </section>
+  {% endif %}
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script type="module">
+  import { initSettings } from '/static/js/settings.js';
+  initSettings();
+</script>
+{% endblock %}

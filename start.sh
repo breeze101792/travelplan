@@ -91,6 +91,14 @@ if ! out=$("$VENV_DIR/bin/python" -m backend.expense 2>&1); then
   exit 1
 fi
 
+# Backend auth tests (login, self-serve settings, admin user management).
+echo ">> running auth tests"
+if ! out=$("$VENV_DIR/bin/python" -m backend.tests 2>&1); then
+  echo "!! auth tests FAILED:" >&2
+  printf '%s\n' "$out" >&2
+  exit 1
+fi
+
 # Frontend test fixtures (DOM shim + page execution under node). Best effort:
 # skipped when node is not installed (run.sh exits 0 in that case), but a real
 # test failure aborts startup just like the backend self-tests above.

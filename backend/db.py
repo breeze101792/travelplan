@@ -72,6 +72,24 @@ def close_db(_exc=None) -> None:
         _lock.release()
 
 
+def reset_for_tests() -> None:
+    """Test helper: close and forget the shared connection.
+
+    The production app keeps a single shared SQLite connection for the
+    lifetime of the process (it holds the warm WAL index, see get_db).
+    Tests that create a fresh data dir per case must drop the cached
+    connection first, otherwise the new dir's schema is never seen.
+    """
+    global _conn
+    with _lock:
+        if _conn is not None:
+            try:
+                _conn.close()
+            except Exception:
+                pass
+            _conn = None
+
+
 def init_db() -> None:
     """Create ``data/`` and apply ``schema.sql`` (idempotent — CREATE IF NOT EXISTS).
 

@@ -24,21 +24,27 @@ data/         SQLite DB, uploads, config (secret key + settings.json)
 ```bash
 ./start.sh              # http://0.0.0.0:5050
 ./start.sh 8080         # listen on a custom port
-PORT=9000 ./start.sh    # or set it via the PORT env var
+PORT=9000 ./start.sh    # or set the port via the PORT env var
 ./start.sh --help       # full usage / help message
 ```
 
-`start.sh` creates `.venv/`, installs Flask, runs the expense-engine self-tests,
-then serves the app. Set the port with a positional arg (`./start.sh 8080`) or
-the `PORT` env var (the arg wins); `HOST` defaults to `0.0.0.0` so friends on the
-same network can reach your machine at that port. Debug/auto-reload is **off**
-by default (the Werkzeug debugger is unsafe to expose on a shared network) — use
+`start.sh` creates `.venv/`, installs Flask, runs the self-tests (expense
+engine + auth + frontend fixtures), then serves the app. Set the port
+with a positional arg (`./start.sh 8080`) or the `PORT` env var (the
+arg wins); `HOST` defaults to `0.0.0.0` so friends on the same network
+can reach your machine at that port. Debug/auto-reload is **off** by
+default (the Werkzeug debugger is unsafe to expose on a shared network) — use
 `DEBUG=1 ./start.sh` while developing locally. `./backend/run.sh` still works as
 an alias for `./start.sh`.
 
 On first run there is no admin yet — open the app and create the admin account
 at the setup page. The admin then creates member accounts (for friends) and can
 share each plan with chosen members.
+
+Once you're logged in, **Settings** (in the topbar) lets you change your
+display name and password. Admins get an extra section for creating, editing,
+and deleting member accounts (the older `/auth/members` page is kept for
+back-compat).
 
 ## Try it with fake data
 
@@ -75,10 +81,12 @@ the base currency using a greedy min-cash-flow ("who owes whom") algorithm.
 ```bash
 .venv/bin/python -m flask --app backend.app run --debug
 .venv/bin/python -m backend.expense        # backend engine self-tests
+.venv/bin/python -m backend.tests         # auth + settings page tests
 bash frontend/tests/run.sh                  # frontend tests (needs node)
 ```
 
 The frontend fixtures under `frontend/tests/` run the staging engine's unit
-tests and execute `initItinerary()` end-to-end against a DOM shim + stubbed
-fetch (no browser, no npm install — plain node ES modules). `start.sh` runs
-them automatically before serving (skipped if node is not installed).
+tests and execute `initItinerary()` and the settings page against a DOM shim
++ stubbed fetch (no browser, no npm install — plain node ES modules).
+`start.sh` runs all three suites before serving (skipped if node is not
+installed).

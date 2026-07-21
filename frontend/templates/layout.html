@@ -14,6 +14,7 @@
     <div class="spacer"></div>
     <nav class="topbar-links">
       {% if current_user %}
+        <a class="nav-link" href="/auth/settings">Settings</a>
         {% if current_user.role == 'admin' %}
           <a class="nav-link" href="/auth/members">Members</a>
         {% endif %}
