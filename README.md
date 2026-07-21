@@ -46,15 +46,16 @@ share each plan with chosen members.
 ./seed.sh            # wipe & populate a realistic test dataset
 ```
 
-Seeds two trips (**Japan 2026** base JPY, **Iceland Ring Road** base EUR) with
-full itineraries, per-day hotels, image + link attachments, expenses in four
-currencies (JPY / USD / EUR / ISK) using all four split methods, exchange rates,
-and recorded payments. All seeded accounts use the password **`password`**:
+Seeds three trips (**Japan 2026** base JPY, **Iceland Ring Road** base EUR,
+**Beijing 2026** base CNY) with full itineraries, per-day hotels, image + link
+attachments, expenses in five currencies (JPY / USD / EUR / ISK / CNY) using
+all four split methods, exchange rates, and recorded payments. All seeded
+accounts use the password **`password`**:
 
 | username | role |
 |---|---|
-| `admin` | admin, owns both trips |
-| `alice` | editor on both trips |
+| `admin` | admin, owns all three trips |
+| `alice` | editor on all three trips |
 | `bob` | editor on Japan 2026 |
 | `carol` | viewer on Iceland Ring Road |
 
@@ -73,5 +74,11 @@ the base currency using a greedy min-cash-flow ("who owes whom") algorithm.
 
 ```bash
 .venv/bin/python -m flask --app backend.app run --debug
-.venv/bin/python -m backend.expense        # run engine self-tests
+.venv/bin/python -m backend.expense        # backend engine self-tests
+bash frontend/tests/run.sh                  # frontend tests (needs node)
 ```
+
+The frontend fixtures under `frontend/tests/` run the staging engine's unit
+tests and execute `initItinerary()` end-to-end against a DOM shim + stubbed
+fetch (no browser, no npm install — plain node ES modules). `start.sh` runs
+them automatically before serving (skipped if node is not installed).

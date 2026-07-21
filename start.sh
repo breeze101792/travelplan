@@ -91,6 +91,18 @@ if ! out=$("$VENV_DIR/bin/python" -m backend.expense 2>&1); then
   exit 1
 fi
 
+# Frontend test fixtures (DOM shim + page execution under node). Best effort:
+# skipped when node is not installed (run.sh exits 0 in that case), but a real
+# test failure aborts startup just like the backend self-tests above.
+if [[ -f frontend/tests/run.sh ]]; then
+  echo ">> running frontend tests"
+  if ! out=$(bash frontend/tests/run.sh 2>&1); then
+    echo "!! frontend tests FAILED:" >&2
+    printf '%s\n' "$out" >&2
+    exit 1
+  fi
+fi
+
 # ---- start ----
 cat <<EOF
 >> TravelPlan starting
