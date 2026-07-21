@@ -122,11 +122,14 @@
 .add-type:hover { background: var(--surface-2, #f1f5f9); border-color: var(--accent, #6366f1); }
 
 /* ---------- item editor modal (scope under .item-editor to avoid clashing) ---------- */
-.editor-backdrop { position: fixed; inset: 0; background: rgba(15, 23, 42, .55); display: flex; align-items: flex-start; justify-content: center; padding: 5vh 16px; overflow-y: auto; z-index: 100; }
+.editor-backdrop { position: fixed; inset: 0; background: rgba(15, 23, 42, .55); display: flex; align-items: flex-start; justify-content: center; padding: 5vh clamp(16px, 3vw, 40px); overflow-y: auto; z-index: 100; }
 .modal.item-editor {
-  /* The item editor needs real space — type-specific fields, attachments grid,
-   * expense form, all in one modal. 880px on desktop, full width on mobile. */
-  width: min(880px, 100%);
+  /* The item editor needs real space — type-specific fields, attachments
+   * grid, expense form, all in one modal. Sized to feel like a proper
+   * desktop panel (~1200px ceiling) rather than a phone-sized pop-up;
+   * collapses to a single column only when the viewport itself is too
+   * narrow to comfortably fit two columns side by side. */
+  width: min(1200px, 100%);
   background: var(--surface, #fff); border-radius: 14px;
   box-shadow: 0 20px 60px rgba(15,23,42,.3);
   display: flex; flex-direction: column;
@@ -149,13 +152,14 @@
 }
 
 /* Two-column form layout: type-specific fields on the left, meta + attachments
- * on the right. Falls back to a single column on narrow screens. */
+ * on the right. Falls back to a single column only when the modal itself
+ * is narrow (triggered when the viewport is too small to fit both columns). */
 .modal.item-editor .ie-grid {
   display: grid;
   grid-template-columns: 1.4fr 1fr;
   gap: 0 24px;
 }
-@media (max-width: 720px) {
+@media (max-width: 900px) {
   .modal.item-editor .ie-grid { grid-template-columns: 1fr; }
 }
 .modal.item-editor .ie-col { min-width: 0; }
