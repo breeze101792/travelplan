@@ -154,21 +154,32 @@
 
 .plans-grid {
   display: grid;
+  /* align-items: stretch is the default; combined with the min-height on
+     .plan-card this guarantees every card in a row has the same height. */
   grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
   gap: 1rem;
+  align-items: stretch;
+}
+
+/* base.css has ".card + .card { margin-top: 14px }" for stacked cards.
+   Inside the grid that margin would shrink the stretched height of every
+   card except the first, so it must be neutralized here. */
+.plans-grid .plan-card {
+  margin-top: 0;
 }
 
 .plan-card {
   display: flex;
   flex-direction: column;
   gap: 0.6rem;
-  /* Uniform card size: the title and description blocks below each reserve a
-     fixed amount of space (2 lines / 3 lines) via min-height, so a card with a
-     2-line description ends up exactly as tall as one with a 3-line
-     description. This floor sits above that constant content height, so every
-     card lands at the same height; .card-links (margin-top:auto) absorbs the
-     leftover space at the bottom. */
-  min-height: 17rem;
+  /* Uniform card size: the inner blocks (.card-title, .card-badges,
+     .card-desc, .card-controls) each reserve a fixed amount of vertical
+     space via min-height so different content lengths still produce the same
+     card height. The 20rem floor sits above the natural height of the
+     tallest variant (owner card with controls, ~19.6rem), so every card —
+     owner or shared, in any row — renders at exactly the same height.
+     .card-links (margin-top:auto) absorbs any leftover space. */
+  min-height: 20rem;
   padding: 1.1rem;
   background: var(--surface, #fff);
   border: 1px solid var(--border, #e5e7eb);
@@ -192,9 +203,11 @@
 .card-title {
   margin: 0;
   font-size: 1.1rem;
-  /* Clamp to 2 lines AND reserve space for 2 lines (3em = 2 * 1.5em line-height)
-     so a one-line title is the same height as a two-line one. */
-  min-height: 3em;
+  line-height: 1.35;
+  /* Clamp to 2 lines AND reserve space for 2 lines so a one-line title is
+     exactly as tall as a two-line one. line-height is set above so 2 * em
+     units here match the rendered line box. */
+  min-height: calc(1.1rem * 1.35 * 2);
   display: -webkit-box;
   -webkit-line-clamp: 2;
   line-clamp: 2;
@@ -207,6 +220,9 @@
   flex-wrap: wrap;
   gap: 0.4rem;
   align-items: center;
+  /* Always reserve one line of badge height so cards with one badge vs. two
+     occupy the same vertical space. */
+  min-height: 1.4rem;
 }
 
 .badge {
@@ -255,11 +271,12 @@
 .card-desc {
   margin: 0;
   font-size: 0.9rem;
+  line-height: 1.5;
   color: var(--text, #1f2328);
-  /* Clamp to 3 lines AND reserve space for 3 lines (4.5em = 3 * 1.5em) so a
-     2-line description occupies the same height as a 3-line one — this is what
+  /* Clamp to 3 lines AND reserve space for 3 lines so a 1- or 2-line
+     description occupies the same height as a 3-line one — this is what
      makes every card the same size regardless of description length. */
-  min-height: 4.5em;
+  min-height: calc(0.9rem * 1.5 * 3);
   display: -webkit-box;
   -webkit-line-clamp: 3;
   line-clamp: 3;
@@ -279,6 +296,8 @@
   gap: 0.4rem;
   padding-top: 0.5rem;
   border-top: 1px solid var(--border, #eef2f6);
+  min-height: 2.4rem;
+  align-items: center;
 }
 
 .card-error {
