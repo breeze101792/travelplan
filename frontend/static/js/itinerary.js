@@ -94,12 +94,14 @@ function detailLines(item, settings) {
 export async function initItinerary(ctx) {
   // Boot fetches fire in parallel.
   let settings, plan, allMembers, days, base;
+  let itemsRes, expRes;                 // hoisted: used after the try block
   let focusedDay = '';
   let expenseByItem = new Map();
   let staging;
 
   try {
-    const [, planRes, memRes, itemsRes, expRes] = await Promise.all([
+    let planRes, memRes;
+    [, planRes, memRes, itemsRes, expRes] = await Promise.all([
       loadSettings().then((s) => { settings = s; }),
       apiGet(`/api/plans/${ctx.planId}`),
       apiGet(`/api/plans/${ctx.planId}/members`),
@@ -196,7 +198,10 @@ export async function initItinerary(ctx) {
 
     const img = firstImage(item);
     if (img) {
-      const im = el('img', { class: 'card-thumb', src: img.value, alt: '' });
+      // Local attachments carry a blob: preview URL; server attachments a
+      // filename under /uploads/.
+      const src = img.isLocal ? img.value : `/uploads/${img.value}`;
+      const im = el('img', { class: 'card-thumb', src, alt: '' });
       im.loading = 'lazy';
       card.appendChild(im);
     }
@@ -297,6 +302,21 @@ export async function initItinerary(ctx) {
 
     bar.append(addDet, undoBtn, redoBtn, saveBtn, status);
     bar.hidden = false;
+  }
+
+  function renderToolbar() {
+    const tb = document.getElementById('add-toolbar');
+    if (!tb) return;
+    clear(tb);
+    if (ctx.role === 'viewer') return;
+    const day = days.find(d => d.date === focusedDay) || days[0];
+    tb.appendChild(el('span', { class: 'toolbar-label', text: `Quick add${day && day.index ? ` (Day ${day.index})` : ''}:` }));
+    for (const [type, ti] of Object.entries(settings.item_types)) {
+      const b = el('button', { class: 'toolbar-btn', text: ti.label, title: `Add ${ti.label}` });
+      b.type = 'button';
+      b.addEventListener('click', () => createItem(type, focusedDay));
+      tb.appendChild(b);
+    }
   }
 
   function setFocusedDay(date) {
@@ -509,6 +529,7 @@ export async function initItinerary(ctx) {
   render();
   wireHeader();
   renderPendingBar();
+  renderToolbar();
   enableDragDrop(document.getElementById('board'), { onMove, onUpload });
   document.addEventListener('keydown', onKeydown);
   window.addEventListener('beforeunload', onBeforeUnload);

@@ -330,7 +330,10 @@ export function openItemEditor(ctx, { plan, item, settings, members, staging, se
       const meta = el('div', { class: 'att-meta' });
       if (a.kind === 'image') {
         const im = document.createElement('img');
-        im.src = a.value; im.className = 'att-thumb'; im.alt = a.caption || '';
+        // Local (pending-upload) attachments carry a blob: preview URL;
+        // server attachments a filename under /uploads/.
+        im.src = a.isLocal ? a.value : `/uploads/${a.value}`;
+        im.className = 'att-thumb'; im.alt = a.caption || '';
         row.appendChild(im);
         meta.appendChild(el('span', {
           class: 'att-caption',
