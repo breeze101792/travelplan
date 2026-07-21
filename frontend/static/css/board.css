@@ -125,11 +125,13 @@
 .editor-backdrop { position: fixed; inset: 0; background: rgba(15, 23, 42, .55); display: flex; align-items: flex-start; justify-content: center; padding: 5vh clamp(16px, 3vw, 40px); overflow-y: auto; z-index: 100; }
 .modal.item-editor {
   /* The item editor needs real space — type-specific fields, attachments
-   * grid, expense form, all in one modal. Sized to feel like a proper
-   * desktop panel (~1200px ceiling) rather than a phone-sized pop-up;
-   * collapses to a single column only when the viewport itself is too
-   * narrow to comfortably fit two columns side by side. */
-  width: min(1200px, 100%);
+   * grid, expense form, all in one modal. Sized to ~80% of the viewport
+   * (capped at 1600px) so it feels like a proper desktop panel rather
+   * than a phone-sized pop-up, while still shrinking gracefully on
+   * narrower windows and filling the screen on phones. Collapses to a
+   * single column only when the modal itself is too narrow to fit both
+   * columns comfortably. */
+  width: min(80vw, 1600px);
   background: var(--surface, #fff); border-radius: 14px;
   box-shadow: 0 20px 60px rgba(15,23,42,.3);
   display: flex; flex-direction: column;
@@ -152,8 +154,9 @@
 }
 
 /* Two-column form layout: type-specific fields on the left, meta + attachments
- * on the right. Falls back to a single column only when the modal itself
- * is narrow (triggered when the viewport is too small to fit both columns). */
+ * on the right. Collapses to one column when the modal itself is too
+ * narrow for the columns to read well — at min(80vw, 1600px) the modal
+ * hits ~900px wide at viewport ~1125px. */
 .modal.item-editor .ie-grid {
   display: grid;
   grid-template-columns: 1.4fr 1fr;
