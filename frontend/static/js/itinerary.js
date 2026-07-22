@@ -162,6 +162,12 @@ export async function initItinerary(ctx) {
   // (within the same day only).
   let selection = new Set();
   let lastSelectedId = null;
+  // When the item editor is dismissed by a backdrop click, the click also
+  // reaches the document-level handler. We don't want that to wipe the
+  // multi-select (the user only wanted to close the editor, not exit
+  // multi-select). The editor sets this flag right before it closes; the
+  // next document click consumes it and skips the clear.
+  let suppressClearOnce = false;
 
   try {
     let planRes, memRes;
@@ -1031,6 +1037,12 @@ export async function initItinerary(ctx) {
       staging,
       sessionId,
       onApplied: () => { render(); renderPendingBar(); },
+      // The backdrop click that dismisses the editor also reaches our
+      // document-level click handler. We don't want that click to wipe a
+      // multi-select the user built before opening the editor — the
+      // click was only meant to close the editor. Set the suppress flag
+      // here; the document handler consumes it on the same click.
+      onClose: () => { suppressClearOnce = true; },
     });
   }
 
@@ -1062,6 +1074,7 @@ export async function initItinerary(ctx) {
         plan, item: draft, settings, members: allMembers,
         staging, sessionId,
         onApplied: () => { render(); renderPendingBar(); },
+        onClose: () => { suppressClearOnce = true; },
       });
     }
   }
@@ -1342,20 +1355,29 @@ export async function initItinerary(ctx) {
   window.addEventListener('beforeunload', onBeforeUnload);
   // Global click: close the context menu if it's open and the click
   // didn't land inside it (the menu's own click handler stops propagation,
-  // so this listener only fires for outside clicks). Also clear the
-  // selection when the user clicks on a blank day area.
+  // so this listener only fires for outside clicks). Also exit multi-
+  // select when the user clicks on a blank area: a day section's empty
+  // background, the board's outer margin, or the plan header. Cards,
+  // buttons, form fields, and the toolbar keep their existing handlers
+  // and don't trigger a clear.
   document.addEventListener('click', (e) => {
     if (contextMenuEl && !contextMenuEl.contains(e.target)) closeContextMenu();
-    // Selection-clearing: only when the click lands on a day section
-    // background (not on a card, not on a button inside the section).
-    // Clicking a card is handled by handleCardClick; clicking a button
-    // (e.g. the + Add item disclosure) is a different action.
-    if (selection.size && e.target.closest) {
-      const onCard = e.target.closest('.card.item');
-      const onButton = e.target.closest('button, summary, input, textarea, select, a, label');
-      const onDaySection = e.target.closest('.day');
-      if (!onCard && !onButton && onDaySection) clearSelection();
-    }
+    // The item editor can set suppressClearOnce before closing itself
+    // (typically a backdrop click). When the click reaches us we skip the
+    // multi-select clear once, then reset the flag.
+    if (suppressClearOnce) { suppressClearOnce = false; return; }
+    if (!selection.size || !e.target.closest) return;
+    // Things that "consume" the click and should NOT clear the selection:
+    const onCard     = e.target.closest('.card.item');
+    const onInteract = e.target.closest(
+      'button, summary, input, textarea, select, a, label, [contenteditable], .toolbar-label'
+    );
+    // If the click is on a card or on an interactive control, leave the
+    // selection alone. Everything else (day section padding, the board's
+    // own background, the plan header, anywhere off the board) is treated
+    // as "the user wants to exit multi-select" and we clear.
+    if (onCard || onInteract) return;
+    clearSelection();
   });
   document.addEventListener('scroll', closeContextMenu, true);
 }

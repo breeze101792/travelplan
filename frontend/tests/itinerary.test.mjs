@@ -601,10 +601,17 @@ const ownerStub = await boot('owner');
   // Clicking Copy keeps the selection but stores in the clipboard.
   const copyBtn = [...menu.querySelectorAll('button')].find(b => b.textContent === 'Copy');
   copyBtn.click();
-  // Clicking outside the menu closes it.
+  // Clicking outside the menu closes it AND exits multi-select (blank
+  // area = "I'm done, exit" — that's the user's signal). Re-build the
+  // selection so the delete test below has something to remove.
   document.dispatch('click', { target: document.body });
   assert(!document.body.querySelector('.context-menu'),
          'clicking outside the menu closes it');
+  assert([...board.querySelectorAll('.card.card-selected')].length === 0,
+         'clicking the blank area exits multi-select');
+  activity.dispatch('click', { button: 0, metaKey: true, target: activity });
+  assert(activity.classList.contains('card-selected'),
+         '⌘-click rebuilds the selection for the delete test');
   // --- Delete with keyboard removes the selection ---
   const cardsBeforeDelete = board.querySelectorAll('.card.item').length;
   document.dispatch('keydown', { key: 'Delete', target: document.body });
@@ -700,6 +707,109 @@ const ownerStub = await boot('owner');
   cardHotel.dispatch('click', { button: 0, shiftKey: true, target: cardHotel });
   assert(!!document.body.querySelector('.toast.toast-warn'),
          'shift-click on a hotel shows a warning toast');
+}
+
+/* =============== owner: clicking a blank area exits multi-select =============== */
+{
+  // Build a multi-select (⌘A) and then click the board's blank background
+  // — not a card, not a button, just the empty space. The selection
+  // should be cleared, signaling "I'm done, exit multi-select".
+  const stub = await boot('owner');
+  stub.restore();
+  const board = document.getElementById('board');
+  // Dismiss any editor left over from previous tests so it doesn't
+  // capture the click target.
+  document.body.querySelectorAll('.editor-backdrop').forEach(e => e.remove());
+  // Build a selection.
+  document.dispatch('keydown', { key: 'a', metaKey: true, target: document.body });
+  const beforeSelected = board.querySelectorAll('.card.card-selected').length;
+  assert(beforeSelected >= 1, '⌘A built a multi-selection');
+  // Click the day section's empty area (between cards). This is the
+  // most common "blank area" — the background of a day column. In a
+  // real browser the click bubbles to document; the shim's dispatch
+  // doesn't bubble, so we dispatch directly on document with the day
+  // section as the target.
+  const daySection = board.children[0];
+  document.dispatch('click', { target: daySection });
+  assert(board.querySelectorAll('.card.card-selected').length === 0,
+         'clicking the day-section background clears the multi-selection');
+  // Rebuild the selection and click a different blank spot — the board
+  // itself (the outer wrapper, not inside any day section).
+  document.dispatch('keydown', { key: 'a', metaKey: true, target: document.body });
+  assert(board.querySelectorAll('.card.card-selected').length >= 1,
+         'selection rebuilt');
+  document.dispatch('click', { target: board });
+  assert(board.querySelectorAll('.card.card-selected').length === 0,
+         'clicking the board background (outside day sections) also clears');
+  // Clicking a button (e.g. the Save button) should NOT clear the
+  // selection — the user might want to save with a multi-select active.
+  document.dispatch('keydown', { key: 'a', metaKey: true, target: document.body });
+  const saveBtn = [...document.getElementById('pending-bar').querySelectorAll('button.pb-btn')]
+    .find(b => b.textContent.includes('Save'));
+  saveBtn.click();
+  // (The Save click may or may not clear the selection — the point is
+  // that the BUTTON's own handler ran. We assert the button's click was
+  // "consumed" by checking that the click didn't fall through to clear
+  // the selection — i.e. the user can click a button with a selection
+  // active and the selection persists.)
+  // (We don't strictly assert persistence because the staging engine
+  // may clear it after save; this is a smoke check that button clicks
+  // don't trip the global blank-clear handler.)
+}
+
+/* =============== owner: backdrop click closes editor without clearing selection =============== */
+{
+  // Build a multi-select, open the editor on one of the cards, then click
+  // the backdrop to close the editor. The selection should be preserved
+  // — the user only wanted to close the editor, not exit multi-select.
+  const stub = await boot('owner');
+  stub.restore();
+  const board = document.getElementById('board');
+  // Clean up any leftover editor from previous tests.
+  document.body.querySelectorAll('.editor-backdrop').forEach(e => e.remove());
+  // Build the selection.
+  document.dispatch('keydown', { key: 'a', metaKey: true, target: document.body });
+  const activity = [...board.querySelectorAll('.card.item')].find(
+    c => c.dataset.type === 'activity'
+  );
+  assert(activity.classList.contains('card-selected'),
+         '⌘A put the activity in the selection');
+  // Open the editor by plain-clicking the card.
+  activity.click();
+  const editor = document.body.querySelector('.item-editor');
+  assert(!!editor, 'editor opened on the selected card');
+  // The backdrop is the wrapping div around the modal.
+  const backdrop = [...document.body.children].find(
+    c => c.classList && c.classList.contains('editor-backdrop')
+  );
+  assert(!!backdrop, 'backdrop exists around the editor modal');
+  // The backdrop click in a real browser: the click event fires on the
+  // backdrop, its listener runs onCancel (which sets suppressClearOnce
+  // and removes the backdrop), then the click bubbles to document where
+  // the global handler consumes the flag. We simulate the two halves in
+  // the shim since it doesn't bubble.
+  backdrop.dispatch('click', { target: backdrop });
+  // After the backdrop click, the editor is closed.
+  assert(!document.body.querySelector('.item-editor'),
+         'backdrop click closes the editor');
+  // Now simulate the document-level click that would have followed in a
+  // real browser. The selection should be preserved.
+  document.dispatch('click', { target: backdrop });
+  // Re-fetch the activity card — the re-render replaced it with a new
+  // element. The OLD reference's classList is stale.
+  const activity2 = [...board.querySelectorAll('.card.item')].find(
+    c => c.dataset.type === 'activity'
+  );
+  assert(activity2.classList.contains('card-selected'),
+         'closing the editor via backdrop click does NOT exit multi-select');
+  // Sanity: clicking the day section background AFTER the editor is gone
+  // DOES clear the selection (the new "blank area = exit" behavior).
+  document.dispatch('click', { target: board.children[0] });
+  const activity3 = [...board.querySelectorAll('.card.item')].find(
+    c => c.dataset.type === 'activity'
+  );
+  assert(!activity3.classList.contains('card-selected'),
+         'clicking a blank area after the editor is closed DOES exit multi-select');
 }
 
 /* =============== viewer: bar hidden, board renders =============== */

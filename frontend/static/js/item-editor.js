@@ -22,7 +22,7 @@ import {
   saveItemOp, uploadImageOp, addLinkOp, deleteAttachmentOp, addExpenseOp,
 } from '/static/js/staging.js';
 
-export function openItemEditor(ctx, { plan, item, settings, members, staging, sessionId, onApplied }) {
+export function openItemEditor(ctx, { plan, item, settings, members, staging, sessionId, onApplied, onClose }) {
   const ti = settings.item_types[item.item_type] || { label: item.item_type, fields: [] };
   const readOnly = ctx.role === 'viewer';
   const isNew = !!item.isNew || (typeof item.id === 'string' && item.id.startsWith('_-'));
@@ -274,6 +274,9 @@ export function openItemEditor(ctx, { plan, item, settings, members, staging, se
     staging.discardSession(sessionId);
     // Clean up any object URLs we created (for staged image previews).
     for (const f of pendingFiles) URL.revokeObjectURL(f.previewUrl);
+    // Tell the caller we're closing so it can update any surrounding state
+    // (e.g. suppress a click that would otherwise clear multi-select).
+    if (onClose) onClose();
     backdrop.remove();
     if (onApplied) onApplied();
   }
@@ -340,6 +343,7 @@ export function openItemEditor(ctx, { plan, item, settings, members, staging, se
       sideEffects: pendingSubEffects,
       sessionId,
     }));
+    if (onClose) onClose();
     backdrop.remove();
     if (onApplied) onApplied();
   }
