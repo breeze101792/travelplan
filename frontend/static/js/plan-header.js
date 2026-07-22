@@ -580,7 +580,7 @@ export function renderPlanToolbar({ days, settings, staging, ctx, setBlockError,
 
   // Buffer day control: one click adds a new buffer column. The date is
   // derived (no picker) — see nextBufferDate() for the algorithm.
-  tb.appendChild(makeBufferAddButton());
+  tb.appendChild(makeBufferAddButton({ plan: view, staging, ctx, onChange }));
 
   // Quick add — type picker. The label is the focused day (per page).
   const focusedDay = getFocusedDay ? getFocusedDay() : (days[0] && days[0].date);
