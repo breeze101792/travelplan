@@ -89,14 +89,20 @@ def _row_to_plan(r):
 def api_list_plans():
     uid = g.current_user["id"]
     db = get_db()
+    status_filter = request.args.get("status")
+    where = "WHERE (p.owner_id = ? OR pm.user_id = ?)"
+    args = [uid, uid, uid, uid]
+    if status_filter in ("planning", "ongoing", "archived"):
+        where += " AND p.status = ?"
+        args.append(status_filter)
     rows = db.execute(
-        """SELECT p.*, (p.owner_id = ?) AS is_owner,
-                  pm.role AS share_role
-           FROM plans p
-           LEFT JOIN plan_members pm ON pm.plan_id = p.id AND pm.user_id = ?
-           WHERE p.owner_id = ? OR pm.user_id = ?
-           ORDER BY p.created_at DESC""",
-        (uid, uid, uid, uid),
+        f"""SELECT p.*, (p.owner_id = ?) AS is_owner,
+                   pm.role AS share_role
+            FROM plans p
+            LEFT JOIN plan_members pm ON pm.plan_id = p.id AND pm.user_id = ?
+            {where}
+            ORDER BY p.created_at DESC""",
+        args,
     ).fetchall()
     plan_ids = [r["id"] for r in rows]
     buf_map = {}
@@ -170,7 +176,7 @@ def api_update_plan(plan_id):
     if g.plan_role == "viewer":
         abort(403)
     data = request.get_json(force=True, silent=True) or {}
-    allowed = ("title", "description", "start_date", "end_date", "base_currency", "cover_image")
+    allowed = ("title", "description", "start_date", "end_date", "base_currency", "cover_image", "status")
     sets = []
     args = []
     for k in allowed:

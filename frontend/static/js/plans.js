@@ -1,4 +1,3 @@
-// plans.js — dashboard: list/create/edit/delete trips.
 import {
   apiGet, apiPost, apiPatch, apiDel,
 } from '/static/js/api.js';
@@ -6,26 +5,20 @@ import {
   el, clear, fmtDate, loadSettings,
 } from '/static/js/util.js';
 
-// Module-scoped cache of currencies for the create/edit selects.
 let baseCurrencies = ['USD'];
+let currentTab = 'ongoing';
 
-/**
- * Initialize the dashboard: wire up the new-trip form and render plans.
- * @param {object} _ctx window.__CONTEXT__ (empty for dashboard)
- */
 export async function initDashboard(_ctx) {
   const newToggle = document.getElementById('new-trip-toggle');
   const newForm = document.getElementById('new-trip-form');
   const plansSection = document.getElementById('plans');
 
-  // Load settings first so currency selects are populated.
   try {
     const settings = await loadSettings();
     if (Array.isArray(settings.base_currencies) && settings.base_currencies.length) {
       baseCurrencies = settings.base_currencies;
     }
   } catch (e) {
-    // Non-fatal: fall back to default currency list.
     console.warn('settings load failed', e);
   }
 
@@ -50,26 +43,42 @@ export async function initDashboard(_ctx) {
     });
   }
 
-  await renderPlans(plansSection);
+  document.getElementById('tab-bar').addEventListener('click', (ev) => {
+    const btn = ev.target.closest('.tab-btn');
+    if (!btn) return;
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    currentTab = btn.dataset.tab;
+    renderPlans(plansSection, currentTab);
+  });
+
+  await renderPlans(plansSection, currentTab);
 }
 
-/* ----------------------------------------------------------------- render */
-
-/**
- * Fetch and render plan cards.
- */
-export async function renderPlans(section) {
+async function renderPlans(section, status) {
   try {
-    const { plans } = await apiGet('/api/plans');
+    const { plans } = await apiGet('/api/plans' + (status ? `?status=${status}` : ''));
     clear(section);
 
     if (!plans || plans.length === 0) {
-      section.appendChild(emptyState());
+      const tabOrder = ['ongoing', 'planning', 'archived'];
+      const idx = tabOrder.indexOf(status);
+      for (let i = idx + 1; i < tabOrder.length; i++) {
+        const res = await apiGet(`/api/plans?status=${tabOrder[i]}`);
+        if (res.plans && res.plans.length > 0) {
+          currentTab = tabOrder[i];
+          document.querySelectorAll('.tab-btn').forEach(b => {
+            b.classList.toggle('active', b.dataset.tab === tabOrder[i]);
+          });
+          return renderPlans(section, tabOrder[i]);
+        }
+      }
+      section.appendChild(emptyState(status));
       return;
     }
 
     for (const plan of plans) {
-      section.appendChild(planCard(plan));
+      section.appendChild(planCard(plan, section));
     }
   } catch (e) {
     clear(section);
@@ -77,14 +86,15 @@ export async function renderPlans(section) {
   }
 }
 
-function emptyState() {
+function emptyState(status) {
+  const labels = { planning: 'planning', ongoing: 'ongoing', archived: 'archived' };
   return el('div', { class: 'empty-state' }, [
-    el('p', { class: 'empty-title' }, ['No trips yet — create one.']),
+    el('p', { class: 'empty-title' }, [`No ${labels[status] || ''} trips yet.`]),
     el('p', { class: 'muted' }, ['Hit “New trip” to start planning your next adventure.']),
   ]);
 }
 
-function planCard(plan) {
+function planCard(plan, section) {
   const isOwner = plan.role === 'owner';
   const range = plan.start_date
     ? `${fmtDate(plan.start_date)} – ${fmtDate(plan.end_date)}`
@@ -98,29 +108,38 @@ function planCard(plan) {
 
   let controls = null;
   if (isOwner) {
-    controls = el('div', { class: 'card-controls' }, [
+    const btns = [
       el('button', {
         class: 'btn small', text: 'Edit',
-        onclick: () => openEditForm(plan, card),
+        onclick: () => openEditModal(plan, section),
       }),
-      el('button', {
-        class: 'btn small danger', text: 'Delete',
-        onclick: () => onDeletePlan(plan, card),
-      }),
-    ]);
+    ];
+    if (plan.status !== 'archived') {
+      btns.push(el('button', {
+        class: 'btn small', text: 'Archive',
+        onclick: () => onArchivePlan(plan, section),
+      }));
+    }
+    btns.push(el('button', {
+      class: 'btn small danger', text: 'Delete',
+      onclick: () => onDeletePlan(plan, section),
+    }));
+    controls = el('div', { class: 'card-controls' }, btns);
   }
+
+  const statusLabels = { planning: 'Planning', ongoing: 'Ongoing', archived: 'Archived' };
+  const badges = [
+    currencyBadge(plan.base_currency),
+    roleBadge(plan.role),
+    el('span', { class: `badge status-${plan.status || 'planning'}` }, [statusLabels[plan.status] || 'Planning']),
+  ].filter(Boolean);
 
   const card = el('article', { class: 'card plan-card', dataset: { id: plan.id } }, [
     el('div', { class: 'card-head' }, [
       el('h3', { class: 'card-title' }, [plan.title || 'Untitled trip']),
-      el('div', { class: 'card-badges' }, [
-        currencyBadge(plan.base_currency),
-        roleBadge(plan.role),
-      ].filter(Boolean)),
+      el('div', { class: 'card-badges' }, badges),
     ]),
     el('p', { class: 'card-dates' }, [range]),
-    // Always render the description block (empty if none) so its reserved
-    // min-height keeps every card the same height regardless of content.
     el('p', { class: 'card-desc' }, [plan.description || '']),
     links,
     controls,
@@ -139,8 +158,6 @@ function roleBadge(role) {
   return el('span', { class: `badge role role-${role || 'viewer'}` }, [label]);
 }
 
-/* ----------------------------------------------------------- create trip */
-
 async function onCreateSubmit(ev, form, section) {
   ev.preventDefault();
   const msgEl = form.querySelector('.form-msg');
@@ -153,94 +170,130 @@ async function onCreateSubmit(ev, form, section) {
 
   try {
     setFormMsg(form, 'Creating…');
+    data.status = 'planning';
     await apiPost('/api/plans', data);
     form.reset();
     form.classList.add('hidden');
     setFormMsg(form, '');
-    await renderPlans(section);
+    currentTab = 'planning';
+    document.querySelectorAll('.tab-btn').forEach(b => {
+      b.classList.toggle('active', b.dataset.tab === 'planning');
+    });
+    await renderPlans(section, currentTab);
   } catch (e) {
     setFormMsg(form, e.message || 'Failed to create trip.');
   }
 }
 
-/* ------------------------------------------------------------ edit trip */
+function openEditModal(plan, section) {
+  const backdrop = el('div', { class: 'modal-backdrop editor-backdrop' });
+  const modal = el('div', { class: 'modal plan-editor' });
 
-function openEditForm(plan, card) {
-  // Replace controls with an inline edit form.
-  const existing = card.querySelector('.edit-form');
-  if (existing) return;
-
-  const form = el('form', { class: 'trip-form edit-form', autocomplete: 'off' }, [
-    el('label', { class: 'field' }, [
-      el('span', { class: 'field-label' }, ['Title']),
-      el('input', { type: 'text', name: 'title', value: plan.title || '' }),
+  const form = el('form', { autocomplete: 'off' }, [
+    el('div', { class: 'modal-header' }, [
+      el('h3', { text: 'Edit trip' }),
+      el('button', { type: 'button', class: 'modal-close', text: '×',
+        onclick: () => backdrop.remove() }),
     ]),
-    el('label', { class: 'field' }, [
-      el('span', { class: 'field-label' }, ['Description']),
-      el('textarea', { name: 'description', rows: 2 }, [plan.description || '']),
-    ]),
-    el('div', { class: 'field-row' }, [
+    el('div', { class: 'modal-body' }, [
       el('label', { class: 'field' }, [
-        el('span', { class: 'field-label' }, ['Start date']),
-        el('input', { type: 'date', name: 'start_date', value: plan.start_date || '' }),
+        el('span', { class: 'field-label' }, ['Title']),
+        el('input', { type: 'text', name: 'title', value: plan.title || '' }),
       ]),
       el('label', { class: 'field' }, [
-        el('span', { class: 'field-label' }, ['End date']),
-        el('input', { type: 'date', name: 'end_date', value: plan.end_date || '' }),
+        el('span', { class: 'field-label' }, ['Description']),
+        el('textarea', { name: 'description', rows: 3 }, [plan.description || '']),
       ]),
-      el('label', { class: 'field' }, [
-        el('span', { class: 'field-label' }, ['Base currency']),
-        currencySelect(plan.base_currency),
+      el('div', { class: 'field-row' }, [
+        el('label', { class: 'field' }, [
+          el('span', { class: 'field-label' }, ['Start date']),
+          el('input', { type: 'date', name: 'start_date', value: plan.start_date || '' }),
+        ]),
+        el('label', { class: 'field' }, [
+          el('span', { class: 'field-label' }, ['End date']),
+          el('input', { type: 'date', name: 'end_date', value: plan.end_date || '' }),
+        ]),
+      ]),
+      el('div', { class: 'field-row' }, [
+        el('label', { class: 'field' }, [
+          el('span', { class: 'field-label' }, ['Base currency']),
+          currencySelect(plan.base_currency),
+        ]),
+        el('label', { class: 'field' }, [
+          el('span', { class: 'field-label' }, ['Status']),
+          el('select', { name: 'status' }, [
+            el('option', { value: 'planning', selected: plan.status === 'planning' }, ['Planning']),
+            el('option', { value: 'ongoing', selected: plan.status === 'ongoing' }, ['Ongoing']),
+            el('option', { value: 'archived', selected: plan.status === 'archived' }, ['Archived']),
+          ]),
+        ]),
       ]),
     ]),
-    el('div', { class: 'form-actions' }, [
-      el('button', { type: 'submit', class: 'btn primary' }, ['Save']),
+    el('div', { class: 'modal-footer' }, [
       el('button', { type: 'button', class: 'btn ghost', text: 'Cancel',
-        onclick: () => form.remove() }),
-      el('span', { class: 'form-msg', role: 'status' }, []),
+        onclick: () => backdrop.remove() }),
+      el('button', { type: 'submit', class: 'btn primary' }, ['Save']),
+      el('span', { class: 'form-msg', role: 'status' }),
     ]),
   ]);
 
-  form.addEventListener('submit', (ev) => onEditSubmit(ev, form, plan, card));
-  card.appendChild(form);
+  modal.appendChild(form);
+  backdrop.appendChild(modal);
+  document.body.appendChild(backdrop);
+
+  backdrop.addEventListener('click', (e) => {
+    if (e.target === backdrop) backdrop.remove();
+  });
+
+  form.addEventListener('submit', async (ev) => {
+    ev.preventDefault();
+    const data = formData(form);
+    const msgEl = form.querySelector('.form-msg');
+    try {
+      msgEl.textContent = 'Saving…';
+      await apiPatch(`/api/plans/${plan.id}`, data);
+      backdrop.remove();
+      await renderPlans(section, currentTab);
+    } catch (e) {
+      msgEl.textContent = e.message || 'Failed to save.';
+    }
+  });
 }
 
-async function onEditSubmit(ev, form, plan, card) {
-  ev.preventDefault();
-  const data = formData(form);
-
+async function onArchivePlan(plan, section) {
   try {
-    setFormMsg(form, 'Saving…');
-    await apiPatch(`/api/plans/${plan.id}`, data);
-    // Re-render the whole list to reflect changes cleanly.
-    const section = document.getElementById('plans');
-    await renderPlans(section);
+    await apiPatch(`/api/plans/${plan.id}`, { status: 'archived' });
+    await renderPlans(section, currentTab);
   } catch (e) {
-    setFormMsg(form, e.message || 'Failed to save.');
+    let card = document.querySelector(`[data-id="${plan.id}"]`);
+    if (card) {
+      let msgEl = card.querySelector('.card-error');
+      if (!msgEl) {
+        msgEl = el('div', { class: 'msg error card-error' });
+        card.appendChild(msgEl);
+      }
+      msgEl.textContent = e.message || 'Failed to archive.';
+    }
   }
 }
 
-/* ----------------------------------------------------------- delete trip */
-
-async function onDeletePlan(plan, card) {
+async function onDeletePlan(plan, section) {
   if (!confirm(`Delete “${plan.title}”? This cannot be undone.`)) return;
-
   try {
     await apiDel(`/api/plans/${plan.id}`);
-    const section = document.getElementById('plans');
-    await renderPlans(section);
+    await renderPlans(section, currentTab);
   } catch (e) {
-    // Inline error on the card.
-    let msgEl = card.querySelector('.card-error');
-    if (!msgEl) {
-      msgEl = el('div', { class: 'msg error card-error' }, []);
-      card.appendChild(msgEl);
+    let card = document.querySelector(`[data-id="${plan.id}"]`);
+    if (card) {
+      let msgEl = card.querySelector('.card-error');
+      if (!msgEl) {
+        msgEl = el('div', { class: 'msg error card-error' });
+        card.appendChild(msgEl);
+      }
+      msgEl.textContent = e.message || 'Failed to delete.';
     }
-    msgEl.textContent = e.message || 'Failed to delete.';
   }
 }
-
-/* --------------------------------------------------------------- helpers */
 
 function formData(form) {
   const out = {};

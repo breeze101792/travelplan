@@ -19,6 +19,7 @@ CREATE TABLE IF NOT EXISTS plans (
   end_date     TEXT,
   base_currency TEXT NOT NULL DEFAULT 'USD',  -- ISO 4217; settlement target currency
   cover_image  TEXT,
+  status       TEXT NOT NULL DEFAULT 'planning' CHECK (status IN ('planning','ongoing','archived')),
   created_at   TEXT NOT NULL DEFAULT (datetime('now')),
   updated_at   TEXT NOT NULL DEFAULT (datetime('now'))
 );

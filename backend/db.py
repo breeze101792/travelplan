@@ -102,6 +102,11 @@ def init_db() -> None:
     try:
         conn.execute("PRAGMA journal_mode=WAL;")
         conn.executescript(SCHEMA_PATH.read_text(encoding="utf-8"))
+        # Migration: add status column to plans if missing
+        try:
+            conn.execute("ALTER TABLE plans ADD COLUMN status TEXT NOT NULL DEFAULT 'planning' CHECK (status IN ('planning','ongoing','archived'))")
+        except Exception:
+            pass
         conn.commit()
     finally:
         conn.close()

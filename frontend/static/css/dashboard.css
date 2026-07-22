@@ -348,6 +348,106 @@
   color: var(--text-muted, #57606a);
 }
 
+/* Tab bar -------------------------------------------------------------- */
+
+.tab-bar {
+  display: flex;
+  gap: 0;
+  margin-bottom: 1.25rem;
+  border-bottom: 1px solid var(--border, #e5e7eb);
+}
+
+.tab-btn {
+  padding: 0.6rem 1.2rem;
+  font: inherit;
+  font-size: 0.9rem;
+  font-weight: 500;
+  color: var(--text-muted, #57606a);
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  cursor: pointer;
+  transition: color 0.12s, border-color 0.12s;
+}
+
+.tab-btn:hover {
+  color: var(--text, #1f2328);
+}
+
+.tab-btn.active {
+  color: var(--accent, #2563eb);
+  border-bottom-color: var(--accent, #2563eb);
+}
+
+/* Status badges ------------------------------------------------------- */
+
+.badge.status-planning {
+  background: #f1f5f9;
+  border-color: #e2e8f0;
+  color: #475569;
+}
+
+.badge.status-ongoing {
+  background: #dcfce7;
+  border-color: #bbf7d0;
+  color: #166534;
+}
+
+.badge.status-archived {
+  background: #fef3c7;
+  border-color: #fde68a;
+  color: #92400e;
+}
+
+/* Plan editor modal --------------------------------------------------- */
+
+.plan-editor {
+  max-width: 480px !important;
+}
+
+.plan-editor .modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 1rem;
+}
+
+.plan-editor .modal-header h3 {
+  margin: 0;
+  font-size: 1.15rem;
+}
+
+.plan-editor .modal-close {
+  background: none;
+  border: none;
+  font-size: 1.4rem;
+  cursor: pointer;
+  color: var(--text-muted, #57606a);
+  padding: 0 0.25rem;
+  line-height: 1;
+}
+
+.plan-editor .modal-close:hover {
+  color: var(--text, #1f2328);
+}
+
+.plan-editor .modal-body {
+  margin-bottom: 1rem;
+}
+
+.plan-editor .modal-footer {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  justify-content: flex-end;
+  border-top: 1px solid var(--border, #eef2f6);
+  padding-top: 1rem;
+}
+
+.plan-editor .modal-footer .form-msg {
+  margin-right: auto;
+}
+
 /* Responsive ----------------------------------------------------------- */
 
 @media (max-width: 540px) {
@@ -356,5 +456,9 @@
   }
   .field-row {
     grid-template-columns: 1fr;
+  }
+  .tab-btn {
+    padding: 0.5rem 0.8rem;
+    font-size: 0.82rem;
   }
 }
