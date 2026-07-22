@@ -275,12 +275,15 @@ export async function initItinerary(ctx) {
     }
 
     card.addEventListener('click', (e) => {
-      // Suppress the click that the browser sometimes fires after a
-      // right-click (mouse button 2) or after a drag. A real user click
-      // uses button 0. If button is missing (e.g. synthetic dispatch),
-      // treat it as a normal click.
       if (e.button != null && e.button !== 0) return;
+      if (e.detail > 1) return; // part of double-click
       handleCardClick(item, e);
+    });
+    card.addEventListener('dblclick', (e) => {
+      if (ctx.role === 'viewer') return;
+      if (!isSelectable(item)) return;
+      e.preventDefault();
+      openEditorFor(item);
     });
     card.addEventListener('contextmenu', (e) => {
       if (ctx.role === 'viewer') return;
@@ -526,9 +529,8 @@ export async function initItinerary(ctx) {
       }
       return;
     }
-    // Plain click: open the editor. The selection state is unchanged so
-    // the user can keep their current multi-select while editing one item.
-    openEditorFor(item);
+    // Plain click: select only this item, clear any previous selection.
+    selectOnly(item.id);
   }
 
   /* Items in the current selection as objects (from the staged view).

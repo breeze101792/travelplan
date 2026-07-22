@@ -22,15 +22,16 @@ view       day columns         hour-of-day columns
 items      one card per day    one bar per item at its time
            each card = one item, each day = a vertical list of cards
 interaction
-  ⌘+click   multi-select       multi-select
-  right-clk  context menu        context menu
-  ⌘A         select all          select all
-  ⌘C/X/V/D   copy/cut/paste/dupe copy/cut/paste/dupe
+  ⌘+click   multi-select         multi-select
+  right-clk  context menu         context menu
+  ⌘A         select all           select all
+  ⌘C/X/V/D   copy/cut/paste/dupe  copy/cut/paste/dupe
   drag       move item to a day   move item to time-of-day,
-                                    or across days if dragged >30%
+                                     or across days if dragged >30%
   resize     — (only via editor)  drag top/bottom edge of a bar
-  click      open editor         open editor
-  delete key  remove selection   remove selection
+  click      select item          select item
+  dblclick   open editor          open editor
+  delete key remove selection     remove selection
 
 shared
   header            plan title + date range (click to edit)

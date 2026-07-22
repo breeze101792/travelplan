@@ -1171,10 +1171,11 @@ export async function initTimeline(ctx) {
       for (const bar of allBars) {
         wireBarClick({ bar, ctx,
                        getViewItems: () => staging.viewItems(),
-                       onPlainClick: openEditorFor,
+                       onPlainClick: selectOnly,
                        onToggleSelect: toggleSelect,
                        onRangeSelect: (id) => selectRangeAcrossDays(lastSelectedId, id),
-                       onContextMenu: showContextMenu });
+                       onContextMenu: showContextMenu,
+                       onDblClick: openEditorFor });
       }
     }
 
@@ -1339,7 +1340,7 @@ export async function initTimeline(ctx) {
  *
  * The boot owns the multi-select state and the context-menu renderer;
  * we pass them in as callbacks so this module stays stateless. */
-function wireBarClick({ bar, ctx, getViewItems, onPlainClick, onToggleSelect, onRangeSelect, onContextMenu }) {
+function wireBarClick({ bar, ctx, getViewItems, onPlainClick, onToggleSelect, onRangeSelect, onContextMenu, onDblClick }) {
   if (ctx.role === 'viewer') return;
   const itemId = bar.dataset.itemId;
   if (!itemId) return;
@@ -1354,6 +1355,7 @@ function wireBarClick({ bar, ctx, getViewItems, onPlainClick, onToggleSelect, on
   }
   bar.addEventListener('click', (e) => {
     if (e.button != null && e.button !== 0) return;
+    if (e.detail > 1) return; // part of double-click
     if (isHotel) {
       if (e.metaKey || e.ctrlKey || e.shiftKey) {
         showToast("Spanning items (e.g. hotels) can't be multi-selected. Drag or open the editor to change dates.", 'warn');
@@ -1374,12 +1376,15 @@ function wireBarClick({ bar, ctx, getViewItems, onPlainClick, onToggleSelect, on
       if (onRangeSelect) onRangeSelect(itemId);
       return;
     }
-    // Plain click on a non-hotel: open the editor. We don't disturb
-    // the selection so the user can keep their multi-select while
-    // editing one item — matches the board.
+    // Plain click on a non-hotel: select only this item.
     e.stopPropagation();
+    if (onPlainClick) onPlainClick(itemId);
+  });
+  bar.addEventListener('dblclick', (e) => {
+    if (isHotel) return;
+    e.preventDefault();
     const it = findItem();
-    if (it && onPlainClick) onPlainClick(it);
+    if (it && onDblClick) onDblClick(it);
   });
 
   bar.addEventListener('contextmenu', (e) => {
