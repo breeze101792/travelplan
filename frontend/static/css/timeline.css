@@ -16,7 +16,7 @@
 }
 
 /* Outer scroll container: scrolls horizontally if many days don't fit.
- * Fills remaining viewport height so there's no dead space below. */
+ * Hour scale is recalculated by JS to fill viewport height. */
 .timeline {
   display: flex;
   align-items: stretch;
@@ -24,7 +24,6 @@
   overflow-x: auto;
   padding: 12px 4px 28px;
   position: relative;
-  min-height: calc(100vh - 180px);
 }
 
 /* The left hour-label column is sticky so it stays visible while

@@ -30,7 +30,7 @@ import { openItemEditor } from '/static/js/item-editor.js';
 import { clipboardGet, clipboardSet, serializeItem } from '/static/js/clipboard.js';
 import { buildDays, isoOf, wirePlanHeader, renderPlanToolbar, makeDayActions } from '/static/js/plan-header.js';
 
-const HOUR_PX = 36;   // kept in sync with --tl-h in timeline.css
+let HOUR_PX = 36;     // recalculated by updateScale() to fill viewport
 
 /* ---------- helpers ---------- */
 
@@ -165,6 +165,13 @@ function assignColumns(intervals) {
     it.totalCols = cols.length || 1;
   }
   return sorted;
+}
+
+function updateScale(root) {
+  const top = root.getBoundingClientRect().top;
+  const avail = window.innerHeight - top - 16;
+  HOUR_PX = Math.max(36, Math.floor(avail / 24));
+  root.style.setProperty('--tl-h', HOUR_PX + 'px');
 }
 
 /* ---------- rendering ---------- */
@@ -1118,6 +1125,7 @@ export async function initTimeline(ctx) {
     // without needing a full reload).
     days = buildDays(staging.viewPlan());
     clear(root);
+    updateScale(root);
     if (ctx.role !== 'viewer') root.classList.add('editable');
     const viewItems = staging.viewItems();
 
