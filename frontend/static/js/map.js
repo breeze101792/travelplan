@@ -51,7 +51,8 @@ function extractLocationQueries(item) {
     if (d.from) queries.push('FROM:' + d.from);
     if (d.to) queries.push('TO:' + d.to);
   }
-  if (item.title && /^[A-Z]/.test(item.title)) queries.push('TITLE:' + item.title);
+  // Always try the item title as a geocode fallback
+  if (item.title) queries.push('TITLE:' + item.title);
   return queries;
 }
 
