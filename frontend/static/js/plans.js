@@ -15,6 +15,13 @@ export async function initDashboard(_ctx) {
   const newToggle = document.getElementById('new-trip-toggle');
   const newForm = document.getElementById('new-trip-form');
   const plansSection = document.getElementById('plans');
+  plansSection.addEventListener('click', (e) => {
+    if (e.target === plansSection || e.target.closest('.empty-state')) {
+      document.querySelectorAll('.plan-card.selected').forEach(c => c.classList.remove('selected'));
+      selectedIds.clear();
+      anchorIdx = null;
+    }
+  });
 
   try {
     const settings = await loadSettings();
