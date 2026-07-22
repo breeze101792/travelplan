@@ -49,30 +49,30 @@ export async function initDashboard(_ctx) {
     document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
     btn.classList.add('active');
     currentTab = btn.dataset.tab;
-    renderPlans(plansSection, currentTab);
+    renderPlans(plansSection, currentTab, false);
   });
 
-  await renderPlans(plansSection, currentTab);
+  currentTab = await resolveDefaultTab();
+  document.querySelectorAll('.tab-btn').forEach(b => {
+    b.classList.toggle('active', b.dataset.tab === currentTab);
+  });
+  await renderPlans(plansSection, currentTab, false);
 }
 
-async function renderPlans(section, status) {
+async function resolveDefaultTab() {
+  try {
+    const res = await apiGet('/api/plans?status=ongoing');
+    if (res.plans && res.plans.length > 0) return 'ongoing';
+  } catch (_) {}
+  return 'planning';
+}
+
+async function renderPlans(section, status, _allowFallback) {
   try {
     const { plans } = await apiGet('/api/plans' + (status ? `?status=${status}` : ''));
     clear(section);
 
     if (!plans || plans.length === 0) {
-      const tabOrder = ['ongoing', 'planning', 'archived'];
-      const idx = tabOrder.indexOf(status);
-      for (let i = idx + 1; i < tabOrder.length; i++) {
-        const res = await apiGet(`/api/plans?status=${tabOrder[i]}`);
-        if (res.plans && res.plans.length > 0) {
-          currentTab = tabOrder[i];
-          document.querySelectorAll('.tab-btn').forEach(b => {
-            b.classList.toggle('active', b.dataset.tab === tabOrder[i]);
-          });
-          return renderPlans(section, tabOrder[i]);
-        }
-      }
       section.appendChild(emptyState(status));
       return;
     }
