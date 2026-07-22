@@ -12,6 +12,8 @@
 {% set plan_active_page = 'map' %}
 {% include "_plan_header.html" %}
 
+<div id="pending-bar" class="pending-bar" hidden></div>
+
 <div class="map-page">
   <div id="map-container" class="map-container"></div>
   <aside class="map-sidebar">
@@ -25,6 +27,11 @@
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
 <script type="module">
 import { initMap } from '/static/js/map.js';
-initMap(window.__CONTEXT__);
+import { wirePlanHeader, renderPlanToolbar } from '/static/js/plan-header.js';
+
+const ctx = window.__CONTEXT__;
+wirePlanHeader(ctx);
+renderPlanToolbar({ toolbarRoot: document.getElementById('pending-bar'), ctx, includeMap: true });
+initMap(ctx);
 </script>
 {% endblock %}

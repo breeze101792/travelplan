@@ -6,8 +6,8 @@
   {%- set active = plan_active_page or '' -%}
   <a class="pn-link{% if active == 'board' %} active{% endif %}" href="/plans/{{ pid }}"{% if active == 'board' %} aria-current="page"{% endif %}>Board</a>
   <a class="pn-link{% if active == 'timeline' %} active{% endif %}" href="/plans/{{ pid }}/timeline"{% if active == 'timeline' %} aria-current="page"{% endif %}>Timeline</a>
-  <a class="pn-link{% if active == 'expenses' %} active{% endif %}" href="/plans/{{ pid }}/expenses"{% if active == 'expenses' %} aria-current="page"{% endif %}>Expenses</a>
   <a class="pn-link{% if active == 'map' %} active{% endif %}" href="/plans/{{ pid }}/map"{% if active == 'map' %} aria-current="page"{% endif %}>Map</a>
+  <a class="pn-link{% if active == 'expenses' %} active{% endif %}" href="/plans/{{ pid }}/expenses"{% if active == 'expenses' %} aria-current="page"{% endif %}>Expenses</a>
   {%- if plan_role == 'owner' %}
   <a class="pn-link{% if active == 'members' %} active{% endif %}" href="/plans/{{ pid }}/members"{% if active == 'members' %} aria-current="page"{% endif %}>Members</a>
   {%- endif %}

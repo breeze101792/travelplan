@@ -1,12 +1,11 @@
 import { apiGet } from '/static/js/api.js';
-import { buildDays } from '/static/js/plan-header.js';
+import { buildDays, wirePlanHeader, renderPlanToolbar } from '/static/js/plan-header.js';
+import { Staging, moveItemOp } from '/static/js/staging.js';
 
 const DAY_COLORS = [
   '#e74c3c', '#3498db', '#2ecc71', '#f39c12',
   '#9b59b6', '#1abc9c', '#e67e22', '#34495e',
 ];
-
-const NOMINATIM_URL = 'https://nominatim.openstreetmap.org/search?format=json&limit=1&q=';
 
 function pickColor(i) { return DAY_COLORS[i % DAY_COLORS.length]; }
 
@@ -18,19 +17,21 @@ let days = [];
 let dayCoords = {};
 let allItems = [];
 let plan = null;
+let staging = null;
+let setBlockError = null;
+let settings = null;
+let renderToolbar = () => {};
 
-/* ---------- geocode ---------- */
+/* ---------- geocode (proxied through server) ---------- */
 
 async function geocode(query) {
   if (geocodeCache[query] !== undefined) return geocodeCache[query];
   try {
-    const res = await fetch(NOMINATIM_URL + encodeURIComponent(query), {
-      headers: { 'User-Agent': 'TravelPlan/1.0' },
-    });
+    const res = await fetch('/api/geocode?q=' + encodeURIComponent(query));
     if (!res.ok) { geocodeCache[query] = null; return null; }
     const data = await res.json();
-    if (!data.length) { geocodeCache[query] = null; return null; }
-    const coord = { lat: parseFloat(data[0].lat), lng: parseFloat(data[0].lon) };
+    if (!data || data.lat == null) { geocodeCache[query] = null; return null; }
+    const coord = { lat: data.lat, lng: data.lng };
     geocodeCache[query] = coord;
     return coord;
   } catch {
@@ -141,16 +142,11 @@ function enableDropZone(container) {
     if (!itemId || !targetDate) return;
     const item = allItems.find(it => String(it.id) === itemId);
     if (!item || item.item_date === targetDate) return;
-    try {
-      const r = await fetch(`/api/items/${itemId}/move`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ item_date: targetDate }),
-      });
-      if (!r.ok) return;
-      item.item_date = targetDate;
-      await reloadAll();
-    } catch {}
+    staging.add(moveItemOp({
+      planId: plan.id, itemId: Number(itemId), item_date: targetDate,
+    }));
+    item.item_date = targetDate;
+    await reloadAll();
   });
 }
 
@@ -241,7 +237,6 @@ async function reloadAll() {
   allItems = res.items || [];
   dayCoords = {};
   const seen = new Set();
-  const limiter = rateLimiter(1000);
   for (let i = 0; i < days.length; i++) {
     const batch = [];
     for (const it of dayItemsFor(i)) {
@@ -249,7 +244,6 @@ async function reloadAll() {
       for (const q of queries) {
         if (seen.has(q)) continue;
         seen.add(q);
-        await limiter();
         const coord = await geocode(qValue(q));
         if (coord) {
           batch.push({ lat: coord.lat, lng: coord.lng, label: it.title + ': ' + queryLabel(q), item: it });
@@ -265,6 +259,7 @@ async function reloadAll() {
     const coords = dayCoords[expIndex] || [];
     if (coords.length) drawDay(expIndex, coords, pickColor(expIndex));
   }
+  renderToolbar();
 }
 
 /* ---------- init ---------- */
@@ -273,18 +268,43 @@ export async function initMap(ctx) {
   const container = document.getElementById('map-container');
   if (!container) return;
 
-  const [planRes, itemsRes] = await Promise.all([
+  const [planRes, itemsRes, settingsRes] = await Promise.all([
     apiGet(`/api/plans/${ctx.planId}`),
     apiGet(`/api/plans/${ctx.planId}/items`),
+    apiGet('/api/settings'),
   ]);
 
   plan = planRes.plan;
   allItems = itemsRes.items || [];
+  settings = settingsRes;
 
   if (!plan.start_date || !plan.end_date) {
     container.innerHTML = '<div class="map-empty">Set a start and end date for this plan to see the map.</div>';
     return;
   }
+
+  staging = new Staging({ planId: ctx.planId });
+
+  setBlockError = (msg) => {
+    const bar = document.getElementById('pending-bar');
+    if (!bar) return;
+    const status = bar.querySelector('.pb-status');
+    if (status) status.textContent = msg || '';
+  };
+
+  wirePlanHeader({ plan, staging, ctx, onChange: () => {} });
+
+  renderToolbar = () => {
+    renderPlanToolbar({
+      days, settings, staging, ctx,
+      setBlockError,
+      getFocusedDay: () => days[0] && days[0].date,
+      setFocusedDay: () => {},
+      onCreateItem: () => {},
+      onChange: () => { reloadAll(); },
+    });
+  };
+  renderToolbar();
 
   map = L.map(container).setView([35.6762, 139.6503], 5);
   L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
@@ -295,7 +315,6 @@ export async function initMap(ctx) {
   days = buildDays(plan);
   dayCoords = {};
   const seen = new Set();
-  const limiter = rateLimiter(1000);
   for (let i = 0; i < days.length; i++) {
     const batch = [];
     for (const it of dayItemsFor(i)) {
@@ -303,7 +322,6 @@ export async function initMap(ctx) {
       for (const q of queries) {
         if (seen.has(q)) continue;
         seen.add(q);
-        await limiter();
         const coord = await geocode(qValue(q));
         if (coord) {
           batch.push({ lat: coord.lat, lng: coord.lng, label: it.title + ': ' + queryLabel(q), item: it });
@@ -319,6 +337,7 @@ export async function initMap(ctx) {
   toggleDay(0);
   const anyCoords = Object.values(dayCoords).some(c => c.length);
   if (!anyCoords) map.setView([35.6762, 139.6503], 5);
+  renderToolbar();
 }
 
 function rateLimiter(ms) {

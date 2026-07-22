@@ -11,6 +11,7 @@ API:        GET/POST /api/plans
             DELETE /api/plans/<id>/members/<uid>  remove share
 """
 from __future__ import annotations
+import time as time_mod
 
 from flask import (Blueprint, render_template, request, redirect, url_for,
                    g, abort, jsonify, current_app)
@@ -20,6 +21,7 @@ from ..db import get_db
 from ..util import ok, err
 from pathlib import Path
 import json
+import urllib.request, urllib.parse
 
 plans_bp = Blueprint("plans", __name__)
 
@@ -299,3 +301,57 @@ def api_remove_member(plan_id, user_id):
     db.execute("DELETE FROM plan_members WHERE plan_id = ? AND user_id = ?", (plan_id, user_id))
     db.commit()
     return jsonify({"ok": True})
+
+
+# ------------------------------------------------------------------ geocode
+
+_GEOCODE_CACHE: dict | None = None
+_GEOCODE_LAST: float = 0
+
+def _load_geocode_cache():
+    global _GEOCODE_CACHE
+    if _GEOCODE_CACHE is not None:
+        return
+    path = Path(__file__).resolve().parent.parent.parent / "data" / "cache" / "geocode.json"
+    if path.exists():
+        _GEOCODE_CACHE = json.loads(path.read_text(encoding="utf-8"))
+    else:
+        _GEOCODE_CACHE = {}
+
+def _save_geocode_cache():
+    path = Path(__file__).resolve().parent.parent.parent / "data" / "cache"
+    path.mkdir(parents=True, exist_ok=True)
+    (path / "geocode.json").write_text(
+        json.dumps(_GEOCODE_CACHE, ensure_ascii=False, indent=2), encoding="utf-8")
+
+@plans_bp.route("/api/geocode")
+@login_required
+def api_geocode():
+    q = request.args.get("q", "").strip()
+    if not q:
+        return jsonify({"error": "missing q"}), 400
+    _load_geocode_cache()
+    if q in _GEOCODE_CACHE:
+        return jsonify(_GEOCODE_CACHE[q])
+    # Throttle to 1 req / 1.1 s
+    global _GEOCODE_LAST
+    elapsed = time_mod.time() - _GEOCODE_LAST
+    if elapsed < 1.1:
+        time_mod.sleep(1.1 - elapsed)
+    url = "https://nominatim.openstreetmap.org/search?format=json&limit=1&q=" + urllib.parse.quote(q)
+    req = urllib.request.Request(url, headers={"User-Agent": "TravelPlan/1.0"})
+    try:
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            data = json.loads(resp.read().decode())
+    except Exception:
+        _GEOCODE_LAST = time_mod.time()
+        return jsonify({"lat": None, "lng": None})
+    _GEOCODE_LAST = time_mod.time()
+    if not data:
+        _GEOCODE_CACHE[q] = {"lat": None, "lng": None}
+        _save_geocode_cache()
+        return jsonify({"lat": None, "lng": None})
+    result = {"lat": float(data[0]["lat"]), "lng": float(data[0]["lon"])}
+    _GEOCODE_CACHE[q] = result
+    _save_geocode_cache()
+    return jsonify(result)
