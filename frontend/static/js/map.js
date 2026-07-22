@@ -1,6 +1,7 @@
 import { apiGet } from '/static/js/api.js';
-import { buildDays, wirePlanHeader, renderPlanToolbar } from '/static/js/plan-header.js';
+import { buildDays, wirePlanHeader } from '/static/js/plan-header.js';
 import { Staging, moveItemOp } from '/static/js/staging.js';
+import { el, clear } from '/static/js/util.js';
 
 const DAY_COLORS = [
   '#e74c3c', '#3498db', '#2ecc71', '#f39c12',
@@ -18,9 +19,8 @@ let dayCoords = {};
 let allItems = [];
 let plan = null;
 let staging = null;
-let setBlockError = null;
 let settings = null;
-let renderToolbar = () => {};
+let ctx = null;
 
 /* ---------- geocode (proxied through server) ---------- */
 
@@ -259,12 +259,13 @@ async function reloadAll() {
     const coords = dayCoords[expIndex] || [];
     if (coords.length) drawDay(expIndex, coords, pickColor(expIndex));
   }
-  renderToolbar();
+  renderPendingBar();
 }
 
 /* ---------- init ---------- */
 
-export async function initMap(ctx) {
+export async function initMap(c) {
+  ctx = c;
   const container = document.getElementById('map-container');
   if (!container) return;
 
@@ -284,27 +285,7 @@ export async function initMap(ctx) {
   }
 
   staging = new Staging({ planId: ctx.planId });
-
-  setBlockError = (msg) => {
-    const bar = document.getElementById('pending-bar');
-    if (!bar) return;
-    const status = bar.querySelector('.pb-status');
-    if (status) status.textContent = msg || '';
-  };
-
   wirePlanHeader({ plan, staging, ctx, onChange: () => {} });
-
-  renderToolbar = () => {
-    renderPlanToolbar({
-      days, settings, staging, ctx,
-      setBlockError,
-      getFocusedDay: () => days[0] && days[0].date,
-      setFocusedDay: () => {},
-      onCreateItem: () => {},
-      onChange: () => { reloadAll(); },
-    });
-  };
-  renderToolbar();
 
   map = L.map(container).setView([35.6762, 139.6503], 5);
   L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
@@ -337,7 +318,29 @@ export async function initMap(ctx) {
   toggleDay(0);
   const anyCoords = Object.values(dayCoords).some(c => c.length);
   if (!anyCoords) map.setView([35.6762, 139.6503], 5);
-  renderToolbar();
+  renderPendingBar();
+}
+
+function renderPendingBar() {
+  const bar = document.getElementById('pending-bar');
+  if (!bar) return;
+  clear(bar);
+  if (ctx.role === 'viewer') { bar.hidden = true; return; }
+
+  const hasPending = staging.hasPending;
+  const canUndo = staging.canUndo;
+  const canRedo = staging.canRedo;
+  const canSave = hasPending && !staging.saving;
+  const failed = staging.failedOpIndex >= 0;
+  const lastLabel = hasPending ? staging.ops[staging.pointer - 1].label : '';
+
+  bar.append(
+    el('button', { type:'button', class:'pb-btn', text:'↶ Revert', disabled:!canUndo, onclick:()=>{ staging.undo(); renderPendingBar(); reloadAll(); }}),
+    el('button', { type:'button', class:'pb-btn', text:'↷ Redo', disabled:!canRedo, onclick:()=>{ staging.redo(); renderPendingBar(); }}),
+    el('button', { type:'button', class:'pb-btn pb-save', text:staging.saving?'Saving…':'Save', disabled:!canSave, onclick:async()=>{ await staging.save(); renderPendingBar(); reloadAll(); }}),
+    el('span', { class:'pb-status'+(failed?' pb-failed':''), text:staging.saving?'Saving changes…':failed?`Save failed: ${staging.failedError}`:hasPending?`${staging.pendingCount} pending — last: ${lastLabel}`:'All changes saved' }),
+  );
+  bar.hidden = false;
 }
 
 function rateLimiter(ms) {
