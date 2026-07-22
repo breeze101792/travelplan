@@ -896,6 +896,14 @@ export async function initItinerary(ctx) {
       return;
     }
     const sessionId = batchSessionId();
+
+    function spanEndDate(it, newDate) {
+      const ti = settings.item_types[it.item_type];
+      if (!ti || !ti.spans_days || !it.end_date || !it.item_date) return null;
+      const offset = new Date(it.end_date + 'T00:00:00') - new Date(it.item_date + 'T00:00:00');
+      return isoOf(new Date(new Date(newDate + 'T00:00:00').getTime() + offset));
+    }
+
     // Multi-drag: if the dragged item is part of the selection, move
     // every selected item to the same target date. before_id / after_id
     // are only meaningful for the lead item; the rest land at the end
@@ -906,12 +914,12 @@ export async function initItinerary(ctx) {
       for (const id of moving) {
         const it = staging.viewItems().find(x => String(x.id) === id);
         if (!it) continue;
-        const ti = settings.item_types[it.item_type];
-        const end_date = (ti && ti.spans_days) ? (it.end_date || null) : null;
         const isLead = id === leadId;
+        const leadDate = isLead ? item_date : (it.item_date || item_date);
+        const end_date = spanEndDate(it, leadDate);
         staging.add(moveItemOp({
           itemId: it.id,
-          item_date: isLead ? item_date : (it.item_date || item_date),
+          item_date: leadDate,
           before_id: isLead ? before_id : null,
           after_id:  isLead ? after_id  : null,
           end_date,
@@ -921,7 +929,7 @@ export async function initItinerary(ctx) {
       return;
     }
     const ti = settings.item_types[item.item_type];
-    const end_date = (ti && ti.spans_days) ? (item.end_date || null) : null;
+    const end_date = spanEndDate(item, item_date);
     staging.add(moveItemOp({
       itemId, item_date, before_id, after_id, end_date,
     }));
