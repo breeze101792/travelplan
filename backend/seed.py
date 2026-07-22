@@ -1,7 +1,12 @@
 """Seed the database with fake data for testing.
 
-Run:  python -m backend.seed --reset      (wipes & repopulates)
-      ./seed.sh [--reset]                 (wrapper)
+Run:  python -m backend.seed --reset               (wipes & repopulates)
+      python -m backend.seed                        (resets passwords if admin exists)
+      ./seed.sh [--reset]                           (wrapper; default is --reset)
+
+With no flags and an existing database, it only resets all user passwords to
+"password" — existing data is preserved. Use --reset to wipe everything and
+re-insert the full fake dataset (trips, items, expenses, etc.).
 
 It creates an admin + three members, two trips with full itineraries,
 expenses in four currencies using all four split methods, image/link
@@ -11,6 +16,7 @@ let you log in and click around.
 from __future__ import annotations
 
 import json
+import sqlite3
 import struct
 import sys
 import zlib
@@ -345,24 +351,35 @@ def seed() -> None:
 
 def main(argv):
     do_reset = "--reset" in argv or "-r" in argv
-    if not do_reset:
-        if DB_PATH.exists():
-            admin = None
-            try:
-                import sqlite3
-                admin = sqlite3.connect(str(DB_PATH)).execute(
-                    "SELECT 1 FROM users WHERE role='admin' LIMIT 1").fetchone()
-            except Exception:
-                pass
-            if admin:
-                print("Refusing to seed: an admin already exists (real data may be present).")
-                print("Use  python -m backend.seed --reset   to WIPE and reseed fake data.")
-                sys.exit(1)
-    print(">> seeding fake data" + (" (wiping existing DB first)" if do_reset else ""))
     if do_reset:
+        print(">> seeding fake data (wiping existing DB first)")
         reset()
-    else:
-        db_mod.init_db()
+        seed()
+        return
+
+    if DB_PATH.exists():
+        try:
+            conn = sqlite3.connect(str(DB_PATH))
+            has_admin = conn.execute(
+                "SELECT 1 FROM users WHERE role='admin' LIMIT 1").fetchone()
+            if has_admin:
+                pw = hash_password("password")
+                conn.execute("UPDATE users SET password_hash = ?", (pw,))
+                conn.commit()
+                conn.close()
+                print(">> reset all user passwords to: password")
+                print()
+                print("  admin  / password")
+                print("  alice  / password")
+                print("  bob    / password")
+                print("  carol  / password")
+                return
+            conn.close()
+        except Exception:
+            pass
+
+    print(">> seeding fresh database")
+    db_mod.init_db()
     seed()
 
 

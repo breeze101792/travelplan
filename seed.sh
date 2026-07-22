@@ -1,14 +1,15 @@
 #!/usr/bin/env bash
 # seed.sh — populate the database with fake data for testing.
 #
-# WARNING: with --reset (the default for this convenience wrapper) this WIPES
+# Without --reset (the default for this convenience wrapper) this WIPES
 # the existing database and uploads, then inserts a known fake dataset
 # (2 trips, members, items, expenses in 4 currencies, attachments, rates).
+# Use --no-reset to reset all user passwords without destroying existing data.
 #
 # Usage:
-#   ./seed.sh             wipe & reseed fake data
+#   ./seed.sh             wipe & reseed fake data (default)
 #   ./seed.sh --reset     same (explicit)
-#   ./seed.sh --no-reset  seed only if no admin exists yet (won't clobber)
+#   ./seed.sh --no-reset  reset all passwords to "password", keep data
 #
 # All seeded accounts use the password: password
 set -euo pipefail
