@@ -228,6 +228,63 @@ export function updatePlanTitleOp({ planId, title, sessionId }) {
   };
 }
 
+/* Update the plan's trip date range. The caller must pass the *full* new
+ * range (both start_date and end_date), even if only one changed, so the op
+ * is always a complete snapshot. The label is derived from what actually
+ * differs from the previous view. */
+export function updatePlanDatesOp({ planId, start_date, end_date, prev, sessionId }) {
+  prev = prev || {};
+  const startChanged = prev.start_date !== start_date;
+  const endChanged = prev.end_date !== end_date;
+  let label = 'Change trip dates';
+  if (startChanged && endChanged) label = 'Change trip dates';
+  else if (startChanged) label = start_date && (!prev.start_date || start_date < prev.start_date)
+    ? 'Extend trip start' : 'Change trip start';
+  else if (endChanged) label = end_date && (!prev.end_date || end_date > prev.end_date)
+    ? 'Extend trip end' : 'Change trip end';
+  return {
+    id: null, kind: 'UPDATE_PLAN_DATES', label, sessionId,
+    apply() { return null; },
+    planApply(plan) { return Object.assign({}, plan, { start_date, end_date }); },
+    async execute(api) {
+      const res = await api.patch(`/api/plans/${planId}`,
+        { start_date, end_date });
+      return { plan: res.plan };
+    },
+  };
+}
+
+/* Toggle buffer days. `add` and `remove` are arrays of ISO dates. The op
+ * bundles both directions into one PATCH (cheaper than two round trips and
+ * the server is idempotent). */
+export function updatePlanBufferDaysOp({ planId, add, remove, sessionId }) {
+  add = add || [];
+  remove = remove || [];
+  const total = add.length + remove.length;
+  const label = total === 1
+    ? (add.length ? 'Add buffer day' : 'Remove buffer day')
+    : `Toggle ${total} buffer day${total === 1 ? '' : 's'}`;
+  return {
+    id: null, kind: 'UPDATE_PLAN_BUFFER_DAYS', label, sessionId,
+    apply() { return null; },
+    planApply(plan) {
+      // Reflect the new state in the local plan so the next render uses it.
+      const cur = new Set(plan.buffer_days || []);
+      for (const d of remove) cur.delete(d);
+      for (const d of add) cur.add(d);
+      const next = Object.assign({}, plan, { buffer_days: [...cur].sort() });
+      return next;
+    },
+    async execute(api) {
+      const body = {};
+      if (add.length) body.buffer_days_add = add;
+      if (remove.length) body.buffer_days_remove = remove;
+      const res = await api.patch(`/api/plans/${planId}`, body);
+      return { plan: res.plan };
+    },
+  };
+}
+
 export function moveItemOp({ itemId, item_date, before_id, after_id, end_date, sessionId }) {
   return {
     id: null, kind: 'MOVE_ITEM', label: 'Move item', sessionId,

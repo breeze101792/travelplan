@@ -4,12 +4,13 @@
  *
  * Page contract: window.__CONTEXT__ = { planId, role }.
  */
-import { apiGet, apiPatch } from '/static/js/api.js';
+import { apiGet } from '/static/js/api.js';
 import { el, clear, fmtDate, money, statusBadge, loadSettings } from '/static/js/util.js';
 import { enableDragDrop } from '/static/js/dragdrop.js';
 import { openItemEditor } from '/static/js/item-editor.js';
 import {
   Staging, createBlankItemOp, saveItemOp, updateItemOp, updatePlanTitleOp,
+  updatePlanDatesOp, updatePlanBufferDaysOp,
   moveItemOp, uploadImageOp, addLinkOp, deleteAttachmentOp, addExpenseOp,
 } from '/static/js/staging.js';
 
@@ -26,19 +27,53 @@ function isoOf(d) {
   return `${y}-${m}-${day}`;
 }
 
-/* Enumerate the plan's day columns. No dates -> a single undated day (""). */
+/* Add `n` days to a YYYY-MM-DD string. Negative n is allowed. */
+function addDaysIso(iso, n) {
+  if (!iso) return iso;
+  const d = new Date(iso + 'T00:00:00');
+  d.setDate(d.getDate() + n);
+  return isoOf(d);
+}
+
+/* Enumerate the plan's day columns, including any buffer days. A buffer
+ * day sits at the boundary of the trip range (or outside) and is rendered
+ * with a distinct visual marker — it's a planning scratchpad, not part of
+ * the trip itself. Returned in chronological order with `is_buffer: true`
+ * on the marker entries. The `label` is the full text the day title should
+ * show; the render code uses it verbatim. */
 function buildDays(plan) {
   if (!plan.start_date || !plan.end_date) {
     return [{ date: '', index: 0, label: 'Undated' }];
   }
-  const days = [];
   const fmt = new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric' });
-  let d = new Date(plan.start_date + 'T00:00:00');
-  const end = new Date(plan.end_date + 'T00:00:00');
-  for (let i = 1; d <= end; d.setDate(d.getDate() + 1), i++) {
-    days.push({ date: isoOf(d), index: i, label: fmt.format(new Date(d)) });
+  const tripStart = new Date(plan.start_date + 'T00:00:00');
+  const tripEnd = new Date(plan.end_date + 'T00:00:00');
+  const tripDates = new Set();
+  for (let d = new Date(tripStart); d <= tripEnd; d.setDate(d.getDate() + 1)) {
+    tripDates.add(isoOf(d));
   }
-  return days;
+  const bufferDates = (plan.buffer_days || [])
+    .filter(d => /^\d{4}-\d{2}-\d{2}$/.test(d) && !tripDates.has(d))
+    .sort();
+  // Combined list, chronological.
+  const all = [...tripDates].concat(bufferDates).sort();
+  let dayIndex = 0;
+  return all.map((date) => {
+    const isBuffer = !tripDates.has(date);
+    if (isBuffer) {
+      // Buffer days carry no "Day N" or date in their title — they're a
+      // planning scratchpad, not part of the trip. The chip on the column
+      // is what the user clicks to remove it.
+      return { date, is_buffer: true, index: 0, label: 'Buffer' };
+    }
+    dayIndex += 1;
+    return {
+      date,
+      is_buffer: false,
+      index: dayIndex,
+      label: `Day ${dayIndex} · ${fmt.format(new Date(date + 'T00:00:00'))}`,
+    };
+  });
 }
 
 /* Days a single item appears on. Spanning types (hotel) cover [item_date, end_date);
@@ -55,7 +90,16 @@ function itemDays(item, settings) {
   return [item.item_date || ''];
 }
 
-/* Group items into day buckets, preserving API sort order (item_date, sort_key, id). */
+/* True if the item type spans multiple days (e.g. hotel). Such items are
+ * treated as the "home base" for the night and are pinned to the bottom of
+ * every day they cover, regardless of their sort_key. */
+function isSpanningItem(item, settings) {
+  const ti = settings.item_types[item.item_type];
+  return !!(ti && ti.spans_days && item.end_date && item.item_date && item.end_date > item.item_date);
+}
+
+/* Group items into day buckets, preserving API sort order (item_date, sort_key, id).
+ * Spanning items (hotels) are always placed last in each day's bucket. */
 function groupByDay(items, days, settings) {
   const map = new Map(days.map(d => [d.date, []]));
   for (const item of items) {
@@ -65,6 +109,15 @@ function groupByDay(items, days, settings) {
   }
   for (const arr of map.values()) {
     arr.sort((a, b) => (a.sort_key - b.sort_key) || (a.id - b.id));
+    // Pin spanning items (e.g. hotels) to the bottom of the day — they
+    // represent the home/last destination for the night.
+    const spanning = arr.filter(it => isSpanningItem(it, settings));
+    if (spanning.length) {
+      const spans = new Set(spanning.map(it => it.id));
+      const regular = arr.filter(it => !spans.has(it.id));
+      arr.length = 0;
+      arr.push(...regular, ...spanning);
+    }
   }
   return map;
 }
@@ -98,6 +151,7 @@ export async function initItinerary(ctx) {
   let focusedDay = '';
   let expenseByItem = new Map();
   let staging;
+  let blockError = null;          // transient user-facing error for blocked actions
 
   try {
     let planRes, memRes;
@@ -148,15 +202,25 @@ export async function initItinerary(ctx) {
     const board = document.getElementById('board');
     if (!board) return;
     clear(board);
+    // Re-derive the day columns from the latest staged plan (handles date
+    // edits and buffer-day toggles in the same render pass).
+    days = buildDays(staging.viewPlan());
     const items = staging.viewItems();
     const grouped = groupByDay(items, days, settings);
     for (const day of days) {
-      const sec = el('section', { class: 'day', dataset: { date: day.date } });
+      const sec = el('section', {
+        class: 'day' + (day.is_buffer ? ' day-buffer' : ''),
+        dataset: { date: day.date, buffer: day.is_buffer ? '1' : '0' },
+      });
       sec.addEventListener('click', () => setFocusedDay(day.date));
-      sec.appendChild(el('h3', {
-        class: 'day-title',
-        text: day.index ? `Day ${day.index} · ${day.label}` : day.label,
-      }));
+      const titleRow = el('div', { class: 'day-title-row' }, [
+        el('h3', {
+          class: 'day-title',
+          text: day.label,
+        }),
+        makeDayActions(day),
+      ]);
+      sec.appendChild(titleRow);
       const itemsBox = el('div', { class: 'day-items', dataset: { date: day.date } });
       for (const item of grouped.get(day.date)) {
         itemsBox.appendChild(renderCard(item, day.date));
@@ -166,9 +230,19 @@ export async function initItinerary(ctx) {
       if (bar) sec.appendChild(bar);
       board.appendChild(sec);
     }
-    // Repaint the plan title (in case a title edit was staged or undone).
+    // Repaint the plan title and dates (in case a title/dates edit was
+    // staged or undone). The dates only get re-painted when the user is
+    // not actively editing them (otherwise we'd steal their focus).
     const titleEl = document.getElementById('plan-title');
     if (titleEl) titleEl.textContent = staging.viewPlan().title || '';
+    const datesEl = document.getElementById('plan-dates');
+    if (datesEl && !datesEl.querySelector('input')) {
+      const v = staging.viewPlan();
+      paintDates(datesEl, v.start_date, v.end_date);
+    }
+    // The toolbar's +/- controls depend on the current range and
+    // need to be repainted whenever the view changes.
+    renderToolbar();
   }
 
   function renderCard(item, dayDate) {
@@ -236,6 +310,145 @@ export async function initItinerary(ctx) {
     return det;
   }
 
+  /* Per-day action chips. Buffer days get a close (×) button in the
+   * title row to remove the buffer marker. Trip days don't get a chip. */
+  function makeDayActions(day) {
+    if (ctx.role === 'viewer' || !day.date || !day.is_buffer) return null;
+    const btn = el('button', {
+      type: 'button',
+      class: 'day-action day-action-close',
+      title: 'Remove this buffer day',
+      text: '×',
+      'aria-label': 'Remove this buffer day',
+    });
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      stageBufferRemove(day.date);
+    });
+    return btn;
+  }
+
+  /* ----- staging helpers for plan-level changes ----- */
+
+  function stageDatesChange(newStart, newEnd) {
+    const view = staging.viewPlan();
+    staging.add(updatePlanDatesOp({
+      planId: ctx.planId,
+      start_date: newStart,
+      end_date: newEnd,
+      prev: { start_date: view.start_date, end_date: view.end_date },
+    }));
+  }
+
+  function extendStartBy(delta) {
+    const view = staging.viewPlan();
+    if (!view.start_date) return;
+    // Trimming the start removes the first day. Block if anything lives
+    // on it; the user must move or delete the items first.
+    if (delta > 0 && dayHasItems(view.start_date, staging.viewItems())) {
+      setBlockError(`Can't trim the start — ${view.start_date} has item(s). Move or delete them first.`);
+      return;
+    }
+    const newStart = addDaysIso(view.start_date, delta);
+    if (view.end_date && newStart > view.end_date) return;
+    setBlockError(null);
+    stageDatesChange(newStart, view.end_date);
+  }
+
+  function extendEndBy(delta) {
+    const view = staging.viewPlan();
+    if (!view.end_date) return;
+    // Trimming the end removes the last day. Block if anything lives on it.
+    if (delta < 0 && dayHasItems(view.end_date, staging.viewItems())) {
+      setBlockError(`Can't trim the end — ${view.end_date} has item(s). Move or delete them first.`);
+      return;
+    }
+    const newEnd = addDaysIso(view.end_date, delta);
+    if (view.start_date && newEnd < view.start_date) return;
+    setBlockError(null);
+    stageDatesChange(view.start_date, newEnd);
+  }
+
+  function setBlockError(msg) {
+    blockError = msg;
+    renderPendingBar();
+  }
+
+  function stageBufferRemove(date) {
+    const view = staging.viewPlan();
+    if (!(view.buffer_days || []).includes(date)) return;
+    // Block if there are items on this buffer day — the user must move or
+    // delete them first. The board re-renders unchanged and the error is
+    // surfaced in the pending bar.
+    if (dayHasItems(date, staging.viewItems())) {
+      setBlockError(`Can't remove this buffer day — it has item(s). Move or delete them first.`);
+      return;
+    }
+    setBlockError(null);
+    staging.add(updatePlanBufferDaysOp({
+      planId: ctx.planId,
+      add: [],
+      remove: [date],
+    }));
+  }
+
+  /* Buffers always live on a "scratchpad calendar" far away from the trip
+   * (year 9999), so they can never collide with a trip date no matter how
+   * the trip range moves. The dates are internal only — the column
+   * header just says "Buffer" with no day number or date. We allocate
+   * from the end of the year backward: 9999-12-31, 9999-12-30, ... so
+   * each buffer gets a unique, stable date (the table's PK is
+   * (plan_id, date)). */
+  function nextBufferDate(plan) {
+    // Buffers live on a "scratchpad calendar" far away from the trip (year
+    // 9999) so they can never collide with a trip date, regardless of how
+    // the trip range moves. Allocate from the end of the year backward
+    // (Dec 31, Dec 30, ...) so each buffer gets a unique, stable date
+    // matching the table's (plan_id, date) PK. We build the date in local
+    // time (not UTC) to keep it consistent with `isoOf` and the rest of
+    // the app.
+    const BUFFER_YEAR = 9999;
+    const cap = new Date(BUFFER_YEAR, 11, 31);
+    const capIso = isoOf(cap);
+    const taken = new Set(plan.buffer_days || []);
+    if (!taken.has(capIso)) return capIso;
+    let d = cap;
+    for (let i = 0; i < 366; i++) {
+      d.setDate(d.getDate() - 1);
+      const iso = isoOf(d);
+      if (!taken.has(iso)) return iso;
+    }
+    // Pathological case: every day in the buffer year is taken. Fall back
+    // to a year-padded counter so the date is still unique.
+    return `${BUFFER_YEAR}-12-${String(31 + (plan.buffer_days || []).length).padStart(2, '0')}`;
+  }
+
+  function stageBufferAdd() {
+    const view = staging.viewPlan();
+    const date = nextBufferDate(view);
+    staging.add(updatePlanBufferDaysOp({
+      planId: ctx.planId,
+      add: [date],
+      remove: [],
+    }));
+  }
+
+  /* True if the staged item list has any item whose item_date matches.
+   * Spanning items (hotels) are checked by their item_date only — the
+   * end_date is the exclusive checkout day, so a hotel that *ends* on
+   * `date` is not "on" it. */
+  function dayHasItems(date, items) {
+    return items.some(i => i.item_date === date);
+  }
+
+  /* True if any item in the staged list has item_date inside the trip
+   * range. Used by the date editor to validate that a proposed new range
+   * doesn't sweep items away. */
+  function tripRangeHasItems(start, end, items) {
+    if (!start || !end) return false;
+    return items.some(i => i.item_date >= start && i.item_date <= end);
+  }
+
   /* ----- pending-changes bar ----- */
 
   function renderPendingBar() {
@@ -290,14 +503,16 @@ export async function initItinerary(ctx) {
     });
 
     const status = el('span', {
-      class: 'pb-status' + (failed ? ' pb-failed' : ''),
-      text: staging.saving
-        ? 'Saving changes…'
-        : failed
-          ? `Save failed: ${staging.failedError}${failedLabel}`
-          : hasPending
-            ? `${staging.pendingCount} pending change${staging.pendingCount === 1 ? '' : 's'} — last: ${lastLabel}`
-            : 'All changes saved',
+      class: 'pb-status' + (failed ? ' pb-failed' : '') + (blockError ? ' pb-blocked' : ''),
+      text: blockError
+        ? blockError
+        : staging.saving
+          ? 'Saving changes…'
+          : failed
+            ? `Save failed: ${staging.failedError}${failedLabel}`
+            : hasPending
+              ? `${staging.pendingCount} pending change${staging.pendingCount === 1 ? '' : 's'} — last: ${lastLabel}`
+              : 'All changes saved',
     });
 
     bar.append(addDet, undoBtn, redoBtn, saveBtn, status);
@@ -309,6 +524,56 @@ export async function initItinerary(ctx) {
     if (!tb) return;
     clear(tb);
     if (ctx.role === 'viewer') return;
+
+    // Range controls: extend or trim the trip by 1 day on either side.
+    // Owner and editor both get this. Disabled when the relevant edge
+    // is unset.
+    const view = staging.viewPlan();
+    const hasStart = !!view.start_date;
+    const hasEnd = !!view.end_date;
+    const canTrimStart = hasStart && (!hasEnd || view.start_date < view.end_date);
+    const canTrimEnd = hasEnd && (!hasStart || view.start_date < view.end_date);
+
+    const mkRangeBtn = (text, title, action, onClick, disabled) => el('button', {
+      type: 'button', class: 'toolbar-btn toolbar-range', text, title,
+      dataset: { action },
+      disabled: !!disabled, onclick: onClick,
+    });
+    // Range controls: the arrow on each button points to the side the
+    // affected day lives on — for `+` it's where the new day appears; for
+    // `−` it's the side that just lost a day. The mental model is the
+    // calendar: extending the start means the trip starts one day earlier
+    // (the new day lives to the left of Day 1); extending the end means it
+    // ends one day later (the new day lives to the right of the last day);
+    // trimming pulls an edge inward.
+    //
+    // Each trip edge owns a pair of buttons: its extend on the outside,
+    // its trim on the inside. The toolbar reads from the outside in.
+    //
+    //   [‹ +1 day]  [−1 day ›]    |    [‹ −1 day]  [+1 day ›]
+    //     extend      trim-star       trim-end      extend
+    //     -start                          -end
+    const startGroup = el('span', { class: 'toolbar-range-group' }, [
+      mkRangeBtn('‹ +1 day', 'Add one day to the start of the trip (new day on the left)', 'extend-start',
+                 () => extendStartBy(-1), !hasStart),
+      mkRangeBtn('−1 day ›', 'Remove the first day of the trip', 'trim-start',
+                 () => extendStartBy(+1), !canTrimStart),
+    ]);
+    const endGroup = el('span', { class: 'toolbar-range-group' }, [
+      mkRangeBtn('‹ −1 day', 'Remove the last day of the trip', 'trim-end',
+                 () => extendEndBy(-1), !canTrimEnd),
+      mkRangeBtn('+1 day ›', 'Add one day to the end of the trip (new day on the right)', 'extend-end',
+                 () => extendEndBy(+1), !hasEnd),
+    ]);
+    tb.appendChild(startGroup);
+    tb.appendChild(endGroup);
+
+    // Buffer day control: one click adds a new buffer column. The date is
+    // derived (no picker) — the day before the trip start, or one day
+    // before the previously added buffer, so successive clicks keep adding
+    // further-back days. If there's no trip start, we use today.
+    tb.appendChild(makeBufferAddButton());
+
     const day = days.find(d => d.date === focusedDay) || days[0];
     tb.appendChild(el('span', { class: 'toolbar-label', text: `Quick add${day && day.index ? ` (Day ${day.index})` : ''}:` }));
     for (const [type, ti] of Object.entries(settings.item_types)) {
@@ -317,6 +582,19 @@ export async function initItinerary(ctx) {
       b.addEventListener('click', () => createItem(type, focusedDay));
       tb.appendChild(b);
     }
+  }
+
+  /* "Buffer day" button: a single click adds a new buffer day. The date is
+   * derived automatically — never ask the user. The column header just
+   * says "Buffer" (no day or date). */
+  function makeBufferAddButton() {
+    const btn = el('button', {
+      type: 'button', class: 'toolbar-btn toolbar-range',
+      text: '+ Buffer day',
+      title: 'Add a buffer day to the board (planning scratchpad for items you\'re not sure about)',
+    });
+    btn.addEventListener('click', () => stageBufferAdd());
+    return btn;
   }
 
   function setFocusedDay(date) {
@@ -374,16 +652,20 @@ export async function initItinerary(ctx) {
     // to enter title/details. Stage a blank item so the user sees it on the
     // board immediately and Cancel removes it. Spanning items (hotels) get
     // a 1-night default checkout so the user doesn't have to type it.
+    // If the requested day no longer exists (e.g. user trimmed it via the
+    // toolbar), fall back to the first day in the current view.
+    const dayExists = dayDate && days.some(d => d.date === dayDate);
+    const effectiveDate = dayExists ? dayDate : (days[0] && days[0].date) || null;
     const ti = settings.item_types[type];
     let defaultEnd = null;
-    if (ti && ti.spans_days && dayDate) {
-      const d = new Date(dayDate + 'T00:00:00');
+    if (ti && ti.spans_days && effectiveDate) {
+      const d = new Date(effectiveDate + 'T00:00:00');
       d.setDate(d.getDate() + 1);
       defaultEnd = isoOf(d);
     }
     const sessionId = 'sess-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 8);
     const op = createBlankItemOp({
-      planId: ctx.planId, item_type: type, item_date: dayDate || null,
+      planId: ctx.planId, item_type: type, item_date: effectiveDate || null,
       end_date: defaultEnd, sessionId,
     });
     staging.add(op);
@@ -445,17 +727,17 @@ export async function initItinerary(ctx) {
     staging.add(uploadImageOp({ itemId, file, previewUrl, caption: file.name }));
   }
 
-  /* ----- inline plan title editing (owner only) ----- */
+  /* ----- inline plan title + date editing ----- */
 
   function wireHeader() {
     const datesEl = document.getElementById('plan-dates');
     if (datesEl) {
-      if (plan.start_date && plan.end_date) {
-        datesEl.textContent = `${fmtDate(plan.start_date)} → ${fmtDate(plan.end_date)}`;
-      } else if (plan.start_date) {
-        datesEl.textContent = fmtDate(plan.start_date);
-      } else {
-        datesEl.textContent = 'Dates not set';
+      const view = staging ? staging.viewPlan() : plan;
+      paintDates(datesEl, view.start_date, view.end_date);
+      if (ctx.role !== 'viewer') {
+        datesEl.classList.add('editable');
+        datesEl.title = 'Click to edit trip start and end dates (saves on Save in the bar)';
+        datesEl.addEventListener('click', () => beginDatesEdit(datesEl));
       }
     }
     const titleEl = document.getElementById('plan-title');
@@ -464,6 +746,91 @@ export async function initItinerary(ctx) {
       titleEl.title = 'Click to edit title (saves on click Save in the bar)';
       titleEl.addEventListener('click', () => beginTitleEdit(titleEl));
     }
+  }
+
+  function paintDates(el_, start, end) {
+    if (start && end) {
+      el_.textContent = `${fmtDate(start)} → ${fmtDate(end)}`;
+    } else if (start) {
+      el_.textContent = fmtDate(start);
+    } else {
+      el_.textContent = 'Dates not set';
+    }
+  }
+
+  function beginDatesEdit(datesEl) {
+    if (datesEl.querySelector('input')) return;
+    const view = staging.viewPlan();
+    const startVal = view.start_date || '';
+    const endVal = view.end_date || '';
+    const startIn = document.createElement('input');
+    startIn.type = 'date'; startIn.className = 'input title-edit'; startIn.value = startVal;
+    const sep = document.createElement('span');
+    sep.className = 'dates-sep'; sep.textContent = '→';
+    const endIn = document.createElement('input');
+    endIn.type = 'date'; endIn.className = 'input title-edit'; endIn.value = endVal;
+    const wrap = document.createElement('span');
+    wrap.className = 'dates-edit-wrap';
+    wrap.append(startIn, sep, endIn);
+    clear(datesEl);
+    datesEl.appendChild(wrap);
+    startIn.focus();
+
+    function commit() {
+      const s = startIn.value || null;
+      const e = endIn.value || null;
+      const changed = s !== (view.start_date || null) || e !== (view.end_date || null);
+      if (changed && (!s || !e || s <= e)) {
+        // Validate that the proposed new range doesn't sweep any items off
+        // the board. We look at the staged item list — items that have
+        // moved (e.g. via drag/drop) are already on their new dates.
+        const items = staging.viewItems();
+        // Items that would fall outside the new range. (Spanning items are
+        // checked by their item_date only; the end_date is exclusive.)
+        const wouldLose = items.filter(i =>
+          i.item_date && (i.item_date < s || i.item_date > e));
+        // Also account for items on buffer days — those are managed by
+        // the buffer flow, not the date editor. If the new range still
+        // contains them, they remain on the board. If it sweeps past
+        // them, treat them like normal items (block).
+        const bufferSet = new Set(view.buffer_days || []);
+        const willCollide = wouldLose.some(i => !bufferSet.has(i.item_date));
+        if (willCollide) {
+          setBlockError(`New range would leave some item(s) outside the trip. Move or delete them first.`);
+          paintDates(datesEl, view.start_date, view.end_date);
+          return;
+        }
+        setBlockError(null);
+        stageDatesChange(s, e);
+      } else {
+        paintDates(datesEl, view.start_date, view.end_date);
+      }
+    }
+    function cancel() {
+      paintDates(datesEl, view.start_date, view.end_date);
+    }
+    function onKey(ev) {
+      if (ev.key === 'Enter') { ev.preventDefault(); commit(); }
+      else if (ev.key === 'Escape') { ev.preventDefault(); cancel(); }
+    }
+    startIn.addEventListener('keydown', onKey);
+    endIn.addEventListener('keydown', onKey);
+    // Commit on blur of either input, but avoid double-commit when moving
+    // focus from start to end: schedule commit on the *next* blur.
+    let committed = false;
+    const onBlur = () => {
+      if (committed) return;
+      committed = true;
+      // Microtask so the second input's focus has settled; if focus moved
+      // between the two inputs, skip committing and let the second input
+      // handle it on its own blur.
+      setTimeout(() => {
+        if (document.activeElement === startIn || document.activeElement === endIn) return;
+        commit();
+      }, 0);
+    };
+    startIn.addEventListener('blur', onBlur);
+    endIn.addEventListener('blur', onBlur);
   }
 
   function beginTitleEdit(titleEl) {

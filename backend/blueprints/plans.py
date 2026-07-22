@@ -92,10 +92,20 @@ def api_list_plans():
            ORDER BY p.created_at DESC""",
         (uid, uid, uid, uid),
     ).fetchall()
+    plan_ids = [r["id"] for r in rows]
+    buf_map = {}
+    if plan_ids:
+        placeholders = ",".join("?" * len(plan_ids))
+        for r in db.execute(
+            f"SELECT plan_id, date FROM plan_buffer_days WHERE plan_id IN ({placeholders}) ORDER BY date",
+            plan_ids,
+        ).fetchall():
+            buf_map.setdefault(r["plan_id"], []).append(r["date"])
     plans = []
     for r in rows:
         p = dict(r)
         p["role"] = "owner" if p["is_owner"] else p["share_role"]
+        p["buffer_days"] = buf_map.get(p["id"], [])
         plans.append(p)
     return jsonify({"plans": plans})
 
@@ -116,15 +126,36 @@ def api_create_plan():
          data.get("start_date"), data.get("end_date"),
          data.get("base_currency") or "USD"),
     )
+    plan_id = cur.lastrowid
+    for d in (data.get("buffer_days") or []):
+        if isinstance(d, str) and len(d) == 10 and d[4] == "-" and d[7] == "-":
+            db.execute(
+                "INSERT OR IGNORE INTO plan_buffer_days (plan_id, date) VALUES (?, ?)",
+                (plan_id, d),
+            )
     db.commit()
-    return jsonify({"plan": dict(db.execute(
-        "SELECT * FROM plans WHERE id = ?", (cur.lastrowid,)).fetchone())})
+    return jsonify({"plan": _plan_with_buffer_days(plan_id)})
+
+
+def _plan_with_buffer_days(plan_id):
+    """Return the plan row joined with its buffer_days as a sorted list."""
+    db = get_db()
+    row = db.execute("SELECT * FROM plans WHERE id = ?", (plan_id,)).fetchone()
+    if row is None:
+        return None
+    plan = dict(row)
+    buf = db.execute(
+        "SELECT date FROM plan_buffer_days WHERE plan_id = ? ORDER BY date",
+        (plan_id,),
+    ).fetchall()
+    plan["buffer_days"] = [r["date"] for r in buf]
+    return plan
 
 
 @plans_bp.route("/api/plans/<int:plan_id>")
 @plan_access()
 def api_get_plan(plan_id):
-    return jsonify({"plan": g.plan, "role": g.plan_role})
+    return jsonify({"plan": _plan_with_buffer_days(plan_id), "role": g.plan_role})
 
 
 @plans_bp.route("/api/plans/<int:plan_id>", methods=["PATCH"])
@@ -140,13 +171,51 @@ def api_update_plan(plan_id):
         if k in data:
             sets.append(f"{k} = ?")
             args.append(data[k])
+
+    # Buffer-day edits: pass a list of dates to set, or {add: [...], remove: [...]}
+    # to mutate the current set. The simple "set" form is convenient for the
+    # initial buffer toggle (single day); the add/remove form is cheaper when
+    # bulk-toggling.
+    buf_set = data.get("buffer_days_set")
+    buf_add = data.get("buffer_days_add") or []
+    buf_remove = data.get("buffer_days_remove") or []
+
+    db = get_db()
     if sets:
         sets.append("updated_at = datetime('now')")
         args.append(plan_id)
-        db = get_db()
         db.execute(f"UPDATE plans SET {', '.join(sets)} WHERE id = ?", args)
-        db.commit()
-    return jsonify({"plan": dict(db_exec_plan(plan_id))})
+    if buf_set is not None or buf_add or buf_remove:
+        if buf_set is not None:
+            # Replace the whole set. Validate as a list of ISO date strings.
+            if not isinstance(buf_set, list):
+                return err("buffer_days_set must be a list of dates", 400)
+            for d in buf_set:
+                if not (isinstance(d, str) and len(d) == 10 and d[4] == "-" and d[7] == "-"):
+                    return err(f"invalid buffer date: {d!r}", 400)
+            db.execute("DELETE FROM plan_buffer_days WHERE plan_id = ?", (plan_id,))
+            for d in buf_set:
+                db.execute(
+                    "INSERT OR IGNORE INTO plan_buffer_days (plan_id, date) VALUES (?, ?)",
+                    (plan_id, d),
+                )
+        else:
+            for d in buf_add:
+                if not (isinstance(d, str) and len(d) == 10 and d[4] == "-" and d[7] == "-"):
+                    return err(f"invalid buffer date: {d!r}", 400)
+                db.execute(
+                    "INSERT OR IGNORE INTO plan_buffer_days (plan_id, date) VALUES (?, ?)",
+                    (plan_id, d),
+                )
+            for d in buf_remove:
+                if not (isinstance(d, str) and len(d) == 10 and d[4] == "-" and d[7] == "-"):
+                    return err(f"invalid buffer date: {d!r}", 400)
+                db.execute(
+                    "DELETE FROM plan_buffer_days WHERE plan_id = ? AND date = ?",
+                    (plan_id, d),
+                )
+    db.commit()
+    return jsonify({"plan": _plan_with_buffer_days(plan_id)})
 
 
 @plans_bp.route("/api/plans/<int:plan_id>", methods=["DELETE"])
@@ -158,10 +227,6 @@ def api_delete_plan(plan_id):
     db.execute("DELETE FROM plans WHERE id = ?", (plan_id,))
     db.commit()
     return jsonify({"deleted": plan_id})
-
-
-def db_exec_plan(plan_id):
-    return get_db().execute("SELECT * FROM plans WHERE id = ?", (plan_id,)).fetchone()
 
 
 # ------------------------------------------------------------------ sharing

@@ -11,6 +11,7 @@
 import { assert, eq, summary } from './lib/t.mjs';
 import {
   Staging, createBlankItemOp, saveItemOp, updateItemOp, updatePlanTitleOp,
+  updatePlanDatesOp, updatePlanBufferDaysOp,
   moveItemOp, uploadImageOp, addLinkOp, deleteAttachmentOp, addExpenseOp,
 } from '/static/js/staging.js';
 
@@ -265,6 +266,54 @@ const HOTEL = (over = {}) => Object.assign({
   s.undo();
   s.redo();
   eq(fires, 3, 'subscriber fired 3 times');
+}
+
+/* ---------- updatePlanDatesOp: view + save + undo ---------- */
+{
+  const s = new Staging({
+    baseItems: [], basePlan: { id: 99, title: 'P', start_date: '2026-07-01', end_date: '2026-07-03' },
+  });
+  s.add(updatePlanDatesOp({
+    planId: 99, start_date: '2026-07-01', end_date: '2026-07-04',
+    prev: { start_date: '2026-07-01', end_date: '2026-07-03' },
+  }));
+  const v = s.viewPlan();
+  eq(v.start_date, '2026-07-01', 'start_date unchanged in view');
+  eq(v.end_date, '2026-07-04', 'end_date updated in view');
+  eq(s.ops[0].label, 'Extend trip end', 'label says Extend trip end when only end moved forward');
+  s.undo();
+  eq(s.viewPlan().end_date, '2026-07-03', 'undo restores end_date');
+  // Save issues a PATCH with both dates.
+  const { api, calls } = makeApi();
+  await s.saveAll(api);
+  const planPatch = calls.find(c => c.method === 'patch' && /\/api\/plans\/\d+$/.test(c.path));
+  assert(planPatch, 'save sends a PATCH to /api/plans/:id');
+  eq(planPatch.body.start_date, '2026-07-01', 'PATCH body has start_date');
+  eq(planPatch.body.end_date, '2026-07-04', 'PATCH body has end_date');
+}
+
+/* ---------- updatePlanBufferDaysOp: view + add/remove + save ---------- */
+{
+  const s = new Staging({
+    baseItems: [],
+    basePlan: { id: 99, title: 'P', buffer_days: ['2026-06-30'] },
+  });
+  s.add(updatePlanBufferDaysOp({
+    planId: 99, add: ['2026-07-05'], remove: ['2026-06-30'],
+  }));
+  const v = s.viewPlan();
+  eq(v.buffer_days.includes('2026-07-05'), true, 'added date appears in view');
+  eq(v.buffer_days.includes('2026-06-30'), false, 'removed date gone from view');
+  // Save sends a single PATCH with both add and remove lists.
+  const { api, calls } = makeApi();
+  await s.saveAll(api);
+  const planPatch = calls.find(c => c.method === 'patch' && /\/api\/plans\/\d+$/.test(c.path));
+  assert(planPatch, 'buffer save sends a PATCH');
+  eq(JSON.stringify(planPatch.body.buffer_days_add), '["2026-07-05"]', 'add list sent');
+  eq(JSON.stringify(planPatch.body.buffer_days_remove), '["2026-06-30"]', 'remove list sent');
+  // The view reflects the server's authoritative set after commit.
+  eq(s.viewPlan().buffer_days.includes('2026-07-05'), true, 'add stays after save');
+  eq(s.viewPlan().buffer_days.includes('2026-06-30'), false, 'remove stays after save');
 }
 
 summary('staging.test.mjs');

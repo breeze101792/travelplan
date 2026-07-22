@@ -181,6 +181,24 @@
 
 .modal.item-editor .field { display: block; font-size: .8rem; font-weight: 600; color: var(--muted, #475569); margin: 12px 0 4px; }
 .modal.item-editor .field:first-child { margin-top: 0; }
+
+/* Row of fields side-by-side. Each child (.field-group) gets equal width
+ * inside a row. Single-element rows (e.g. a long Address) just look like a
+ * full-width input because the row has only one child. */
+.modal.item-editor .field-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: flex-start;
+}
+.modal.item-editor .field-row .field-group {
+  flex: 1 1 140px;
+  min-width: 140px;
+  display: flex;
+  flex-direction: column;
+}
+.modal.item-editor .field-row .field-group .field { margin-top: 0; }
+.modal.item-editor .field-row .field-group .input { width: 100%; }
 .modal.item-editor .checkbox-line {
   display: flex; align-items: flex-start; gap: 8px;
   margin: 8px 0 4px;
@@ -282,6 +300,11 @@
 }
 .pb-failed { color: #b91c1c; }
 .pb-failed::before { background: #dc2626; }
+/* Blocked-action notice: the user tried a guarded action (e.g. trim a
+ * day with items). The text stays in the bar until the next valid
+ * action clears it. Same red palette as the save-failed status. */
+.pb-blocked { color: #b91c1c; }
+.pb-blocked::before { background: #dc2626; }
 
 /* Mark unsaved items with a subtle dashed border so the user can see what's
  * still pending on the board. */
@@ -294,3 +317,72 @@
 .queued-list { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 4px; }
 .queued-row { display: flex; align-items: center; gap: 8px; font-size: .85rem; color: #475569; }
 .queued-row .att-del { margin-left: auto; }
+
+/* ---------- editable plan dates (header) ---------- */
+/* The dates line behaves like a link when editable: dashed outline on hover
+ * matches the title. Inline date inputs swap in when the user clicks. */
+.plan-dates.editable { cursor: text; outline: 1px dashed transparent; border-radius: 4px; padding: 1px 4px; display: inline-block; }
+.plan-dates.editable:hover { outline-color: var(--line, #e5e7eb); background: rgba(0,0,0,.02); }
+.dates-edit-wrap { display: inline-flex; align-items: center; gap: 6px; }
+.dates-edit-wrap .input { font-size: .9rem; padding: 3px 6px; max-width: 160px; }
+.dates-sep { color: var(--muted, #64748b); }
+
+/* ---------- toolbar: range extend/trim controls ---------- */
+.toolbar-range-group { display: inline-flex; gap: 4px; padding: 0 10px; margin-right: 4px; border-right: 1px solid var(--border, #e5e7eb); }
+.toolbar-range-group:last-of-type { border-right: none; margin-right: 8px; }
+.toolbar-btn.toolbar-range { font-variant-numeric: tabular-nums; }
+.toolbar-btn.toolbar-range:disabled { opacity: .4; cursor: not-allowed; }
+
+/* ---------- per-day "Buffer" action chip + buffer day styling ---------- */
+.day-title-row {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 6px; margin: 0 0 2px;
+}
+.day-title-row .day-title { margin: 0; }
+.day-action {
+  font-size: .7rem; font-weight: 600; letter-spacing: .02em;
+  padding: 2px 8px; border-radius: 999px;
+  border: 1px dashed var(--border, #cbd5e1);
+  background: var(--surface, #fff); color: var(--muted, #475569);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.day-action:hover { color: var(--accent, #6366f1); border-color: var(--accent, #6366f1); border-style: solid; }
+.day-action.day-action-on {
+  background: var(--warn-weak, #fef3c7);
+  color: var(--warn, #d97706);
+  border-style: solid;
+  border-color: var(--warn, #d97706);
+}
+.day-action.day-action-on:hover { background: #fde68a; }
+/* Close (×) button on a buffer day: a small round chip top-right of the
+ * column header. The text "×" is the actual content; we size it as a
+ * pictogram so the user sees a clear close affordance, not a labeled
+ * "Buffer" pill. */
+.day-action.day-action-close {
+  width: 22px; height: 22px; padding: 0;
+  display: inline-flex; align-items: center; justify-content: center;
+  font-size: 1.1rem; line-height: 1; font-weight: 700;
+  background: transparent;
+  color: var(--muted, #94a3b8);
+  border-color: transparent;
+  border-radius: 50%;
+}
+.day-action.day-action-close:hover {
+  color: var(--warn, #d97706);
+  background: var(--warn-weak, #fef3c7);
+  border-color: transparent;
+}
+/* Buffer day column: dashed border, soft tint so the user sees the
+ * distinction without losing the day. The day title gets a tiny "buffer"
+ * tag prepended. */
+.day.day-buffer {
+  background: repeating-linear-gradient(45deg,
+    rgba(217, 119, 6, .04) 0 6px,
+    transparent 6px 12px),
+    var(--surface-2, #f8fafc);
+  border-style: dashed;
+  border-color: var(--warn, #d97706);
+}
+.day.day-buffer .day-title { color: var(--warn, #d97706); }
+.day.day-buffer .day-items { background: rgba(217, 119, 6, .03); }

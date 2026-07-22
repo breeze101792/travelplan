@@ -48,6 +48,16 @@ CREATE TABLE IF NOT EXISTS items (
 );
 CREATE INDEX IF NOT EXISTS idx_items_plan ON items(plan_id, item_date);
 
+-- Per-plan buffer days: a planning scratchpad for items the user isn't sure
+-- about yet. Distinct from the trip's [start_date, end_date] range; can sit
+-- outside that range or inside it. Each (plan, date) is unique. Cascades on
+-- plan delete.
+CREATE TABLE IF NOT EXISTS plan_buffer_days (
+  plan_id  INTEGER NOT NULL REFERENCES plans(id) ON DELETE CASCADE,
+  date     TEXT    NOT NULL,
+  PRIMARY KEY (plan_id, date)
+);
+
 CREATE TABLE IF NOT EXISTS attachments (
   id         INTEGER PRIMARY KEY AUTOINCREMENT,
   item_id    INTEGER NOT NULL REFERENCES items(id) ON DELETE CASCADE,

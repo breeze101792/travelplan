@@ -9,13 +9,21 @@
       "fields": [
         {"key": "hotel_name", "label": "Hotel name", "type": "text"},
         {"key": "address", "label": "Address", "type": "text"},
-        {"key": "check_in_time", "label": "Check-in time", "type": "time"},
-        {"key": "check_out_time", "label": "Check-out time", "type": "time"},
+        {"key": "check_in_time", "label": "Check-in", "type": "time"},
+        {"key": "check_out_time", "label": "Check-out", "type": "time"},
         {"key": "booking_ref", "label": "Booking ref", "type": "text"},
         {"key": "price", "label": "Price", "type": "money"},
         {"key": "currency", "label": "Currency", "type": "currency"},
         {"key": "link", "label": "Link", "type": "url"},
         {"key": "note", "label": "Note", "type": "textarea"}
+      ],
+      "rows": [
+        ["hotel_name", "booking_ref"],
+        ["check_in_time", "check_out_time"],
+        ["price", "currency"],
+        ["link"],
+        ["address"],
+        ["note"]
       ]
     },
     "flight": {
@@ -33,6 +41,13 @@
         {"key": "price", "label": "Price", "type": "money"},
         {"key": "currency", "label": "Currency", "type": "currency"},
         {"key": "link", "label": "Link", "type": "url"}
+      ],
+      "rows": [
+        ["airline", "flight_no"],
+        ["from", "to"],
+        ["depart_time", "arrive_time"],
+        ["confirmation", "link"],
+        ["price", "currency"]
       ]
     },
     "train": {
@@ -49,6 +64,13 @@
         {"key": "price", "label": "Price", "type": "money"},
         {"key": "currency", "label": "Currency", "type": "currency"},
         {"key": "link", "label": "Link", "type": "url"}
+      ],
+      "rows": [
+        ["train_no", "seat"],
+        ["from", "to"],
+        ["depart_time", "arrive_time"],
+        ["price", "currency"],
+        ["link"]
       ]
     },
     "ticket": {
@@ -64,6 +86,12 @@
         {"key": "price", "label": "Price", "type": "money"},
         {"key": "currency", "label": "Currency", "type": "currency"},
         {"key": "link", "label": "Link", "type": "url"}
+      ],
+      "rows": [
+        ["name", "venue"],
+        ["start_time", "end_time"],
+        ["qty", "price"],
+        ["currency", "link"]
       ]
     },
     "restaurant": {
@@ -76,6 +104,11 @@
         {"key": "time", "label": "Time", "type": "datetime-local"},
         {"key": "party_size", "label": "Party size", "type": "number"},
         {"key": "link", "label": "Reservation link", "type": "url"}
+      ],
+      "rows": [
+        ["name", "party_size"],
+        ["time", "link"],
+        ["address"]
       ]
     },
     "activity": {
@@ -90,6 +123,12 @@
         {"key": "price", "label": "Price", "type": "money"},
         {"key": "currency", "label": "Currency", "type": "currency"},
         {"key": "link", "label": "Link", "type": "url"}
+      ],
+      "rows": [
+        ["name", "location"],
+        ["start_time", "end_time"],
+        ["price", "currency"],
+        ["link"]
       ]
     },
     "transport": {
@@ -104,6 +143,12 @@
         {"key": "price", "label": "Price", "type": "money"},
         {"key": "currency", "label": "Currency", "type": "currency"},
         {"key": "link", "label": "Link", "type": "url"}
+      ],
+      "rows": [
+        ["mode", "price"],
+        ["from", "to"],
+        ["time", "currency"],
+        ["link"]
       ]
     },
     "note": {
@@ -112,6 +157,9 @@
       "spans_days": false,
       "fields": [
         {"key": "text", "label": "Note", "type": "textarea"}
+      ],
+      "rows": [
+        ["text"]
       ]
     }
   }

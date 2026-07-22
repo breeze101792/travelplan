@@ -80,14 +80,31 @@ export function openItemEditor(ctx, { plan, item, settings, members, staging, se
   backupLabel.appendChild(document.createTextNode(' This is a backup / alternative plan (shown after the main item on the timeline)'));
   colMain.appendChild(backupLabel);
 
-  // type-specific fields (left col)
+  // type-specific fields (left col), grouped into rows when the type
+  // declares a `rows` layout. A row of length > 1 places its inputs side by
+  // side (flex 1 each); single-element rows render full-width. Falls back
+  // to one-field-per-row for types that don't declare `rows`.
   const fieldInputs = {};
-  for (const f of (ti.fields || [])) {
-    colMain.appendChild(el('label', { class: 'field', text: f.label }));
-    const inp = makeFieldInput(f, item.details, settings, plan);
-    if (readOnly) inp.disabled = true;
-    fieldInputs[f.key] = inp;
-    colMain.appendChild(inp);
+  const fieldByKey = {};
+  for (const f of (ti.fields || [])) fieldByKey[f.key] = f;
+  const rowLayout = (ti.rows && ti.rows.length)
+    ? ti.rows
+    : (ti.fields || []).map(f => [f.key]);
+  for (const rowKeys of rowLayout) {
+    const rowKeysFiltered = rowKeys.filter(k => fieldByKey[k]);
+    if (!rowKeysFiltered.length) continue;
+    const rowEl = el('div', { class: 'field-row' });
+    for (const k of rowKeysFiltered) {
+      const f = fieldByKey[k];
+      const grp = el('div', { class: 'field-group' });
+      grp.appendChild(el('label', { class: 'field', text: f.label }));
+      const inp = makeFieldInput(f, item.details, settings, plan);
+      if (readOnly) inp.disabled = true;
+      fieldInputs[f.key] = inp;
+      grp.appendChild(inp);
+      rowEl.appendChild(grp);
+    }
+    colMain.appendChild(rowEl);
   }
 
   // status + dates (right col)
@@ -103,23 +120,31 @@ export function openItemEditor(ctx, { plan, item, settings, members, staging, se
   if (readOnly) statusSel.disabled = true;
   colSide.appendChild(statusSel);
 
-  colSide.appendChild(el('label', { class: 'field', text: 'Date' }));
+  colSide.appendChild(el('label', { class: 'field', text: ti.spans_days ? 'Dates' : 'Date' }));
   const dateInput = document.createElement('input');
   dateInput.type = 'date';
   dateInput.className = 'input';
   dateInput.value = item.item_date || '';
   if (readOnly) dateInput.disabled = true;
-  colSide.appendChild(dateInput);
 
   let endInput = null;
   if (ti.spans_days) {
-    colSide.appendChild(el('label', { class: 'field', text: 'End date (checkout)' }));
     endInput = document.createElement('input');
     endInput.type = 'date';
     endInput.className = 'input';
     endInput.value = item.end_date || '';
     if (readOnly) endInput.disabled = true;
-    colSide.appendChild(endInput);
+    // Place check-in / check-out on the same row — they are short date
+    // inputs and almost always edited together.
+    colSide.appendChild(el('div', { class: 'field-row' }, [
+      el('div', { class: 'field-group' }, [dateInput]),
+      el('div', { class: 'field-group' }, [
+        el('label', { class: 'field', text: 'End (checkout)' }),
+        endInput,
+      ]),
+    ]));
+  } else {
+    colSide.appendChild(dateInput);
   }
 
   // attachments (right col)
