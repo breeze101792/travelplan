@@ -285,6 +285,122 @@ export function updatePlanBufferDaysOp({ planId, add, remove, sessionId }) {
   };
 }
 
+/* Delete an item. Local (not-yet-saved) items are simply dropped from the
+ * view. The execute call is skipped for local ids. */
+export function deleteItemOp({ itemId, label, sessionId }) {
+  return {
+    id: null, kind: 'DELETE_ITEM', label: label || 'Delete item', sessionId,
+    apply(items) { return removeItem(items, itemId); },
+    planApply() { return null; },
+    async execute(api) {
+      if (typeof itemId === 'string' && itemId.startsWith('_')) {
+        return { skipped: true };
+      }
+      await api.del(`/api/items/${itemId}`);
+      return { deleted: Number(itemId) };
+    },
+  };
+}
+
+/* Bulk-create items from a clipboard payload (paste or duplicate). The
+ * op pre-builds the apply() result so the new items show on the board
+ * immediately, and on Save it posts each one and attaches any links.
+ *
+ * `items` is an array of plain objects produced by serializeItem():
+ *   { item_type, title, details, status, item_date, end_date, links[] }
+ * and (optionally) `_srcId` for cut-paste bookkeeping (not sent to the
+ * server). */
+export function createItemsFromClipOp({ planId, item_date, items, sessionId }) {
+  // Build the local drafts up-front so apply() can insert them right away.
+  const drafts = items.map((src) => {
+    const id = _LOCAL_ID();
+    return {
+      id, plan_id: planId,
+      item_type: src.item_type,
+      title: src.title || '(Untitled)',
+      item_date: item_date,
+      end_date: src.end_date || null,
+      sort_key: 9999,
+      status: src.status || 'planned',
+      details: src.details ? Object.assign({}, src.details) : {},
+      attachments: (src.links || []).map((lnk) => ({
+        id: _LOCAL_ID(),
+        item_id: id,
+        kind: 'link',
+        value: lnk.value,
+        caption: lnk.caption || '',
+        isLocal: true,
+      })),
+      isLocal: true,
+      isNew: true,
+    };
+  });
+  const label = items.length === 1
+    ? `Add ${items[0].item_type || 'item'}`
+    : `Add ${items.length} items`;
+  return {
+    id: null, kind: 'CREATE_ITEMS_FROM_CLIP', label, sessionId,
+    _draftIds: drafts.map(d => d.id),
+    apply(items, _base, ctx) {
+      // First pass: no server result yet — insert the local drafts.
+      if (!ctx || !ctx.result) return items.concat(drafts);
+      // Second pass: after the server has run, swap local ids for real
+      // ones and remap each draft's local attachments to the server's.
+      const created = (ctx.result && ctx.result.created) || [];
+      const byDraft = new Map(created.map(c => [c.draftId, c]));
+      const newItems = items.map((it) => {
+        const c = byDraft.get(String(it.id));
+        if (!c) return it;
+        const attachmentMap = new Map((c.attachmentMap || []).map(p => [p.localId, p.serverId]));
+        const atts = (it.attachments || []).map(a => {
+          const serverId = attachmentMap.get(a.id);
+          if (serverId == null) return a;
+          const updated = Object.assign({}, a, { id: serverId });
+          delete updated.isLocal;
+          return updated;
+        });
+        return Object.assign({}, it, {
+          id: c.newId, isLocal: false, isNew: false, attachments: atts,
+        });
+      });
+      return newItems;
+    },
+    planApply() { return null; },
+    async execute(api) {
+      const created = [];
+      for (let i = 0; i < items.length; i++) {
+        const src = items[i];
+        const draft = drafts[i];
+        const body = {
+          item_type: src.item_type,
+          title: src.title || '(Untitled)',
+          item_date: item_date,
+          end_date: src.end_date || null,
+          status: src.status || 'planned',
+          details: src.details || {},
+        };
+        const res = await api.post(`/api/plans/${planId}/items`, body);
+        const newId = res.item.id;
+        // Attach any links; record the {localAttId, serverAttId} pairs so
+        // the apply function can swap them out after save.
+        const attachmentMap = [];
+        for (const lnk of (src.links || [])) {
+          try {
+            const att = await api.post(`/api/items/${newId}/attachments`,
+                                       { kind: 'link', value: lnk.value, caption: lnk.caption || '' });
+            const localAtt = (draft.attachments || []).find(
+              a => a.value === lnk.value && (a.caption || '') === (lnk.caption || '')
+            );
+            if (localAtt) attachmentMap.push({ localId: localAtt.id, serverId: att.attachment.id });
+          } catch (e) { /* best-effort */ }
+        }
+        created.push({ draftId: draft.id, newId, attachmentMap });
+      }
+      return { created };
+    },
+  };
+}
+
 export function moveItemOp({ itemId, item_date, before_id, after_id, end_date, sessionId }) {
   return {
     id: null, kind: 'MOVE_ITEM', label: 'Move item', sessionId,

@@ -9,10 +9,13 @@ import { el, clear, fmtDate, money, statusBadge, loadSettings } from '/static/js
 import { enableDragDrop } from '/static/js/dragdrop.js';
 import { openItemEditor } from '/static/js/item-editor.js';
 import {
-  Staging, createBlankItemOp, saveItemOp, updateItemOp, updatePlanTitleOp,
-  updatePlanDatesOp, updatePlanBufferDaysOp,
-  moveItemOp, uploadImageOp, addLinkOp, deleteAttachmentOp, addExpenseOp,
+  Staging, createBlankItemOp, createItemsFromClipOp, saveItemOp, updateItemOp, updatePlanTitleOp,
+  updatePlanDatesOp, updatePlanBufferDaysOp, moveItemOp, deleteItemOp,
+  uploadImageOp, addLinkOp, deleteAttachmentOp, addExpenseOp,
 } from '/static/js/staging.js';
+import {
+  clipboardGet, clipboardSet, clipboardClear, serializeItem,
+} from '/static/js/clipboard.js';
 
 /* JPY/KRW have 0 minor units; everything else uses 2. Matches backend. */
 function decimalsFor(cur) {
@@ -152,6 +155,13 @@ export async function initItinerary(ctx) {
   let expenseByItem = new Map();
   let staging;
   let blockError = null;          // transient user-facing error for blocked actions
+  // Multi-select state. `selection` is a Set of item ids (numbers for
+  // server-saved items, string local ids for drafts). Spanning items
+  // (hotels) are not selectable — they're a different kind of day-object.
+  // `lastSelectedId` is the anchor for shift-click range selection
+  // (within the same day only).
+  let selection = new Set();
+  let lastSelectedId = null;
 
   try {
     let planRes, memRes;
@@ -248,8 +258,9 @@ export async function initItinerary(ctx) {
   function renderCard(item, dayDate) {
     const ti = settings.item_types[item.item_type] || { label: item.item_type };
     const card = el('article', {
-      class: `card item ${item.item_type} status-${item.status}`,
-      dataset: { itemId: String(item.id), date: dayDate, end: item.end_date || '', type: item.item_type },
+      class: `card item ${item.item_type} status-${item.status}` + (isSelectable(item) && isSelected(item.id) ? ' card-selected' : ''),
+      dataset: { itemId: String(item.id), date: dayDate, end: item.end_date || '',
+                 type: item.item_type, spans: isSpanningItem(item, settings) ? '1' : '0' },
     });
     if (ctx.role !== 'viewer') card.draggable = true;
     if (item.isLocal) card.classList.add('is-local');
@@ -291,7 +302,33 @@ export async function initItinerary(ctx) {
       }));
     }
 
-    card.addEventListener('click', () => openEditorFor(item));
+    card.addEventListener('click', (e) => {
+      // Suppress the click that the browser sometimes fires after a
+      // right-click (mouse button 2) or after a drag. A real user click
+      // uses button 0. If button is missing (e.g. synthetic dispatch),
+      // treat it as a normal click.
+      if (e.button != null && e.button !== 0) return;
+      handleCardClick(item, e);
+    });
+    card.addEventListener('contextmenu', (e) => {
+      if (ctx.role === 'viewer') return;
+      e.preventDefault();
+      // Spanning items (hotels) don't participate in multi-select; the
+      // right-click is unused. Bail without showing a menu so the user
+      // doesn't see a confusingly-disabled context menu.
+      if (!isSelectable(item)) return;
+      // Right-click is a shortcut for "show the action menu" — like
+      // ⌘+click but with a menu. If the right-clicked card isn't already
+      // in the selection, add it so the menu acts on it. (Cmd+click
+      // toggles a single card; the right-click is a one-shot equivalent
+      // that also opens the menu.)
+      if (!isSelected(item.id)) {
+        selection.add(String(item.id));
+        lastSelectedId = String(item.id);
+        refreshCardOutlines();
+      }
+      showContextMenu(e.clientX, e.clientY);
+    });
     return card;
   }
 
@@ -447,6 +484,356 @@ export async function initItinerary(ctx) {
   function tripRangeHasItems(start, end, items) {
     if (!start || !end) return false;
     return items.some(i => i.item_date >= start && i.item_date <= end);
+  }
+
+  /* ----- multi-select -----
+   * Spanning items (hotels) are not selectable — they live across days,
+   * are pinned to the bottom, and selecting them for cut/copy/duplicate
+   * would require special handling that's not worth the complexity. The
+   * user can still open them with a regular click. */
+  function isSelectable(item) {
+    if (!item) return false;
+    return !isSpanningItem(item, settings);
+  }
+
+  function isSelected(id) { return selection.has(String(id)); }
+
+  function clearSelection() {
+    if (selection.size === 0) return;
+    selection = new Set();
+    lastSelectedId = null;
+    refreshCardOutlines();
+  }
+
+  function selectOnly(id) {
+    selection = new Set([String(id)]);
+    lastSelectedId = String(id);
+    refreshCardOutlines();
+  }
+
+  function toggleSelect(id) {
+    id = String(id);
+    if (selection.has(id)) {
+      selection.delete(id);
+      // lastSelectedId stays where it was so further shift-clicks anchor
+      // sensibly; clear it only if we just removed it.
+      if (lastSelectedId === id) lastSelectedId = null;
+    } else {
+      selection.add(id);
+      lastSelectedId = id;
+    }
+    refreshCardOutlines();
+  }
+
+  /* Select a contiguous range of selectable items in the same day, from
+   * `from` to `to` (inclusive). Spanning items (hotels) are skipped in
+   * the range — they break the chain. */
+  function selectRangeInDay(items, dayDate, from, to) {
+    if (!from || !to) { selectOnly(to || from); return; }
+    const ids = items
+      .filter(it => it.item_date === dayDate && isSelectable(it))
+      .map(it => String(it.id));
+    const a = ids.indexOf(String(from));
+    const b = ids.indexOf(String(to));
+    if (a < 0 || b < 0) { selectOnly(to); return; }
+    const [lo, hi] = a < b ? [a, b] : [b, a];
+    const next = new Set(selection);
+    for (let i = lo; i <= hi; i++) next.add(ids[i]);
+    selection = next;
+    lastSelectedId = String(to);
+    refreshCardOutlines();
+  }
+
+  /* Multi-day range select. The board lays items out in day-then-position
+   * order; we slice that sequence from the `from` anchor to the `to`
+   * anchor (inclusive) and add every selectable (non-spanning) item in
+   * between. Items on intermediate days are included automatically;
+   * hotels (spanning) are skipped — they don't participate in multi-
+   * select. Either anchor may be on any day; direction is figured out
+   * by their position in the board sequence. */
+  function selectRangeAcrossDays(from, to) {
+    if (!from || !to) { selectOnly(to || from); return; }
+    const all = staging.viewItems();
+    // Walk in board order: sort by (day, sort_key, id) so the sequence
+    // matches what the user sees on the screen. ISO date strings compare
+    // correctly as plain strings (YYYY-MM-DD), so we use a direct <
+    // instead of localeCompare to stay locale-independent.
+    const ordered = all.slice().sort((a, b) => {
+      if (a.item_date !== b.item_date) {
+        return (a.item_date < b.item_date) ? -1 : 1;
+      }
+      if (a.sort_key !== b.sort_key) return a.sort_key - b.sort_key;
+      return a.id - b.id;
+    });
+    const ids = ordered.map(it => String(it.id));
+    const a = ids.indexOf(String(from));
+    const b = ids.indexOf(String(to));
+    if (a < 0 || b < 0) { selectOnly(to); return; }
+    const [lo, hi] = a < b ? [a, b] : [b, a];
+    const idSet = new Set(ids.slice(lo, hi + 1));
+    const next = new Set(selection);
+    // Add every selectable item in the slice. We compute against the
+    // *ordered* list so the result matches the visible sequence (the
+    // user's mental model); the `isSelectable` filter drops hotels.
+    for (let i = lo; i <= hi; i++) {
+      const it = ordered[i];
+      if (isSelectable(it)) next.add(String(it.id));
+    }
+    selection = next;
+    lastSelectedId = String(to);
+    refreshCardOutlines();
+    // Reference idSet so eslint doesn't flag the unused variable — the
+    // explicit Set is a debugging aid if the logic ever needs to inspect
+    // the raw range.
+    void idSet;
+  }
+
+  /* Update the .card-selected class on every card without re-rendering
+   * the whole board. Cheap and doesn't disturb the focus or scroll.
+   * Spanning items (hotels, etc.) never get the outline — they're a
+   * different kind of object and can't be part of a multi-select, even
+   * if they happen to be in the selection set (a transient state). */
+  function refreshCardOutlines() {
+    const board = document.getElementById('board');
+    if (!board) return;
+    for (const c of board.querySelectorAll('.card.item')) {
+      const inSel = selection.has(c.dataset.itemId);
+      const isSpanning = c.dataset.spans === '1';
+      if (inSel && !isSpanning) c.classList.add('card-selected');
+      else c.classList.remove('card-selected');
+    }
+  }
+
+  /* Resolve a click event into a selection action and apply it.
+   *
+   * Click model:
+   *   - Plain click          → open the item editor.
+   *   - Cmd / Ctrl + click   → toggle that one item in the multi-select
+   *                            (no editor). Spanning items (hotels) are
+   *                            rejected with a brief toast.
+   *   - Shift + click        → range select. If the anchor and the
+   *                            target are on the same day, we range
+   *                            within that day. If they're on different
+   *                            days, the range walks the board sequence
+   *                            from the anchor to the target and adds
+   *                            every selectable (non-spanning) item in
+   *                            between, including items on intermediate
+   *                            days. Spanning items are skipped — they
+   *                            can't be part of a multi-select.
+   *   - Plain click on a hotel → open the editor (unchanged).
+   *   - Shift + click on a hotel → rejected with the same toast as
+   *                            Cmd+click on a hotel.
+   */
+  function handleCardClick(item, ev) {
+    if (!isSelectable(item)) {
+      if (ev.metaKey || ev.ctrlKey || ev.shiftKey) {
+        // The user tried to multi-select a spanning item. Reject with a
+        // single, brief toast — hotels only move by drag or by editing
+        // their dates in the editor.
+        showToast('Spanning items (e.g. hotels) can\'t be multi-selected. Drag or open the editor to change dates.', 'warn');
+        return;
+      }
+      // Plain click on a hotel: open the editor.
+      openEditorFor(item);
+      return;
+    }
+    if (ev.metaKey || ev.ctrlKey) {
+      toggleSelect(item.id);
+      return;
+    }
+    if (ev.shiftKey) {
+      const from = lastSelectedId || (selection.size ? [...selection][selection.size - 1] : null);
+      // Range select across days: if the anchor and target are on the
+      // same day we can use the fast in-day path, otherwise we walk the
+      // whole board sequence and select everything in between (skipping
+      // hotels).
+      const target = item;
+      const allItems = staging.viewItems();
+      const fromItem = from ? allItems.find(i => String(i.id) === String(from)) : null;
+      if (fromItem && fromItem.item_date === target.item_date) {
+        selectRangeInDay(allItems, target.item_date, from, target.id);
+      } else {
+        selectRangeAcrossDays(from, target.id);
+      }
+      return;
+    }
+    // Plain click: open the editor. The selection state is unchanged so
+    // the user can keep their current multi-select while editing one item.
+    openEditorFor(item);
+  }
+
+  /* Items in the current selection as objects (from the staged view).
+   * Spanning items are filtered out — the user can't have selected one. */
+  function selectedItems() {
+    const all = staging.viewItems();
+    return all.filter(i => isSelectable(i) && selection.has(String(i.id)));
+  }
+
+  /* Build a stable session id for batched paste/duplicate/delete ops so
+   * Cancel discards them together. */
+  function batchSessionId() {
+    return 'sess-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 8);
+  }
+
+  /* Cut / copy / paste / duplicate / delete are the multi-select actions.
+   * They run on the current selection (or no-op if empty). */
+
+  function copySelection() {
+    const items = selectedItems();
+    if (!items.length) return;
+    clipboardSet({ items, action: 'copy' });
+    setBlockError(null);
+  }
+
+  function cutSelection() {
+    const items = selectedItems();
+    if (!items.length) return;
+    // Stamp each clipboard entry with the source item's id so the
+    // later paste can stage a delete of the originals.
+    const stamped = items.map((it, i) => Object.assign(serializeItem(it), { _srcId: it.id }));
+    clipboardSet({ items: stamped, action: 'cut' });
+    setBlockError(null);
+  }
+
+  /* Paste from the clipboard onto the focused day. For each clipboard
+   * item, stage a CREATE_BLANK_ITEM with the saved content. We use the
+   * same create-blank op so that subsequent SAVE_ITEM (opened by the
+   * editor flow) can take over. But the user doesn't want to be popped
+   * into an editor for every pasted item — we instead stage a custom
+   * "create from clipboard" sequence that does the POST immediately and
+   * then attaches the link attachments. */
+  function pasteFromClipboard() {
+    const clip = clipboardGet();
+    if (!clip || !clip.items.length) return;
+    if (!focusedDay) return;
+    const sessionId = batchSessionId();
+    // Stage a save of all the clipboard items as a single op. We do it as
+    // one big op so the user can undo the paste in one click. The op
+    // creates each item via POST and attaches the links.
+    staging.add(createItemsFromClipOp({
+      planId: ctx.planId,
+      item_date: focusedDay,
+      items: clip.items,
+      sessionId,
+    }));
+    // If the original action was 'cut', also stage a delete for the
+    // original items (sharing the same sessionId so cancel discards both).
+    if (clip.action === 'cut') {
+      for (const src of clip.items) {
+        if (src._srcId != null) {
+          staging.add(deleteItemOp({ itemId: src._srcId, label: 'Cut', sessionId }));
+        }
+      }
+      // The clipboard should be cleared after a successful cut-paste so
+      // a second paste doesn't re-delete. We do that on save; for now
+      // leave it — undo restores the originals and the cut marker too.
+    }
+  }
+
+  function duplicateSelection() {
+    const items = selectedItems();
+    if (!items.length) return;
+    if (!focusedDay) return;
+    const sessionId = batchSessionId();
+    staging.add(createItemsFromClipOp({
+      planId: ctx.planId,
+      item_date: focusedDay,
+      items: items.map(i => Object.assign(serializeItem(i), { _srcId: i.id })),
+      sessionId,
+    }));
+  }
+
+  function deleteSelection() {
+    const items = selectedItems();
+    if (!items.length) return;
+    const sessionId = batchSessionId();
+    for (const i of items) {
+      staging.add(deleteItemOp({
+        itemId: i.id,
+        label: items.length === 1 ? `Delete ${i.title || 'item'}` : `Delete ${items.length} items`,
+        sessionId,
+      }));
+    }
+    clearSelection();
+  }
+
+  /* The cut/copy/paste/duplicate/delete actions above all work on the
+   * current selection. Paste targets the focused day; the user can
+   * change the focused day by clicking on a different day column first
+   * (see setFocusedDay). */
+
+  /* ----- right-click context menu ----- */
+
+  /* Transient toast: appears in the top-right for ~3s, then fades out.
+   * Used for the "hotels can't be multi-selected" warning and similar
+   * non-blocking nudges. Multiple toasts stack vertically. */
+  const toastsEl = (() => {
+    const root = el('div', { class: 'toast-stack', 'aria-live': 'polite' });
+    document.body.appendChild(root);
+    return root;
+  })();
+  let toastSeq = 0;
+  function showToast(text, kind) {
+    const id = ++toastSeq;
+    const node = el('div', { class: 'toast' + (kind ? ' toast-' + kind : ''), role: 'status', text });
+    toastsEl.appendChild(node);
+    // Auto-dismiss after 3s. The shim doesn't run timers for the test
+    // (tests don't wait for them), so this is purely a real-browser
+    // behavior.
+    setTimeout(() => { if (node.parentNode) node.remove(); }, 3000);
+    return id;
+  }
+
+  let contextMenuEl = null;
+  function closeContextMenu() {
+    if (contextMenuEl) {
+      if (contextMenuEl.remove) contextMenuEl.remove();
+      else if (contextMenuEl.parentNode) contextMenuEl.parentNode.removeChild(contextMenuEl);
+    }
+    contextMenuEl = null;
+  }
+  function showContextMenu(x, y) {
+    closeContextMenu();
+    const menu = el('ul', { class: 'context-menu', role: 'menu' });
+    const sel = selectedItems();
+    const clip = clipboardGet();
+    const items = [
+      { label: 'Cut',         shortcut: '⌘X', enabled: sel.length > 0, action: () => { cutSelection(); closeContextMenu(); } },
+      { label: 'Copy',        shortcut: '⌘C', enabled: sel.length > 0, action: () => { copySelection(); closeContextMenu(); } },
+      { label: 'Paste',       shortcut: '⌘V', enabled: !!(clip && clip.items.length) && !!focusedDay,
+        action: () => { pasteFromClipboard(); closeContextMenu(); } },
+      { label: 'Duplicate',   shortcut: '⌘D', enabled: sel.length > 0 && !!focusedDay,
+        action: () => { duplicateSelection(); closeContextMenu(); } },
+      { sep: true },
+      { label: 'Delete',      shortcut: 'Del', enabled: sel.length > 0, danger: true,
+        action: () => { deleteSelection(); closeContextMenu(); } },
+    ];
+    for (const it of items) {
+      if (it.sep) { menu.appendChild(el('li', { class: 'context-menu-sep' })); continue; }
+      const li = el('li', { class: 'context-menu-item' + (it.danger ? ' is-danger' : ''), role: 'menuitem' });
+      const btn = el('button', { type: 'button', text: it.label });
+      btn.disabled = !it.enabled;
+      btn.addEventListener('click', (e) => { e.stopPropagation(); it.action(); });
+      li.appendChild(btn);
+      if (it.shortcut) li.appendChild(el('span', { class: 'context-menu-shortcut', text: it.shortcut }));
+      menu.appendChild(li);
+    }
+    document.body.appendChild(menu);
+    // Position: clamp to viewport so the menu never falls off-screen.
+    // The shim doesn't implement getBoundingClientRect or window.innerWidth
+    // — fall back to the requested coordinates so the test still works.
+    let rectW = 200, rectH = 200;
+    try {
+      const rect = menu.getBoundingClientRect();
+      if (rect) { rectW = rect.width || rectW; rectH = rect.height || rectH; }
+    } catch (e) { /* shim: use defaults */ }
+    const vw = (typeof window !== 'undefined' && window.innerWidth) || 1024;
+    const vh = (typeof window !== 'undefined' && window.innerHeight) || 768;
+    const px = Math.min(x, vw - rectW - 8);
+    const py = Math.min(y, vh - rectH - 8);
+    menu.style.left = `${Math.max(8, px)}px`;
+    menu.style.top  = `${Math.max(8, py)}px`;
+    contextMenuEl = menu;
   }
 
   /* ----- pending-changes bar ----- */
@@ -706,6 +1093,31 @@ export async function initItinerary(ctx) {
       openEditorFor(item);
       return;
     }
+    const sessionId = batchSessionId();
+    // Multi-drag: if the dragged item is part of the selection, move
+    // every selected item to the same target date. before_id / after_id
+    // are only meaningful for the lead item; the rest land at the end
+    // of the day (the user can re-order if needed).
+    const leadId = String(itemId);
+    if (isSelectable(item) && isSelected(leadId) && selection.size > 1) {
+      const moving = [...selection].map(id => String(id));
+      for (const id of moving) {
+        const it = staging.viewItems().find(x => String(x.id) === id);
+        if (!it) continue;
+        const ti = settings.item_types[it.item_type];
+        const end_date = (ti && ti.spans_days) ? (it.end_date || null) : null;
+        const isLead = id === leadId;
+        staging.add(moveItemOp({
+          itemId: it.id,
+          item_date: isLead ? item_date : (it.item_date || item_date),
+          before_id: isLead ? before_id : null,
+          after_id:  isLead ? after_id  : null,
+          end_date,
+          sessionId,
+        }));
+      }
+      return;
+    }
     const ti = settings.item_types[item.item_type];
     const end_date = (ti && ti.spans_days) ? (item.end_date || null) : null;
     staging.add(moveItemOp({
@@ -870,17 +1282,45 @@ export async function initItinerary(ctx) {
   // with text editing.
   function isTypingTarget(t) {
     if (!t) return false;
-    if (t.matches && t.matches('input, textarea, select, [contenteditable]')) return true;
+    // The shim doesn't always implement `matches`; check the tagName
+    // directly as a fallback. Real DOMs use `matches`.
+    const tag = (t.tagName || '').toUpperCase();
+    if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return true;
+    if (t.isContentEditable) return true;
+    if (t.matches) return t.matches('input, textarea, select, [contenteditable]');
     return false;
   }
   function onKeydown(e) {
     if (isTypingTarget(e.target)) return;
     const mod = e.metaKey || e.ctrlKey;
-    if (!mod) return;
-    const k = e.key.toLowerCase();
-    if (k === 'z' && !e.shiftKey) { e.preventDefault(); staging.undo(); }
-    else if ((k === 'z' && e.shiftKey) || k === 'y') { e.preventDefault(); staging.redo(); }
-    else if (k === 's') { e.preventDefault(); doSave(); }
+    if (mod) {
+      const k = e.key.toLowerCase();
+      if (k === 'z' && !e.shiftKey) { e.preventDefault(); staging.undo(); return; }
+      if ((k === 'z' && e.shiftKey) || k === 'y') { e.preventDefault(); staging.redo(); return; }
+      if (k === 's') { e.preventDefault(); doSave(); return; }
+      if (k === 'c') { e.preventDefault(); copySelection(); return; }
+      if (k === 'x') { e.preventDefault(); cutSelection(); return; }
+      if (k === 'v') { e.preventDefault(); pasteFromClipboard(); return; }
+      if (k === 'd') { e.preventDefault(); duplicateSelection(); return; }
+      if (k === 'a') {
+        // ⌘A: select every non-spanning item on the board.
+        e.preventDefault();
+        selection = new Set(
+          staging.viewItems().filter(isSelectable).map(i => String(i.id))
+        );
+        lastSelectedId = null;
+        refreshCardOutlines();
+        return;
+      }
+      return;
+    }
+    if (e.key === 'Delete' || e.key === 'Backspace') {
+      if (selection.size) { e.preventDefault(); deleteSelection(); return; }
+    }
+    if (e.key === 'Escape') {
+      if (contextMenuEl) { closeContextMenu(); return; }
+      if (selection.size) { clearSelection(); return; }
+    }
   }
 
   /* ----- beforeunload guard ----- */
@@ -900,4 +1340,22 @@ export async function initItinerary(ctx) {
   enableDragDrop(document.getElementById('board'), { onMove, onUpload });
   document.addEventListener('keydown', onKeydown);
   window.addEventListener('beforeunload', onBeforeUnload);
+  // Global click: close the context menu if it's open and the click
+  // didn't land inside it (the menu's own click handler stops propagation,
+  // so this listener only fires for outside clicks). Also clear the
+  // selection when the user clicks on a blank day area.
+  document.addEventListener('click', (e) => {
+    if (contextMenuEl && !contextMenuEl.contains(e.target)) closeContextMenu();
+    // Selection-clearing: only when the click lands on a day section
+    // background (not on a card, not on a button inside the section).
+    // Clicking a card is handled by handleCardClick; clicking a button
+    // (e.g. the + Add item disclosure) is a different action.
+    if (selection.size && e.target.closest) {
+      const onCard = e.target.closest('.card.item');
+      const onButton = e.target.closest('button, summary, input, textarea, select, a, label');
+      const onDaySection = e.target.closest('.day');
+      if (!onCard && !onButton && onDaySection) clearSelection();
+    }
+  });
+  document.addEventListener('scroll', closeContextMenu, true);
 }

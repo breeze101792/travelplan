@@ -386,3 +386,93 @@
 }
 .day.day-buffer .day-title { color: var(--warn, #d97706); }
 .day.day-buffer .day-items { background: rgba(217, 119, 6, .03); }
+
+/* ---------- multi-select: selected card outline ---------- */
+.card.item.card-selected {
+  outline: 2px solid var(--accent, #6366f1);
+  outline-offset: -2px;
+  background: var(--accent-weak, #eef2ff);
+}
+.card.item.card-selected.is-local {
+  /* keep the dashed "unsaved" border but reinforce with the select outline */
+  outline-style: solid;
+}
+
+/* ---------- right-click context menu ---------- */
+.context-menu {
+  position: fixed;
+  z-index: 1000;
+  min-width: 200px;
+  margin: 0; padding: 4px;
+  list-style: none;
+  background: var(--surface, #fff);
+  border: 1px solid var(--border, #cbd5e1);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(15, 23, 42, .15);
+  font-size: .9rem;
+}
+.context-menu-item { display: flex; align-items: center; }
+.context-menu-item button {
+  flex: 1; text-align: left;
+  padding: 6px 10px; border: 0; background: transparent;
+  color: var(--text, #1f2937); cursor: pointer;
+  border-radius: 4px;
+  font: inherit;
+}
+.context-menu-item button:hover:not(:disabled) {
+  background: var(--surface-2, #f1f5f9);
+}
+.context-menu-item button:disabled { color: var(--muted, #94a3b8); cursor: not-allowed; }
+.context-menu-item.is-danger button { color: var(--warn, #b91c1c); }
+.context-menu-item.is-danger button:hover:not(:disabled) {
+  background: rgba(185, 28, 28, .08);
+}
+.context-menu-shortcut {
+  margin-left: auto; padding: 0 8px;
+  color: var(--muted, #94a3b8); font-size: .8rem;
+  font-variant: tabular-nums;
+}
+.context-menu-sep {
+  height: 1px; margin: 4px 6px;
+  background: var(--border, #e5e7eb);
+  list-style: none;
+}
+
+/* ---------- transient toasts (top-right) ----------
+ * Non-blocking messages that appear in the top-right of the page and
+ * auto-dismiss after a few seconds. Used for "hotels can't be multi-
+ * selected" and similar single-shot warnings. */
+.toast-stack {
+  position: fixed;
+  top: 16px; right: 16px;
+  display: flex; flex-direction: column; gap: 8px;
+  z-index: 1100;
+  pointer-events: none;       /* let clicks pass through the empty area */
+}
+.toast {
+  pointer-events: auto;
+  min-width: 220px; max-width: 360px;
+  padding: 10px 14px;
+  background: var(--surface, #fff);
+  color: var(--text, #1f2937);
+  border: 1px solid var(--border, #cbd5e1);
+  border-left: 4px solid var(--accent, #6366f1);
+  border-radius: 8px;
+  box-shadow: 0 6px 18px rgba(15, 23, 42, .12);
+  font-size: .9rem;
+  animation: toast-in .18s ease-out;
+}
+.toast.toast-warn {
+  border-left-color: var(--warn, #d97706);
+  color: var(--warn, #92400e);
+  background: var(--warn-weak, #fffbeb);
+}
+.toast.toast-error {
+  border-left-color: var(--danger, #b91c1c);
+  color: var(--danger, #991b1b);
+  background: var(--danger-weak, #fef2f2);
+}
+@keyframes toast-in {
+  from { opacity: 0; transform: translateY(-6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}

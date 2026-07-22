@@ -10,9 +10,9 @@
  */
 import { assert, eq, summary } from './lib/t.mjs';
 import {
-  Staging, createBlankItemOp, saveItemOp, updateItemOp, updatePlanTitleOp,
-  updatePlanDatesOp, updatePlanBufferDaysOp,
-  moveItemOp, uploadImageOp, addLinkOp, deleteAttachmentOp, addExpenseOp,
+  Staging, createBlankItemOp, createItemsFromClipOp, saveItemOp, updateItemOp,
+  updatePlanTitleOp, updatePlanDatesOp, updatePlanBufferDaysOp,
+  deleteItemOp, moveItemOp, uploadImageOp, addLinkOp, deleteAttachmentOp, addExpenseOp,
 } from '/static/js/staging.js';
 
 /* ---------- fake API that records calls and mints ids ---------- */
@@ -314,6 +314,66 @@ const HOTEL = (over = {}) => Object.assign({
   // The view reflects the server's authoritative set after commit.
   eq(s.viewPlan().buffer_days.includes('2026-07-05'), true, 'add stays after save');
   eq(s.viewPlan().buffer_days.includes('2026-06-30'), false, 'remove stays after save');
+}
+
+/* ---------- createItemsFromClipOp: paste/duplicate ---------- */
+{
+  const s = new Staging({ baseItems: [], basePlan: { id: 99, title: 'P' } });
+  const clip = [
+    {
+      item_type: 'activity', title: 'A',
+      details: { from: 'x', to: 'y' }, status: 'planned',
+      item_date: '2026-07-02', end_date: null,
+      links: [{ value: 'https://example.com', caption: 'site' }],
+    },
+    {
+      item_type: 'note', title: 'B',
+      details: {}, status: 'planned',
+      item_date: '2026-07-02', end_date: null,
+      links: [],
+    },
+  ];
+  const sessionId = 'paste-1';
+  s.add(createItemsFromClipOp({ planId: 99, item_date: '2026-07-03', items: clip, sessionId }));
+  // View gets two local drafts on the focused day.
+  const v = s.viewItems();
+  eq(v.length, 2, 'two drafts inserted by apply');
+  eq(v.every(i => i.item_date === '2026-07-03'), true, 'both drafts on the focused day');
+  eq(v[0].attachments.length, 1, 'first draft has its link');
+  eq(v[0].attachments[0].isLocal, true, 'link starts as local');
+  // Save: each draft becomes a real item, link attachment gets remapped.
+  const { api, calls } = makeApi();
+  await s.saveAll(api);
+  // Two POST /items and two POST /attachments.
+  const posts = calls.filter(c => c.method === 'post');
+  eq(posts.filter(c => /\/items$/.test(c.path)).length, 2, 'two item creates');
+  eq(posts.filter(c => /\/attachments$/.test(c.path)).length, 1, 'one link attachment');
+  // After save, the view remaps the local id to the real id and clears isLocal.
+  const v2 = s.viewItems();
+  eq(v2.every(i => !i.isLocal), true, 'all items are non-local after save');
+  eq(v2[0].attachments[0].isLocal, undefined, 'link attachment lost its isLocal flag');
+  eq(typeof v2[0].id, 'number', 'first item id remapped to a server number');
+  // The link attachment's id should also be a server number now.
+  eq(typeof v2[0].attachments[0].id, 'number', 'link attachment id remapped');
+}
+
+/* ---------- deleteItemOp ---------- */
+{
+  const s = new Staging({
+    baseItems: [
+      { id: 10, item_type: 'activity', title: 'A', item_date: '2026-07-01', end_date: null,
+        sort_key: 1, status: 'planned', details: {}, attachments: [] },
+      { id: 11, item_type: 'note', title: 'B', item_date: '2026-07-01', end_date: null,
+        sort_key: 2, status: 'planned', details: {}, attachments: [] },
+    ],
+    basePlan: { id: 99, title: 'P' },
+  });
+  s.add(deleteItemOp({ itemId: 10, label: 'Delete A' }));
+  eq(s.viewItems().length, 1, 'one item removed from view');
+  const { api, calls } = makeApi();
+  await s.saveAll(api);
+  const del = calls.find(c => c.method === 'del' && c.path === '/api/items/10');
+  assert(!!del, 'DELETE /api/items/10 is sent on save');
 }
 
 summary('staging.test.mjs');

@@ -512,6 +512,196 @@ const ownerStub = await boot('owner');
   eq(board.children.length, 3, 'board still shows 3 days after blocked trim');
 }
 
+/* =============== owner: multi-select, context menu, clipboard =============== */
+{
+  // Re-boot the owner fixture in a fresh DOM so the page is clean.
+  const stub = await boot('owner');
+  stub.restore();
+  const board = document.getElementById('board');
+  // Find a non-spanning, non-hotel card (the activity on day 2).
+  const activity = [...board.querySelectorAll('.card.item')].find(
+    c => c.dataset.type === 'activity'
+  );
+  assert(!!activity, 'activity card is on the board');
+  // --- plain click opens the editor, does NOT select ---
+  activity.click();
+  // Selection is empty (the click opened the editor, it didn't select).
+  assert(!activity.classList.contains('card-selected'),
+         'plain click does not select the card');
+  assert(!!document.body.querySelector('.item-editor'),
+         'plain click opens the item editor');
+  // --- ⌘A selects everything non-spanning ---
+  document.dispatch('keydown', { key: 'a', metaKey: true, target: document.body });
+  const selectedAfterAll = board.querySelectorAll('.card.card-selected').length;
+  assert(selectedAfterAll >= 1,
+         '⌘A selects at least the non-spanning items on the board');
+  // The hotel must NOT be in the selection (spanning items excluded).
+  const hotelSelected = [...board.querySelectorAll('.card.item.hotel')]
+    .some(c => c.classList.contains('card-selected'));
+  assert(!hotelSelected, 'hotels are not part of multi-select');
+  // --- ⌘-click toggles a single card in/out of the selection ---
+  // The editor from the first click is still in body; we don't dismiss it
+  // — the selection logic is independent of the open editor.
+  activity.dispatch('click', { button: 0, metaKey: true, target: activity });
+  assert(activity.classList.contains('card-selected'),
+         '⌘-click adds the card to the selection');
+  activity.dispatch('click', { button: 0, metaKey: true, target: activity });
+  assert(!activity.classList.contains('card-selected'),
+         '⌘-click again removes the card from the selection');
+  // --- ⌘-click on a hotel shows a warning toast, no selection ---
+  const hotel = board.querySelector('.card.item.hotel');
+  assert(!!hotel, 'hotel card is on the board');
+  // Close the editor first so the toast is the most recent thing. The
+  // backdrop wraps the modal, so removing the backdrop is enough.
+  document.body.querySelectorAll('.editor-backdrop').forEach(e => e.remove());
+  document.body.querySelectorAll('.toast').forEach(t => t.remove());
+  hotel.dispatch('click', { button: 0, metaKey: true, target: hotel });
+  assert(!hotel.classList.contains('card-selected'),
+         'hotels don\'t enter the selection via ⌘-click');
+  const toast = document.body.querySelector('.toast.toast-warn');
+  assert(!!toast, 'a warn toast appears for hotels on ⌘-click');
+  assert(/Spanning|hotel|multi-select/i.test(toast.textContent),
+         'toast message explains the restriction');
+  // --- clipboard: ⌘C then ⌘V produces new items on the focused day ---
+  document.dispatch('keydown', { key: 'c', metaKey: true, target: document.body });
+  const beforePaste = board.querySelectorAll('.card.item').length;
+  document.dispatch('keydown', { key: 'v', metaKey: true, target: document.body });
+  const afterPaste = board.querySelectorAll('.card.item').length;
+  assert(afterPaste > beforePaste,
+         '⌘V pastes a new item from the clipboard (board grew)');
+  // --- right-click on an unselected card adds it to the selection and
+  //     opens the context menu ---
+  // Clear the previous multi-select so we can verify the add-on-right-click
+  // behaviour. The previous ⌘V produced a local draft, so a new click on
+  // it would also open an editor — we work around that by clearing the
+  // selection via Escape first.
+  document.dispatch('keydown', { key: 'Escape', target: document.body });
+  // Now click with ⌘ to put just the activity in the selection.
+  activity.dispatch('click', { button: 0, metaKey: true, target: activity });
+  assert(activity.classList.contains('card-selected'),
+         'activity is in the selection before right-click');
+  // Right-click an unselected card → it joins the selection and the menu opens.
+  const hotel2 = board.querySelector('.card.item.hotel');
+  hotel2.dispatch('contextmenu', { clientX: 100, clientY: 100, preventDefault: () => {}, target: hotel2 });
+  // The hotel is non-selectable for menu purposes: right-click on it is a
+  // no-op (we bail without showing a menu). The menu should NOT appear.
+  assert(!document.body.querySelector('.context-menu'),
+         'right-clicking a hotel does not open the context menu');
+  // Right-click on the activity (which is in the selection) → menu shown.
+  activity.dispatch('contextmenu', { clientX: 100, clientY: 100, preventDefault: () => {}, target: activity });
+  const menu = document.body.querySelector('.context-menu');
+  assert(!!menu, 'right-click on a selected card opens the context menu');
+  const menuItems = [...menu.querySelectorAll('.context-menu-item button')]
+    .map(b => b.textContent);
+  assert(menuItems.includes('Cut'), 'menu has Cut');
+  assert(menuItems.includes('Copy'), 'menu has Copy');
+  assert(menuItems.includes('Paste'), 'menu has Paste');
+  assert(menuItems.includes('Duplicate'), 'menu has Duplicate');
+  assert(menuItems.includes('Delete'), 'menu has Delete');
+  // Clicking Copy keeps the selection but stores in the clipboard.
+  const copyBtn = [...menu.querySelectorAll('button')].find(b => b.textContent === 'Copy');
+  copyBtn.click();
+  // Clicking outside the menu closes it.
+  document.dispatch('click', { target: document.body });
+  assert(!document.body.querySelector('.context-menu'),
+         'clicking outside the menu closes it');
+  // --- Delete with keyboard removes the selection ---
+  const cardsBeforeDelete = board.querySelectorAll('.card.item').length;
+  document.dispatch('keydown', { key: 'Delete', target: document.body });
+  const cardsAfterDelete = board.querySelectorAll('.card.item').length;
+  assert(cardsAfterDelete < cardsBeforeDelete,
+         'Delete key removes the selected card from the board');
+}
+
+/* =============== owner: shift-click range across days =============== */
+{
+  // Boot with a fixture that has selectable items on multiple days:
+  //   day 1 (07-01): activity A
+  //   day 2 (07-02): activity B
+  //   day 3 (07-03): activity C
+  //   day 4 (07-04): activity D
+  // Then test: ⌘-click A, shift-click D → selection = {A, B, C, D}.
+  // Then test: ⌘-click D (clears anchor since D is in selection but
+  // we just toggled off), then shift-click A → selection = {A, B, C, D}.
+  // Hotels in between are still skipped.
+  const SETTINGS_X = {
+    base_currencies: ['USD'],
+    item_types: {
+      activity: { label: 'Activity', fields: [] },
+      note: { label: 'Note', fields: [] },
+      hotel: { label: 'Hotel', spans_days: true, fields: [] },
+    },
+  };
+  const PLAN_X = { id: 1, title: 'P', start_date: '2026-07-01', end_date: '2026-07-04',
+                   base_currency: 'USD', buffer_days: [] };
+  const ITEMS_X = [
+    { id: 1, item_type: 'activity', title: 'A', item_date: '2026-07-01', end_date: null,
+      sort_key: 1, status: 'planned', details: {}, attachments: [] },
+    { id: 2, item_type: 'activity', title: 'B', item_date: '2026-07-02', end_date: null,
+      sort_key: 1, status: 'planned', details: {}, attachments: [] },
+    // A hotel between C and D — must be skipped in the range.
+    { id: 3, item_type: 'hotel', title: 'Hotel', item_date: '2026-07-02', end_date: '2026-07-03',
+      sort_key: 2, status: 'planned', details: {}, attachments: [] },
+    { id: 4, item_type: 'activity', title: 'C', item_date: '2026-07-03', end_date: null,
+      sort_key: 1, status: 'planned', details: {}, attachments: [] },
+    { id: 5, item_type: 'activity', title: 'D', item_date: '2026-07-04', end_date: null,
+      sort_key: 1, status: 'planned', details: {}, attachments: [] },
+  ];
+  installDom({ ids: PAGE_IDS });
+  installFetch([
+    ['GET /api/settings', () => SETTINGS_X],
+    ['GET /api/plans/1', () => ({ plan: PLAN_X })],
+    ['GET /api/plans/1/members', () => ({ owner: { id: 1, username: 'admin', display_name: 'Admin' }, members: [] })],
+    ['GET /api/plans/1/items', () => ({ items: ITEMS_X })],
+    ['GET /api/plans/1/expenses/by-item', () => ({ items: [] })],
+  ]);
+  const { initItinerary } = await import('/static/js/itinerary.js');
+  await initItinerary({ planId: 1, role: 'owner' });
+  const board = document.getElementById('board');
+  const findCard = (title) => [...board.querySelectorAll('.card.item')]
+    .find(c => c.querySelector('.card-title').textContent === title);
+  const cardA = findCard('A');
+  const cardB = findCard('B');
+  const cardC = findCard('C');
+  const cardD = findCard('D');
+  const cardHotel = board.querySelector('.card.item.hotel');
+  assert(!!cardA && !!cardB && !!cardC && !!cardD && !!cardHotel,
+         'all 5 fixture items are on the board');
+  // ⌘-click A → selection = {A}.
+  cardA.dispatch('click', { button: 0, metaKey: true, target: cardA });
+  assert(cardA.classList.contains('card-selected'),
+         'A is selected after ⌘-click');
+  // Shift-click D → range from A to D in board order, adding B and C.
+  cardD.dispatch('click', { button: 0, shiftKey: true, target: cardD });
+  // A, B, C, D are selected. Hotel is NOT selected.
+  assert(cardA.classList.contains('card-selected'), 'A still selected');
+  assert(cardB.classList.contains('card-selected'), 'B selected by range');
+  assert(cardC.classList.contains('card-selected'), 'C selected by range');
+  assert(cardD.classList.contains('card-selected'), 'D selected as anchor');
+  assert(!cardHotel.classList.contains('card-selected'),
+         'hotel between anchors is skipped, not selected');
+  // Reverse: clear A from the selection, then shift-click A as the new
+  // end anchor. The previous anchor (D) is the start; A is the end.
+  cardA.dispatch('click', { button: 0, metaKey: true, target: cardA });
+  // Now selection is {B, C, D}, lastSelectedId was D (the previous end).
+  assert(!cardA.classList.contains('card-selected'), 'A toggled off');
+  assert(cardD.classList.contains('card-selected'), 'D still selected');
+  // shift-click A → range from D to A in reverse: A, B, C, D again.
+  cardA.dispatch('click', { button: 0, shiftKey: true, target: cardA });
+  assert(cardA.classList.contains('card-selected'),
+         'reverse range adds A back as the new anchor');
+  assert(cardB.classList.contains('card-selected'), 'B kept');
+  assert(cardC.classList.contains('card-selected'), 'C kept');
+  assert(cardD.classList.contains('card-selected'), 'D kept');
+  assert(!cardHotel.classList.contains('card-selected'),
+         'hotel still skipped on reverse range');
+  // Shift-click on a hotel rejects (same toast as ⌘-click).
+  document.body.querySelectorAll('.toast').forEach(t => t.remove());
+  cardHotel.dispatch('click', { button: 0, shiftKey: true, target: cardHotel });
+  assert(!!document.body.querySelector('.toast.toast-warn'),
+         'shift-click on a hotel shows a warning toast');
+}
+
 /* =============== viewer: bar hidden, board renders =============== */
 {
   const stub = await boot('viewer');
