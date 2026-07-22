@@ -16,10 +16,12 @@ let you log in and click around.
 from __future__ import annotations
 
 import json
+import shutil
 import sqlite3
 import struct
 import sys
 import zlib
+from datetime import datetime
 from pathlib import Path
 
 from .app import create_app
@@ -49,15 +51,26 @@ def make_png(path: Path, rgb: tuple[int, int, int], w: int = 160, h: int = 100) 
 
 # ---------------------------------------------------------------- reset
 def reset() -> None:
+    # Backup existing database before wiping.
+    backup_dir = DATA / "backups"
+    backup_dir.mkdir(parents=True, exist_ok=True)
+    ts = datetime.now().strftime("%Y%m%d-%H%M%S")
+    for ext in ("", "-wal", "-shm"):
+        src = DATA / f"travelplan.db{ext}"
+        if src.exists():
+            dst = backup_dir / f"travelplan-{ts}.db{ext}"
+            shutil.copy2(src, dst)
+    UPLOADS.mkdir(parents=True, exist_ok=True)
+
     for p in (DATA / "travelplan.db", DATA / "travelplan.db-wal", DATA / "travelplan.db-shm"):
         if p.exists():
             p.unlink()
-    UPLOADS.mkdir(parents=True, exist_ok=True)
-    # clear any old seeded uploads
+    # clear old seeded uploads
     for f in UPLOADS.glob("*"):
         if f.is_file():
             f.unlink()
     db_mod.init_db()
+    print(f">> backed up existing database to data/backups/travelplan-{ts}.db")
 
 
 # ---------------------------------------------------------------- seed
