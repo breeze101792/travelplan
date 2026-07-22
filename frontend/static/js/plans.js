@@ -16,7 +16,7 @@ export async function initDashboard(_ctx) {
   const newForm = document.getElementById('new-trip-form');
   const plansSection = document.getElementById('plans');
   plansSection.addEventListener('click', (e) => {
-    if (e.target === plansSection || e.target.closest('.empty-state')) {
+    if (!e.target.closest('.plan-card')) {
       document.querySelectorAll('.plan-card.selected').forEach(c => c.classList.remove('selected'));
       selectedIds.clear();
       anchorIdx = null;
