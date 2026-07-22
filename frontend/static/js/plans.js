@@ -8,6 +8,8 @@ import {
 let baseCurrencies = ['USD'];
 let currentTab = 'ongoing';
 let dragPlanId = null;
+let selectedIds = new Set();
+let anchorIdx = null;
 
 export async function initDashboard(_ctx) {
   const newToggle = document.getElementById('new-trip-toggle');
@@ -108,6 +110,8 @@ async function resolveDefaultTab() {
 }
 
 async function renderPlans(section, status, _allowFallback) {
+  selectedIds.clear();
+  anchorIdx = null;
   try {
     const { plans } = await apiGet('/api/plans' + (status ? `?status=${status}` : ''));
     clear(section);
@@ -117,8 +121,8 @@ async function renderPlans(section, status, _allowFallback) {
       return;
     }
 
-    for (const plan of plans) {
-      section.appendChild(planCard(plan, section));
+    for (let i = 0; i < plans.length; i++) {
+      section.appendChild(planCard(plans[i], section, i));
     }
   } catch (e) {
     clear(section);
@@ -134,7 +138,7 @@ function emptyState(status) {
   ]);
 }
 
-function planCard(plan, section) {
+function planCard(plan, section, idx) {
   const isOwner = plan.role === 'owner';
   const range = plan.start_date
     ? `${fmtDate(plan.start_date)} – ${fmtDate(plan.end_date)}`
@@ -175,8 +179,8 @@ function planCard(plan, section) {
   ].filter(Boolean);
 
   const card = el('article', {
-    class: 'card plan-card',
-    dataset: { id: plan.id },
+    class: 'card plan-card' + (selectedIds.has(plan.id) ? ' selected' : ''),
+    dataset: { id: plan.id, idx },
     draggable: 'true',
     ondragstart: (ev) => {
       dragPlanId = plan.id;
@@ -198,22 +202,42 @@ function planCard(plan, section) {
     controls,
   ].filter(Boolean));
 
-  let selTimer = null;
   card.addEventListener('click', (e) => {
     if (e.target.closest('button') || e.target.closest('a')) return;
-    if (selTimer) { clearTimeout(selTimer); selTimer = null; return; }
-    selTimer = setTimeout(() => {
-      selTimer = null;
+
+    const pid = plan.id;
+    if (e.shiftKey && anchorIdx !== null) {
+      const start = Math.min(anchorIdx, idx);
+      const end = Math.max(anchorIdx, idx);
+      const cards = section.querySelectorAll('.plan-card');
+      for (let i = start; i <= end; i++) {
+        const c = cards[i];
+        if (c) {
+          c.classList.add('selected');
+          selectedIds.add(Number(c.dataset.id));
+        }
+      }
+      return;
+    }
+
+    if (e.ctrlKey || e.metaKey) {
       card.classList.toggle('selected');
       if (card.classList.contains('selected')) {
-        document.querySelectorAll('.plan-card.selected').forEach(c => {
-          if (c !== card) c.classList.remove('selected');
-        });
+        selectedIds.add(pid);
+      } else {
+        selectedIds.delete(pid);
       }
-    }, 250);
+      return;
+    }
+
+    document.querySelectorAll('.plan-card.selected').forEach(c => c.classList.remove('selected'));
+    selectedIds.clear();
+    card.classList.add('selected');
+    selectedIds.add(pid);
+    anchorIdx = idx;
   });
-  card.addEventListener('dblclick', (e) => {
-    if (selTimer) { clearTimeout(selTimer); selTimer = null; }
+
+  card.addEventListener('dblclick', () => {
     window.location.href = `/plans/${plan.id}`;
   });
 
