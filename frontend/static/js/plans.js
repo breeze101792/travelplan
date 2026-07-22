@@ -15,12 +15,11 @@ export async function initDashboard(_ctx) {
   const newToggle = document.getElementById('new-trip-toggle');
   const newForm = document.getElementById('new-trip-form');
   const plansSection = document.getElementById('plans');
-  plansSection.addEventListener('click', (e) => {
-    if (!e.target.closest('.plan-card')) {
-      document.querySelectorAll('.plan-card.selected').forEach(c => c.classList.remove('selected'));
-      selectedIds.clear();
-      anchorIdx = null;
-    }
+  document.addEventListener('mousedown', (e) => {
+    if (e.target.closest('.plan-card') || e.target.closest('button') || e.target.closest('a') || e.target.closest('.tab-bar') || e.target.closest('#new-trip-form') || e.target.closest('select') || e.target.closest('input') || e.target.closest('textarea')) return;
+    document.querySelectorAll('.plan-card.selected').forEach(c => c.classList.remove('selected'));
+    selectedIds.clear();
+    anchorIdx = null;
   });
 
   try {
