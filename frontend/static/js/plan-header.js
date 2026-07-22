@@ -584,19 +584,28 @@ export function renderPlanToolbar({ days, settings, staging, ctx, setBlockError,
   // derived (no picker) — see nextBufferDate() for the algorithm.
   tb.appendChild(makeBufferAddButton({ plan: view, staging, ctx, onChange }));
 
-  // Quick add — type picker. The label is the focused day (per page).
+  // Quick add — dropdown menu. The label shows the focused day.
   const focusedDay = getFocusedDay ? getFocusedDay() : (days[0] && days[0].date);
   const focused = days.find(d => d.date === focusedDay) || days[0];
-  tb.appendChild(el('span', { class: 'toolbar-label', text: `Quick add${focused && focused.index ? ` (Day ${focused.index})` : ''}:` }));
+  const dayLabel = focused && focused.index ? ` (Day ${focused.index})` : '';
+
+  const dd = el('details', { class: 'qa-dropdown' });
+  const summary = el('summary', { class: 'qa-summary', text: `+ Quick add${dayLabel}` });
+  summary.type = 'button';
+  dd.appendChild(summary);
+
+  const menu = el('div', { class: 'qa-menu' });
   for (const [type, ti] of Object.entries(settings.item_types)) {
-    const b = el('button', { class: 'toolbar-btn', text: ti.label, title: `Add ${ti.label}` });
-    b.type = 'button';
+    const b = el('button', { type: 'button', class: 'qa-item', text: ti.label });
     b.addEventListener('click', () => {
+      dd.removeAttribute('open');
       if (setFocusedDay) setFocusedDay(focusedDay);
       if (onCreateItem) onCreateItem(type, focusedDay);
     });
-    tb.appendChild(b);
+    menu.appendChild(b);
   }
+  dd.appendChild(menu);
+  tb.appendChild(dd);
 }
 
 /* "Buffer day" button: a single click adds a new buffer day. The date

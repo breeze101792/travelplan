@@ -364,6 +364,36 @@ tr:last-child td { border-bottom: none; }
 .toolbar-btn.toolbar-range { font-weight: 500; font-variant-numeric: tabular-nums; }
 .toolbar-btn.toolbar-range:disabled { opacity: .4; cursor: not-allowed; }
 
+/* Quick-add dropdown — replaces the row of individual type buttons
+ * with a single "Quick add ▾" that opens a dropdown menu. */
+.qa-dropdown { position: relative; display: inline-block; }
+.qa-summary {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 5px 11px; border-radius: 999px; border: 1px solid var(--accent, #6366f1);
+  background: var(--surface, #fff); color: var(--accent, #6366f1);
+  font-size: .82rem; font-weight: 500; cursor: pointer;
+  list-style: none; user-select: none;
+}
+.qa-summary::-webkit-details-marker { display: none; }
+.qa-summary::after { content: '▾'; margin-left: 2px; font-size: .7rem; }
+.qa-dropdown[open] .qa-summary::after { content: '▴'; }
+.qa-dropdown[open] .qa-summary { background: #eef2ff; }
+.qa-menu {
+  position: absolute; top: calc(100% + 4px); left: 0; z-index: 10;
+  display: flex; flex-direction: column; gap: 2px;
+  min-width: 180px; padding: 4px;
+  background: var(--surface, #fff);
+  border: 1px solid var(--border, #cbd5e1); border-radius: 8px;
+  box-shadow: 0 6px 18px rgba(15,23,42,.12);
+}
+.qa-item {
+  display: block; width: 100%; text-align: left;
+  padding: 7px 10px; border: 0; border-radius: 4px;
+  background: transparent; color: var(--text, #1f2937);
+  font: inherit; font-size: .85rem; cursor: pointer;
+}
+.qa-item:hover { background: var(--surface-2, #f1f5f9); }
+
 /* Per-day action chip (× close button on buffer days) ------------------
  * Shared by Board / Timeline. Buffer days get a small round × chip in
  * their day-head; the shared `makeDayActions()` helper in
