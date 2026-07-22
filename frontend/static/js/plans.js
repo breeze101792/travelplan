@@ -10,6 +10,7 @@ let currentTab = 'ongoing';
 let dragPlanId = null;
 let selectedIds = new Set();
 let anchorIdx = null;
+let touchDrag = { active: false, planId: null, card: null, ghost: null, timer: null, tab: null };
 
 export async function initDashboard(_ctx) {
   const newToggle = document.getElementById('new-trip-toggle');
@@ -201,8 +202,72 @@ function planCard(plan, section, idx) {
     controls,
   ].filter(Boolean));
 
+  card.addEventListener('touchstart', (e) => {
+    if (e.target.closest('button') || e.target.closest('a')) return;
+    const t = e.touches[0];
+    touchDrag.planId = plan.id;
+    touchDrag.card = card;
+    touchDrag.startX = t.clientX;
+    touchDrag.startY = t.clientY;
+    touchDrag.timer = setTimeout(() => {
+      touchDrag.active = true;
+      card.classList.add('dragging');
+      // Create ghost
+      const ghost = card.cloneNode(true);
+      ghost.style.position = 'fixed';
+      ghost.style.width = card.offsetWidth + 'px';
+      ghost.style.opacity = '0.85';
+      ghost.style.pointerEvents = 'none';
+      ghost.style.zIndex = '9999';
+      ghost.style.transform = 'scale(0.95)';
+      ghost.style.borderRadius = '0.9rem';
+      ghost.style.boxShadow = '0 8px 24px rgba(0,0,0,0.15)';
+      document.body.appendChild(ghost);
+      touchDrag.ghost = ghost;
+      positionGhost(t);
+    }, 500);
+  }, { passive: true });
+
+  card.addEventListener('touchmove', (e) => {
+    const t = e.touches[0];
+    if (touchDrag.active) {
+      e.preventDefault();
+      positionGhost(t);
+      highlightTab(t.clientX, t.clientY);
+      return;
+    }
+    if (touchDrag.timer) {
+      const dx = Math.abs(t.clientX - touchDrag.startX);
+      const dy = Math.abs(t.clientY - touchDrag.startY);
+      if (dx > 12 || dy > 12) {
+        clearTimeout(touchDrag.timer);
+        touchDrag.timer = null;
+      }
+    }
+  }, { passive: false });
+
+  card.addEventListener('touchend', (e) => {
+    if (touchDrag.timer) {
+      clearTimeout(touchDrag.timer);
+      touchDrag.timer = null;
+      return;
+    }
+    if (!touchDrag.active) return;
+    e.preventDefault();
+    if (touchDrag.tab) {
+      touchDrag.tab.classList.remove('drag-over');
+      const newStatus = touchDrag.tab.dataset.tab;
+      if (newStatus !== currentTab) {
+        apiPatch(`/api/plans/${touchDrag.planId}`, { status: newStatus });
+      }
+    }
+    cleanupTouchDrag();
+    renderPlans(section, currentTab, false);
+  }, { passive: false });
+
   card.addEventListener('click', (e) => {
     if (e.target.closest('button') || e.target.closest('a')) return;
+    if (touchDrag.active) { touchDrag.active = false; return; }
 
     const pid = plan.id;
     if (e.shiftKey && anchorIdx !== null) {
@@ -241,6 +306,31 @@ function planCard(plan, section, idx) {
   });
 
   return card;
+}
+
+function positionGhost(t) {
+  const ghost = touchDrag.ghost;
+  if (!ghost) return;
+  ghost.style.left = (t.clientX - ghost.offsetWidth / 2) + 'px';
+  ghost.style.top = (t.clientY - 20) + 'px';
+}
+
+function highlightTab(x, y) {
+  const el = document.elementFromPoint(x, y);
+  const btn = el && el.closest('.tab-btn');
+  if (btn === touchDrag.tab) return;
+  if (touchDrag.tab) touchDrag.tab.classList.remove('drag-over');
+  touchDrag.tab = btn;
+  if (btn) btn.classList.add('drag-over');
+}
+
+function cleanupTouchDrag() {
+  if (touchDrag.ghost) { touchDrag.ghost.remove(); touchDrag.ghost = null; }
+  if (touchDrag.card) touchDrag.card.classList.remove('dragging');
+  if (touchDrag.tab) { touchDrag.tab.classList.remove('drag-over'); touchDrag.tab = null; }
+  touchDrag.active = false;
+  touchDrag.planId = null;
+  touchDrag.card = null;
 }
 
 function currencyBadge(cur) {
