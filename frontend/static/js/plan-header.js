@@ -17,6 +17,14 @@ import {
   updatePlanTitleOp, updatePlanDatesOp, updatePlanBufferDaysOp,
 } from '/static/js/staging.js';
 
+/* Close any open .qa-dropdown when clicking outside it. */
+document.addEventListener('click', (e) => {
+  const dd = document.querySelector('.qa-dropdown');
+  if (dd && dd.hasAttribute('open') && !dd.contains(e.target)) {
+    dd.removeAttribute('open');
+  }
+});
+
 /* ---- date utilities ------------------------------------------------- */
 
 /* Build YYYY-MM-DD from a local Date (avoids UTC off-by-one from toISOString). */

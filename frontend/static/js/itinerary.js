@@ -781,11 +781,10 @@ export async function initItinerary(ctx) {
    * this just keeps the label in sync. */
   function setFocusedDay(date) {
     focusedDay = date;
-    const lbl = document.querySelector('#add-toolbar .toolbar-label');
-    if (lbl) {
-      const day = days.find(d => d.date === date) || days[0];
-      lbl.textContent = `Quick add${day && day.index ? ` (Day ${day.index})` : ''}:`;
-    }
+    const day = days.find(d => d.date === date) || days[0];
+    const dayLabel = day && day.index ? ` (Day ${day.index})` : '';
+    const summary = document.querySelector('#add-toolbar .qa-summary');
+    if (summary) summary.textContent = `+ Quick add${dayLabel}`;
   }
 
   /* ----- data actions ----- */
