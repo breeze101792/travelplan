@@ -20,6 +20,7 @@ let plan = null;
 let staging = null;
 let settings = null;
 let ctx = null;
+let selectedItemId = null;
 
 /* ---------- draw ---------- */
 
@@ -30,14 +31,26 @@ function removeDay(dayIndex) {
   if (layer.polyline) map.removeLayer(layer.polyline);
 }
 
+function defaultMarkerStyle(coordIdx, total, color) {
+  if (total === 1) return { radius: 8, fillColor: color, borderColor: '#fff', borderWidth: 2, labelPrefix: '' };
+  if (coordIdx === 0) return { radius: 10, fillColor: '#22c55e', borderColor: '#166534', borderWidth: 3, labelPrefix: 'Start: ' };
+  if (coordIdx === total - 1) return { radius: 10, fillColor: '#ef4444', borderColor: '#991b1b', borderWidth: 3, labelPrefix: 'End: ' };
+  return { radius: 7, fillColor: color, borderColor: '#fff', borderWidth: 2, labelPrefix: '' };
+}
+
 function drawDay(dayIndex, coords, color) {
   removeDay(dayIndex);
   const markers = [];
-  for (const c of coords) {
+  for (let i = 0; i < coords.length; i++) {
+    const c = coords[i];
+    const sty = defaultMarkerStyle(i, coords.length, color);
     const m = L.circleMarker([c.lat, c.lng], {
-      radius: 7, fillColor: color, color: '#fff', weight: 2, fillOpacity: .9,
+      radius: sty.radius, fillColor: sty.fillColor, color: sty.borderColor,
+      weight: sty.borderWidth, fillOpacity: .9,
     });
-    m.bindTooltip(c.label, { permanent: false, direction: 'top' });
+    m.bindTooltip(sty.labelPrefix + c.label, { permanent: false, direction: 'top' });
+    m.itemId = c.item.id;
+    m.coordIdx = i;
     m.addTo(map);
     markers.push(m);
   }
@@ -51,6 +64,26 @@ function drawDay(dayIndex, coords, color) {
     const lats = coords.map(c => c.lat);
     const lngs = coords.map(c => c.lng);
     map.fitBounds([[Math.min(...lats), Math.min(...lngs)], [Math.max(...lats), Math.max(...lngs)]], { padding: [50, 50], maxZoom: 14 });
+  }
+}
+
+function resetMarkerStyle(m, dayIdx) {
+  const coords = dayCoords[Number(dayIdx)] || [];
+  const sty = defaultMarkerStyle(m.coordIdx, coords.length, pickColor(Number(dayIdx)));
+  m.setStyle({ radius: sty.radius, fillColor: sty.fillColor, color: sty.borderColor, weight: sty.borderWidth, fillOpacity: .9 });
+}
+
+function highlightMarker(m) {
+  m.setStyle({ radius: 14, fillColor: '#fbbf24', color: '#d97706', weight: 4, fillOpacity: 1 });
+  m.bringToFront();
+}
+
+function highlightItemMarkers(itemId) {
+  for (const dayIdx in dayLayers) {
+    for (const m of dayLayers[dayIdx].markers) {
+      if (m.itemId === itemId) highlightMarker(m);
+      else resetMarkerStyle(m, dayIdx);
+    }
   }
 }
 
@@ -141,12 +174,18 @@ function renderList() {
       } else {
         for (const it of items) {
           const row = document.createElement('div');
-          row.className = 'day-item';
+          row.className = 'day-item' + (selectedItemId === it.id ? ' selected' : '');
           row.dataset.itemId = it.id;
           row.innerHTML = `
             <span class="di-type">${it.item_type}</span>
             <span class="di-title">${it.title}</span>
           `;
+          row.addEventListener('click', () => {
+            container.querySelectorAll('.day-item.selected').forEach(el => el.classList.remove('selected'));
+            selectedItemId = it.id;
+            row.classList.add('selected');
+            highlightItemMarkers(it.id);
+          });
           wireItemDrag(row, it.id);
           container.appendChild(row);
         }
@@ -163,12 +202,14 @@ function toggleDay(index) {
   const wasExpanded = expIndex === index;
   if (wasExpanded) {
     expIndex = null;
+    selectedItemId = null;
     for (const idx in dayLayers) removeDay(Number(idx));
     dayLayers = {};
     renderList();
     return;
   }
   expIndex = index;
+  selectedItemId = null;
   for (const idx in dayLayers) removeDay(Number(idx));
   dayLayers = {};
   const coords = dayCoords[index] || [];
@@ -181,6 +222,7 @@ function toggleDay(index) {
 /* ---------- reload ---------- */
 
 async function reloadAll() {
+  selectedItemId = null;
   const res = await apiGet(`/api/plans/${plan.id}/items`);
   allItems = res.items || [];
   dayCoords = {};

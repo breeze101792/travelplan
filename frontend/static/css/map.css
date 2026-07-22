@@ -151,6 +151,15 @@
   overflow: hidden;
   text-overflow: ellipsis;
 }
+.day-item.selected {
+  background: #fef3c7 !important;
+  border-color: #f59e0b !important;
+  border-style: solid;
+  font-weight: 600;
+}
+.day-item.selected .di-title {
+  color: #92400e;
+}
 .day-item.drop-target {
   background: #eef2ff !important;
   border-color: var(--accent, #6366f1);
