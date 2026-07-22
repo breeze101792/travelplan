@@ -169,6 +169,68 @@ function wireItemDrag(el, itemId) {
     el.classList.add('dragging');
   });
   el.addEventListener('dragend', () => el.classList.remove('dragging'));
+
+  el.addEventListener('touchstart', (e) => {
+    if (e.target.closest('button') || e.target.closest('a')) return;
+    const t = e.touches[0];
+    el._tdrag = {
+      itemId, el,
+      startX: t.clientX, startY: t.clientY,
+      active: false,
+      timer: setTimeout(() => {
+        el._tdrag.active = true;
+        el.classList.add('dragging');
+      }, 500),
+    };
+  }, { passive: true });
+
+  el.addEventListener('touchmove', (e) => {
+    const ds = el._tdrag;
+    if (!ds) return;
+    const t = e.touches[0];
+    const dayList = document.getElementById('day-list');
+    if (ds.active) {
+      e.preventDefault();
+      const hdr = findDayHeaderAt(dayList, t.clientY);
+      dayList.querySelectorAll('.day-header.drop-target').forEach(x => x.classList.remove('drop-target'));
+      if (hdr) hdr.classList.add('drop-target');
+      return;
+    }
+    const dx = Math.abs(t.clientX - ds.startX);
+    const dy = Math.abs(t.clientY - ds.startY);
+    if (dx > 12 || dy > 12) {
+      clearTimeout(ds.timer);
+      delete el._tdrag;
+    }
+  }, { passive: false });
+
+  el.addEventListener('touchend', async (e) => {
+    const ds = el._tdrag;
+    if (!ds) return;
+    if (!ds.active) {
+      clearTimeout(ds.timer);
+      delete el._tdrag;
+      return;
+    }
+    e.preventDefault();
+    el.classList.remove('dragging');
+    const dayList = document.getElementById('day-list');
+    dayList.querySelectorAll('.day-header.drop-target').forEach(x => x.classList.remove('drop-target'));
+    const t = e.changedTouches[0];
+    const hdr = findDayHeaderAt(dayList, t.clientY);
+    if (hdr) {
+      const targetDate = hdr.dataset.targetDate;
+      const item = allItems.find(it => String(it.id) === String(ds.itemId));
+      if (item && item.item_date !== targetDate) {
+        staging.add(moveItemOp({
+          planId: plan.id, itemId: Number(ds.itemId), item_date: targetDate,
+        }));
+        item.item_date = targetDate;
+        await reloadAll();
+      }
+    }
+    delete el._tdrag;
+  }, { passive: false });
 }
 
 function enableDropZone(container) {
