@@ -153,7 +153,6 @@ function planCard(plan, section, idx) {
 
   const links = el('div', { class: 'card-links' }, [
     el('a', { class: 'btn ghost', href: `/plans/${plan.id}` }, ['View']),
-    el('a', { class: 'btn ghost', href: `/plans/${plan.id}/expenses` }, ['Expenses']),
     el('a', { class: 'btn ghost', href: `/plans/${plan.id}/members` }, ['Members']),
   ]);
 
@@ -165,12 +164,6 @@ function planCard(plan, section, idx) {
         onclick: () => openEditModal(plan, section),
       }),
     ];
-    if (plan.status !== 'archived') {
-      btns.push(el('button', {
-        class: 'btn small', text: 'Archive',
-        onclick: () => onArchivePlan(plan, section),
-      }));
-    }
     btns.push(el('button', {
       class: 'btn small danger', text: 'Delete',
       onclick: () => onDeletePlan(plan, section),
