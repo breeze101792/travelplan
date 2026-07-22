@@ -199,6 +199,15 @@
 .tl-item.transport  { background: #14b8a6; }
 .tl-item.note       { background: #64748b; }
 
+/* Unscheduled items (no time set yet): rendered as small bars at the top
+ * of the grid so they can be dragged to a time slot. Semi-transparent with
+ * a dashed border to signal they're not yet placed on the schedule. */
+.tl-item.tl-item-unscheduled {
+  opacity: .55;
+  border-style: dashed;
+  border-color: rgba(255,255,255,.7);
+}
+
 /* Hotel stays: one compact bar pinned to 23:00→24:00 at the bottom of each
  * night in [check-in, check-out). It overlaps the bottom-most hour (23–24)
  * because hotels are an overnight thing — they share the grid with timed

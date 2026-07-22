@@ -216,25 +216,17 @@ function makeBar({ kind, top, end, totalCols, col, title, time, titleText, extra
   ]);
   if (draggable && kind !== 'hotel' && item) {
     const f = TIME_FIELDS[item.item_type] || {};
+    const timeFields = { start: f.start || 'start_time', end: f.end || 'end_time' };
     node.dataset.itemId = String(item.id);
-    if (f.start) node.dataset.timeField = JSON.stringify(f);
+    node.dataset.timeField = JSON.stringify(timeFields);
     if (day) node.dataset.day = day;
     node.dataset.start = String(top);
     node.dataset.end = String(end);
-    // Resize handles are wired for every timed type. The handles read
-    // their start/end from the bar's data-* attributes and commit
-    // them back to f.start / f.end on the item's details — every
-    // timed type now uses start_time + end_time, so the same handles
-    // work for activity, ticket, flight, train, restaurant, and
-    // transport. Hotels opt out (they're spans, not points in time).
-    if (f.end) {
-      // Thin top/bottom strips act as the resize handles. The whole bar
-      // moves when the body is dragged. The handles are inside the bar
-      // so they get the same hit-testing as the rest of the item, no
-      // extra pointer-events plumbing needed.
-      node.appendChild(el('div', { class: 'tl-resize top',    'data-resize': 'top' }));
-      node.appendChild(el('div', { class: 'tl-resize bottom', 'data-resize': 'bottom' }));
-    }
+    // Resize handles are wired for every draggable bar. The handles
+    // read their start/end from the data-* attributes and commit them
+    // to start_time / end_time on the item's details.
+    node.appendChild(el('div', { class: 'tl-resize top',    'data-resize': 'top' }));
+    node.appendChild(el('div', { class: 'tl-resize bottom', 'data-resize': 'bottom' }));
   }
   return node;
 }
@@ -326,14 +318,15 @@ function renderDay(day, items, settings, nowFraction, ctx, staging, setBlockErro
   // (each night draws its own bar/segment), so we skip them here.
   // isBackup is read from details.is_backup (set via the item editor's
   // 'backup' checkbox). Mains get the leftmost column when bars overlap.
+  // Items without a time field are included as unscheduled bars at 00:00
+  // so the user can drag them to a time slot.
   const timed = [];
   for (const it of items) {
     if (it.item_type === 'hotel') continue;
     if (it.item_date !== day.date) continue;
-    const w = itemTimeWindow(it);
-    if (!w) continue;
     const d = it.details || {};
-    timed.push({ item: it, start: w.start, end: w.end, isBackup: !!d.is_backup });
+    const w = itemTimeWindow(it);
+    timed.push({ item: it, start: w ? w.start : 0, end: w ? w.end : 0.5, isBackup: !!d.is_backup, unscheduled: !w });
   }
   const stacked = assignColumns(timed);
   for (const s of stacked) {
@@ -350,25 +343,25 @@ function renderDay(day, items, settings, nowFraction, ctx, staging, setBlockErro
     const isBackup = s.isBackup;
     const durationHrs = s.end - s.start;
     const barTime = durationHrs > 1.5 ? (startTxt + (endTxt ? ' → ' + endTxt.split(' ').pop() : '')) : '';
+    const extraClass = (isBackup ? ' tl-item-backup' : '') + (s.unscheduled ? ' tl-item-unscheduled' : '');
     grid.appendChild(makeBar({
       kind: it.item_type,
       top: s.start, end: s.end, totalCols: s.totalCols, col: s.col,
       title: (isBackup ? '⤷ ' : '') + (it.title || ti.label),
-      time: barTime,
-      titleText: (isBackup ? '[BACKUP] ' : '') + `${ti.label}: ${it.title}`
-                 + (startTxt ? ` (${startTxt}${endTxt ? ' – ' + endTxt : ''})` : ''),
-      extraClass: isBackup ? ' tl-item-backup' : '',
+      time: s.unscheduled ? '' : barTime,
+      titleText: `${ti.label}: ${it.title}`
+                 + (startTxt ? ` (${startTxt}${endTxt ? ' – ' + endTxt : ''})` : '')
+                 + (s.unscheduled ? ' — drag to a time slot' : ''),
+      extraClass,
       item: it,
       day: day.date,
     }));
   }
 
-  // No-time items (notes, or anything else without a time field) as chips.
-  // The strip is a sibling of the grid, both inside `sec` (the day column).
-  // (Don't use grid.parentElement here — the grid isn't attached yet, so its
-  // parent is null and appending to it throws.)
-  const untimed = items.filter((it) => it.item_type !== 'hotel' && it.item_date === day.date && itemTimeWindow(it) === null);
+  // No-time items that weren't rendered as timed bars appear as chips.
   sec.appendChild(grid);
+  const renderedIds = new Set(timed.map(s => s.item.id));
+  const untimed = items.filter((it) => it.item_type !== 'hotel' && it.item_date === day.date && !renderedIds.has(it.id));
   if (untimed.length) {
     const strip = el('div', { class: 'tl-untimed' });
     for (const it of untimed) {
@@ -377,7 +370,6 @@ function renderDay(day, items, settings, nowFraction, ctx, staging, setBlockErro
     }
     sec.appendChild(strip);
   } else {
-    // keep a small placeholder so the day has a consistent footer
     sec.appendChild(el('div', { class: 'tl-untimed' }));
   }
 
