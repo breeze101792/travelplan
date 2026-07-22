@@ -149,6 +149,7 @@ export async function initMap(ctx) {
   const dayCoords = {};
   const seen = new Set();
 
+  const limiter = rateLimiter(1000);
   for (let i = 0; i < days.length; i++) {
     const day = days[i];
     const items = allItems.filter(it => it.item_date === day.date && it.item_type !== 'hotel');
@@ -159,7 +160,7 @@ export async function initMap(ctx) {
       for (const q of queries) {
         if (seen.has(q)) continue;
         seen.add(q);
-        await sleep(1200);
+        await limiter();
         const coord = await geocode(q);
         if (coord) {
           batch.push({ lat: coord.lat, lng: coord.lng, label: it.title, item: it });
@@ -172,7 +173,22 @@ export async function initMap(ctx) {
 
   renderDayList(days, dayCoords);
 
-  if (days.length) selectDay(0, days, dayCoords);
+  const anyCoords = Object.values(dayCoords).some(c => c.length);
+  if (days.length) {
+    if (anyCoords) {
+      selectDay(0, days, dayCoords);
+    } else {
+      map.setView([35.6762, 139.6503], 5);
+    }
+  }
 }
 
-function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+function rateLimiter(ms) {
+  let last = 0;
+  return () => {
+    const now = Date.now();
+    const wait = Math.max(0, ms - (now - last));
+    last = now + wait;
+    return new Promise(r => setTimeout(r, wait));
+  };
+}
