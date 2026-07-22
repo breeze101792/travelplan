@@ -40,14 +40,16 @@
         {"key": "confirmation", "label": "Confirmation", "type": "text"},
         {"key": "price", "label": "Price", "type": "money"},
         {"key": "currency", "label": "Currency", "type": "currency"},
-        {"key": "link", "label": "Link", "type": "url"}
+        {"key": "link", "label": "Link", "type": "url"},
+        {"key": "note", "label": "Note", "type": "textarea"}
       ],
       "rows": [
         ["airline", "flight_no"],
         ["from", "to"],
         ["depart_time", "arrive_time"],
         ["confirmation", "link"],
-        ["price", "currency"]
+        ["price", "currency"],
+        ["note"]
       ]
     },
     "train": {
@@ -63,14 +65,16 @@
         {"key": "seat", "label": "Seat / car", "type": "text"},
         {"key": "price", "label": "Price", "type": "money"},
         {"key": "currency", "label": "Currency", "type": "currency"},
-        {"key": "link", "label": "Link", "type": "url"}
+        {"key": "link", "label": "Link", "type": "url"},
+        {"key": "note", "label": "Note", "type": "textarea"}
       ],
       "rows": [
         ["train_no", "seat"],
         ["from", "to"],
         ["depart_time", "arrive_time"],
         ["price", "currency"],
-        ["link"]
+        ["link"],
+        ["note"]
       ]
     },
     "ticket": {
@@ -85,13 +89,15 @@
         {"key": "qty", "label": "Qty", "type": "number"},
         {"key": "price", "label": "Price", "type": "money"},
         {"key": "currency", "label": "Currency", "type": "currency"},
-        {"key": "link", "label": "Link", "type": "url"}
+        {"key": "link", "label": "Link", "type": "url"},
+        {"key": "note", "label": "Note", "type": "textarea"}
       ],
       "rows": [
         ["name", "venue"],
         ["start_time", "end_time"],
         ["qty", "price"],
-        ["currency", "link"]
+        ["currency", "link"],
+        ["note"]
       ]
     },
     "restaurant": {
@@ -104,13 +110,15 @@
         {"key": "start_time", "label": "Start", "type": "datetime-local"},
         {"key": "end_time", "label": "End", "type": "datetime-local"},
         {"key": "party_size", "label": "Party size", "type": "number"},
-        {"key": "link", "label": "Reservation link", "type": "url"}
+        {"key": "link", "label": "Reservation link", "type": "url"},
+        {"key": "note", "label": "Note", "type": "textarea"}
       ],
       "rows": [
         ["name", "party_size"],
         ["start_time", "end_time"],
         ["address"],
-        ["link"]
+        ["link"],
+        ["note"]
       ]
     },
     "activity": {
@@ -124,13 +132,15 @@
         {"key": "end_time", "label": "End", "type": "datetime-local"},
         {"key": "price", "label": "Price", "type": "money"},
         {"key": "currency", "label": "Currency", "type": "currency"},
-        {"key": "link", "label": "Link", "type": "url"}
+        {"key": "link", "label": "Link", "type": "url"},
+        {"key": "note", "label": "Note", "type": "textarea"}
       ],
       "rows": [
         ["name", "location"],
         ["start_time", "end_time"],
         ["price", "currency"],
-        ["link"]
+        ["link"],
+        ["note"]
       ]
     },
     "transport": {
@@ -145,13 +155,15 @@
         {"key": "end_time", "label": "End", "type": "datetime-local"},
         {"key": "price", "label": "Price", "type": "money"},
         {"key": "currency", "label": "Currency", "type": "currency"},
-        {"key": "link", "label": "Link", "type": "url"}
+        {"key": "link", "label": "Link", "type": "url"},
+        {"key": "note", "label": "Note", "type": "textarea"}
       ],
       "rows": [
         ["mode", "price"],
         ["from", "to"],
         ["start_time", "end_time"],
-        ["currency", "link"]
+        ["currency", "link"],
+        ["note"]
       ]
     },
     "note": {
