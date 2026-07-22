@@ -66,7 +66,7 @@ def timeline_page(plan_id):
 @plans_bp.route("/plans/<int:plan_id>/members")
 @plan_access()
 def members_page(plan_id):
-    return render_template("members.html", plan=g.plan, plan_role=g.plan_role)
+    return render_template("plan-members.html", plan=g.plan, plan_role=g.plan_role)
 
 
 # ------------------------------------------------------------------ API
