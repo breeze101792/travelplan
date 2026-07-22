@@ -17,7 +17,7 @@
   display: flex; align-items: flex-start; justify-content: center;
   padding: 5vh clamp(8px, 1.5vw, 24px);
   overflow-y: auto;
-  z-index: 100;
+  z-index: 9999;
 }
 .modal.item-editor {
   /* The item editor needs real space — type-specific fields, attachments
