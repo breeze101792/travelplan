@@ -1,7 +1,9 @@
 import { apiGet } from '/static/js/api.js';
 import { buildDays, wirePlanHeader } from '/static/js/plan-header.js';
-import { Staging, moveItemOp } from '/static/js/staging.js';
+import { Staging, moveItemOp, deleteItemOp } from '/static/js/staging.js';
 import { el, clear } from '/static/js/util.js';
+import { openItemEditor } from '/static/js/item-editor.js';
+import { clipboardGet, clipboardSet, serializeItem } from '/static/js/clipboard.js';
 
 const DAY_COLORS = [
   '#e74c3c', '#3498db', '#2ecc71', '#f39c12',
@@ -86,6 +88,76 @@ function highlightItemMarkers(itemId) {
     }
   }
 }
+
+/* ---------- context menu ---------- */
+
+let contextMenuEl = null;
+
+function closeContextMenu() {
+  if (contextMenuEl) {
+    if (contextMenuEl.remove) contextMenuEl.remove();
+    else if (contextMenuEl.parentNode) contextMenuEl.parentNode.removeChild(contextMenuEl);
+  }
+  contextMenuEl = null;
+}
+
+function showContextMenu(x, y, item, dayIdx) {
+  closeContextMenu();
+
+  const menu = el('ul', { class: 'context-menu', role: 'menu' });
+  const day = days[dayIdx];
+
+  const items = [
+    { label: 'Cut', shortcut: '\u2318X', enabled: true, action: () => {
+      clipboardSet({ items: [item], action: 'cut' });
+      staging.add(deleteItemOp({ itemId: item.id, label: `Cut ${item.title || 'item'}`, sessionId: 'cut-' + item.id }));
+      closeContextMenu();
+      reloadAll();
+    }},
+    { label: 'Delete', shortcut: 'Del', enabled: true, danger: true, action: () => {
+      staging.add(deleteItemOp({ itemId: item.id, label: `Delete ${item.title || 'item'}` }));
+      closeContextMenu();
+      reloadAll();
+    }},
+    { sep: true },
+    { label: 'Open detail', enabled: true, action: () => {
+      closeContextMenu();
+      openItemEditor(ctx, {
+        plan, item, settings, members: [], staging, sessionId: 'map-' + item.id,
+        onApplied: () => { reloadAll(); },
+      });
+    }},
+  ];
+
+  for (const it of items) {
+    if (it.sep) { menu.appendChild(el('li', { class: 'context-menu-sep' })); continue; }
+    const li = el('li', { class: 'context-menu-item' + (it.danger ? ' is-danger' : ''), role: 'menuitem' });
+    const btn = el('button', { type: 'button', text: it.label });
+    btn.disabled = !it.enabled;
+    btn.addEventListener('click', (e) => { e.stopPropagation(); it.action(); });
+    li.appendChild(btn);
+    if (it.shortcut) li.appendChild(el('span', { class: 'context-menu-shortcut', text: it.shortcut }));
+    menu.appendChild(li);
+  }
+
+  document.body.appendChild(menu);
+
+  let rectW = 200, rectH = 200;
+  try { const r = menu.getBoundingClientRect(); if (r) { rectW = r.width || rectW; rectH = r.height || rectH; } } catch (e) {}
+  const vw = window.innerWidth || 1024;
+  const vh = window.innerHeight || 768;
+  menu.style.left = Math.max(8, Math.min(x, vw - rectW - 8)) + 'px';
+  menu.style.top = Math.max(8, Math.min(y, vh - rectH - 8)) + 'px';
+  contextMenuEl = menu;
+}
+
+document.addEventListener('click', (e) => {
+  if (contextMenuEl && !contextMenuEl.contains(e.target)) closeContextMenu();
+});
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && contextMenuEl) { closeContextMenu(); return; }
+});
+document.addEventListener('scroll', closeContextMenu, { capture: true, passive: true });
 
 /* ---------- drag helpers ---------- */
 
@@ -180,11 +252,27 @@ function renderList() {
             <span class="di-type">${it.item_type}</span>
             <span class="di-title">${it.title}</span>
           `;
-          row.addEventListener('click', () => {
+          row.addEventListener('click', (e) => {
             container.querySelectorAll('.day-item.selected').forEach(el => el.classList.remove('selected'));
             selectedItemId = it.id;
             row.classList.add('selected');
             highlightItemMarkers(it.id);
+          });
+          row.addEventListener('dblclick', () => {
+            openItemEditor(ctx, {
+              plan, item: it, settings, members: [], staging,
+              sessionId: 'map-detail-' + it.id,
+              onApplied: () => { reloadAll(); },
+            });
+          });
+          row.addEventListener('contextmenu', (e) => {
+            if (ctx.role === 'viewer') return;
+            e.preventDefault();
+            selectedItemId = it.id;
+            container.querySelectorAll('.day-item.selected').forEach(el => el.classList.remove('selected'));
+            row.classList.add('selected');
+            highlightItemMarkers(it.id);
+            showContextMenu(e.clientX, e.clientY, it, i);
           });
           wireItemDrag(row, it.id);
           container.appendChild(row);

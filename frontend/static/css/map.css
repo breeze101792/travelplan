@@ -202,6 +202,37 @@
   color: #6b7280;
 }
 
+/* ---------- context menu (shared look with Board / Timeline) ---------- */
+
+.context-menu {
+  position: fixed; z-index: 1000; min-width: 200px;
+  background: var(--surface, #fff);
+  border: 1px solid var(--border, #e5e7eb);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(15,23,42,.15);
+  padding: 4px; margin: 0; list-style: none;
+}
+.context-menu-item {
+  display: flex; align-items: center;
+}
+.context-menu-item button {
+  flex: 1; text-align: left; padding: 6px 10px;
+  border: 0; background: transparent; cursor: pointer;
+  border-radius: 4px; font: inherit;
+}
+.context-menu-item button:hover:not(:disabled) { background: var(--surface-2, #f1f5f9); }
+.context-menu-item button:disabled { color: var(--muted, #94a3b8); cursor: not-allowed; }
+.context-menu-item.is-danger button { color: var(--warn, #b91c1c); }
+.context-menu-item.is-danger button:hover:not(:disabled) { background: rgba(185,28,28,.08); }
+.context-menu-shortcut {
+  margin-left: auto; padding: 0 8px;
+  color: var(--muted, #64748b); font-size: .8rem; font-variant-numeric: tabular-nums;
+}
+.context-menu-sep {
+  height: 1px; margin: 4px 6px;
+  background: var(--border, #e5e7eb); list-style: none;
+}
+
 .map-empty {
   display: flex;
   align-items: center;
