@@ -13,7 +13,7 @@ function pickColor(i) { return DAY_COLORS[i % DAY_COLORS.length]; }
 let map = null;
 let dayLayers = {};
 let geocodeCache = {};
-let expIndex = null;        // which day index is expanded
+let expIndex = null;
 let days = [];
 let dayCoords = {};
 let allItems = [];
@@ -43,13 +43,34 @@ function extractLocationQueries(item) {
   const d = item.details || {};
   const t = item.item_type;
   const queries = [];
-  if (t === 'hotel' && d.address) queries.push(d.address);
-  else if (t === 'restaurant' && d.address) queries.push(d.address);
-  else if (t === 'activity' && d.location) queries.push(d.location);
-  else if (t === 'activity' && d.address) queries.push(d.address);
-  else if ((t === 'flight' || t === 'train' || t === 'transport') && d.to) queries.push(d.to);
-  if (item.title && /^[A-Z]/.test(item.title)) queries.push(item.title);
+  if (t === 'hotel' && d.address) queries.push('ADDR:' + d.address);
+  else if (t === 'restaurant' && d.address) queries.push('ADDR:' + d.address);
+  else if (t === 'activity' && d.location) queries.push('LOC:' + d.location);
+  else if (t === 'activity' && d.address) queries.push('ADDR:' + d.address);
+  if (t === 'flight' || t === 'train' || t === 'transport') {
+    if (d.from) queries.push('FROM:' + d.from);
+    if (d.to) queries.push('TO:' + d.to);
+  }
+  if (item.title && /^[A-Z]/.test(item.title)) queries.push('TITLE:' + item.title);
   return queries;
+}
+
+function queryLabel(q) {
+  if (q.startsWith('FROM:')) return 'From ' + q.slice(5);
+  if (q.startsWith('TO:')) return 'To ' + q.slice(3);
+  if (q.startsWith('ADDR:')) return q.slice(5);
+  if (q.startsWith('LOC:')) return q.slice(4);
+  if (q.startsWith('TITLE:')) return q.slice(6);
+  return q;
+}
+
+function qValue(q) {
+  if (q.startsWith('FROM:')) return q.slice(5);
+  if (q.startsWith('TO:')) return q.slice(3);
+  if (q.startsWith('ADDR:')) return q.slice(5);
+  if (q.startsWith('LOC:')) return q.slice(4);
+  if (q.startsWith('TITLE:')) return q.slice(6);
+  return q;
 }
 
 /* ---------- draw ---------- */
@@ -97,9 +118,6 @@ function wireItemDrag(el, itemId) {
   el.addEventListener('dragend', () => el.classList.remove('dragging'));
 }
 
-/* Container-level drop zone: on dragover find the closest day-header below
- * the cursor (or the last one if past the end) and highlight it. On drop,
- * move the item to that day. */
 function enableDropZone(container) {
   container.addEventListener('dragover', (e) => {
     e.preventDefault();
@@ -155,7 +173,6 @@ function renderList() {
     const color = pickColor(i);
     const isExpanded = i === expIndex;
 
-    // day header row
     const hdr = document.createElement('div');
     hdr.className = 'day-header' + (isExpanded ? ' expanded' : '') + (i === expIndex ? ' active' : '');
     hdr.dataset.targetDate = day.date;
@@ -168,7 +185,6 @@ function renderList() {
     hdr.addEventListener('click', () => toggleDay(i));
     container.appendChild(hdr);
 
-    // item rows (only if expanded)
     if (isExpanded) {
       const items = dayItemsFor(i);
       if (!items.length) {
@@ -213,7 +229,6 @@ function toggleDay(index) {
   const coords = dayCoords[index] || [];
   if (coords.length) drawDay(index, coords, pickColor(index));
   renderList();
-  // scroll the expanded day into view
   const hdr = document.querySelector('.day-header.active');
   if (hdr) hdr.scrollIntoView({ block: 'nearest' });
 }
@@ -234,10 +249,9 @@ async function reloadAll() {
         if (seen.has(q)) continue;
         seen.add(q);
         await limiter();
-        const coord = await geocode(q);
+        const coord = await geocode(qValue(q));
         if (coord) {
-          batch.push({ lat: coord.lat, lng: coord.lng, label: it.title, item: it });
-          break;
+          batch.push({ lat: coord.lat, lng: coord.lng, label: it.title + ': ' + queryLabel(q), item: it });
         }
       }
     }
@@ -289,10 +303,9 @@ export async function initMap(ctx) {
         if (seen.has(q)) continue;
         seen.add(q);
         await limiter();
-        const coord = await geocode(q);
+        const coord = await geocode(qValue(q));
         if (coord) {
-          batch.push({ lat: coord.lat, lng: coord.lng, label: it.title, item: it });
-          break;
+          batch.push({ lat: coord.lat, lng: coord.lng, label: it.title + ': ' + queryLabel(q), item: it });
         }
       }
     }
