@@ -5,7 +5,7 @@ Run:  python -m backend.seed --reset               (wipes & repopulates)
       ./seed.sh [--reset]                           (wrapper; default is --reset)
 
 With no flags and an existing database, it only resets all user passwords to
-"password" — existing data is preserved. Use --reset to wipe everything and
+"traveler" — existing data is preserved. Use --reset to wipe everything and
 re-insert the full fake dataset (trips, items, expenses, etc.).
 
 It creates an admin + three members, two trips with full itineraries,
@@ -69,7 +69,7 @@ def seed() -> None:
         def user(username, display, role="member"):
             db.execute(
                 "INSERT INTO users (username, password_hash, display_name, role) VALUES (?, ?, ?, ?)",
-                (username, hash_password("password"), display, role),
+                (username, hash_password("traveler"), display, role),
             )
             db.commit()
             return db.execute("SELECT id FROM users WHERE username = ?", (username,)).fetchone()[0]
@@ -336,11 +336,11 @@ def seed() -> None:
              details={"name": "Shibuya Crossing", "location": "Shibuya, Tokyo",
                       "start_time": "2026-07-03T15:00", "end_time": "2026-07-03T15:30"})
 
-    print("\nSeeded fake data. Login credentials (password for ALL accounts): password")
-    print("  admin  / password   (admin — owns all three trips)")
-    print("  alice  / password   (editor on all three trips)")
-    print("  bob    / password   (editor on Japan 2026)")
-    print("  carol  / password   (viewer on Iceland Ring Road)")
+    print("\nSeeded fake data. Login credentials (password for ALL accounts): traveler")
+    print("  admin  / traveler   (admin — owns all three trips)")
+    print("  alice  / traveler   (editor on all three trips)")
+    print("  bob    / traveler   (editor on Japan 2026)")
+    print("  carol  / traveler   (viewer on Iceland Ring Road)")
     print("\nTrips:")
     print("  Japan 2026          base JPY  (expenses in JPY + USD)")
     print("  Iceland Ring Road   base EUR  (expenses in EUR + ISK)")
@@ -363,16 +363,16 @@ def main(argv):
             has_admin = conn.execute(
                 "SELECT 1 FROM users WHERE role='admin' LIMIT 1").fetchone()
             if has_admin:
-                pw = hash_password("password")
+                pw = hash_password("traveler")
                 conn.execute("UPDATE users SET password_hash = ?", (pw,))
                 conn.commit()
                 conn.close()
-                print(">> reset all user passwords to: password")
+                print(">> reset all user passwords to: traveler")
                 print()
-                print("  admin  / password")
-                print("  alice  / password")
-                print("  bob    / password")
-                print("  carol  / password")
+                print("  admin  / traveler")
+                print("  alice  / traveler")
+                print("  bob    / traveler")
+                print("  carol  / traveler")
                 return
             conn.close()
         except Exception:

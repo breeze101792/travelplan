@@ -11,7 +11,7 @@
 #   ./seed.sh --reset     same (explicit)
 #   ./seed.sh --no-reset  reset all passwords to "password", keep data
 #
-# All seeded accounts use the password: password
+# All seeded accounts use the password: traveler
 set -euo pipefail
 cd "$(dirname "$0")"
 

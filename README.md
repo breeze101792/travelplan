@@ -63,7 +63,7 @@ Seeds three trips (**Japan 2026** base JPY, **Iceland Ring Road** base EUR,
 **Beijing 2026** base CNY) with full itineraries, per-day hotels, image + link
 attachments, expenses in five currencies (JPY / USD / EUR / ISK / CNY) using
 all four split methods, exchange rates, and recorded payments. All seeded
-accounts use the password **`password`**:
+accounts use the password **`traveler`**:
 
 | username | role |
 |---|---|
