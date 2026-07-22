@@ -2,5 +2,17 @@
   "Tokyo": {
     "lat": 35.6768601,
     "lng": 139.7638947
+  },
+  "Tokyo Tower Minato Tokyo": {
+    "lat": 35.6584491,
+    "lng": 139.745536
+  },
+  "Meiji Jingu Shibuya Tokyo": {
+    "lat": 35.6748417,
+    "lng": 139.6996266
+  },
+  "Shibuya Tokyo": {
+    "lat": 35.6633709,
+    "lng": 139.6964952
   }
 }
