@@ -67,6 +67,21 @@ CREATE TABLE IF NOT EXISTS attachments (
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
+-- Per-item geocoded coordinates (populated server-side, persisted so the
+-- map page doesn't re-geocode on every load). One item may have multiple
+-- rows (e.g. transport has FROM + TO). sort_order preserves the order
+-- in which the markers appear on the map for that item's day.
+CREATE TABLE IF NOT EXISTS item_geocodes (
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  item_id    INTEGER NOT NULL REFERENCES items(id) ON DELETE CASCADE,
+  label      TEXT NOT NULL,             -- display label on the marker
+  lat        REAL NOT NULL,
+  lng        REAL NOT NULL,
+  sort_order INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_item_geocodes_item ON item_geocodes(item_id);
+
 -- Expense engine (Splitwise-style). expense_splits.owed_cents is immutable once written.
 CREATE TABLE IF NOT EXISTS expenses (
   id           INTEGER PRIMARY KEY AUTOINCREMENT,

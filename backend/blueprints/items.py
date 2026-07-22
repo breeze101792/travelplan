@@ -38,12 +38,19 @@ def _load_attachments(item_id) -> list[dict]:
         (item_id,)).fetchall()]
 
 
+def _load_geocodes(item_id) -> list[dict]:
+    return [dict(r) for r in get_db().execute(
+        "SELECT id, label, lat, lng, sort_order FROM item_geocodes WHERE item_id = ? ORDER BY sort_order, id",
+        (item_id,)).fetchall()]
+
+
 def _attach(item: dict) -> dict:
     try:
         item["details"] = json.loads(item["details"]) if item.get("details") else {}
     except (TypeError, ValueError):
         item["details"] = {}
     item["attachments"] = _load_attachments(item["id"])
+    item["geocodes"] = _load_geocodes(item["id"])
     return item
 
 

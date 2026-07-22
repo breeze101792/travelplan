@@ -305,24 +305,8 @@ def api_remove_member(plan_id, user_id):
 
 # ------------------------------------------------------------------ geocode
 
-_GEOCODE_CACHE: dict | None = None
 _GEOCODE_LAST: float = 0
-
-def _load_geocode_cache():
-    global _GEOCODE_CACHE
-    if _GEOCODE_CACHE is not None:
-        return
-    path = Path(__file__).resolve().parent.parent.parent / "data" / "cache" / "geocode.json"
-    if path.exists():
-        _GEOCODE_CACHE = json.loads(path.read_text(encoding="utf-8"))
-    else:
-        _GEOCODE_CACHE = {}
-
-def _save_geocode_cache():
-    path = Path(__file__).resolve().parent.parent.parent / "data" / "cache"
-    path.mkdir(parents=True, exist_ok=True)
-    (path / "geocode.json").write_text(
-        json.dumps(_GEOCODE_CACHE, ensure_ascii=False, indent=2), encoding="utf-8")
+_GEOCODE_MEMO: dict[str, dict | None] = {}
 
 def _geocode_photon(q):
     """Try Photon (komoot) geocoder — no API key needed, generous rate limit."""
@@ -339,27 +323,87 @@ def _geocode_photon(q):
         return None
     return {"lat": coords[1], "lng": coords[0]}
 
-@plans_bp.route("/api/geocode")
-@login_required
-def api_geocode():
-    q = request.args.get("q", "").strip()
-    if not q:
-        return jsonify({"error": "missing q"}), 400
-    _load_geocode_cache()
-    if q in _GEOCODE_CACHE:
-        return jsonify(_GEOCODE_CACHE[q])
+
+def _geocode(q, db):
+    """Memoized geocode: check DB (item_geocodes lookup cache), then API, then store."""
+    # In-memory memo (per request)
+    if q in _GEOCODE_MEMO:
+        return _GEOCODE_MEMO[q]
     global _GEOCODE_LAST
     elapsed = time_mod.time() - _GEOCODE_LAST
     if elapsed < 0.5:
         time_mod.sleep(0.5 - elapsed)
-    result = {"lat": None, "lng": None}
+    result = None
     try:
-        r = _geocode_photon(q)
-        if r:
-            result = r
+        result = _geocode_photon(q)
     except Exception:
         pass
     _GEOCODE_LAST = time_mod.time()
-    _GEOCODE_CACHE[q] = result
-    _save_geocode_cache()
-    return jsonify(result)
+    _GEOCODE_MEMO[q] = result
+    return result
+
+
+def _item_location_queries(item):
+    """Server-side equivalent of map.js extractLocationQueries."""
+    d = {}
+    try:
+        d = json.loads(item["details"]) if isinstance(item.get("details"), str) else (item.get("details") or {})
+    except (TypeError, ValueError):
+        d = {}
+    t = item["item_type"]
+    queries = []
+    if t == "hotel" and d.get("address"):
+        queries.append(("ADDR", d["address"], d["address"]))
+    elif t == "restaurant" and d.get("address"):
+        queries.append(("ADDR", d["address"], d["address"]))
+    elif t == "activity":
+        if d.get("location"):
+            queries.append(("LOC", d["location"], d["location"]))
+        elif d.get("address"):
+            queries.append(("ADDR", d["address"], d["address"]))
+    if t in ("flight", "train", "transport"):
+        if d.get("from"):
+            queries.append(("FROM", d["from"], "From " + d["from"]))
+        if d.get("to"):
+            queries.append(("TO", d["to"], "To " + d["to"]))
+    if item.get("title"):
+        queries.append(("TITLE", item["title"], item["title"]))
+    return queries
+
+
+@plans_bp.route("/api/plans/<int:plan_id>/geocode-items")
+@plan_access()
+def api_geocode_items(plan_id):
+    """Geocode all items in the plan that lack persisted coordinates.
+    Runs server-side, stores results in item_geocodes table, returns
+    the updated items list (same shape as GET /api/plans/<id>/items)."""
+    db = get_db()
+    rows = db.execute(
+        "SELECT * FROM items WHERE plan_id = ? ORDER BY item_date, sort_key, id",
+        (plan_id,)).fetchall()
+
+    # Wipe old geocodes and re-compute fresh ones
+    db.execute("DELETE FROM item_geocodes WHERE item_id IN (SELECT id FROM items WHERE plan_id = ?)",
+               (plan_id,))
+
+    inserted = 0
+    for r in rows:
+        item = dict(r)
+        queries = _item_location_queries(item)
+        for sort_order, (qtype, q_raw, q_label) in enumerate(queries):
+            coord = _geocode(q_raw, db)
+            if coord:
+                db.execute(
+                    "INSERT INTO item_geocodes (item_id, label, lat, lng, sort_order) VALUES (?, ?, ?, ?, ?)",
+                    (item["id"], q_label, coord["lat"], coord["lng"], sort_order),
+                )
+                inserted += 1
+
+    db.commit()
+
+    # Return all items with fresh geocodes
+    from .items import _attach
+    items = [dict(r) for r in db.execute(
+        "SELECT * FROM items WHERE plan_id = ? ORDER BY item_date, sort_key, id",
+        (plan_id,)).fetchall()]
+    return jsonify({"items": [_attach(i) for i in items], "geocoded": inserted})
