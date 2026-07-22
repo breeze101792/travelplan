@@ -129,13 +129,12 @@ before the user navigates away with unsaved changes.
 
 ## Drag and drop
 
-Board (`board.html` is the only file that drags; the timeline
-delegates to timeline-internal pointer-based drag, see below). Native
-HTML5 drag-and-drop, wired by `enableDragDrop` in
-`static/js/board/drag.js`. The board's `card.draggable = true`
-firing `onMove(itemId, { item_date, before_id, after_id })` and
-`onUpload(itemId, file)` callbacks. Both callbacks are wired to the
-staging engine:
+Board. Native HTML5 drag-and-drop wired by `enableDragDrop` in
+`static/js/dragdrop.js` (also supports touch via long-press —
+after a 500ms hold the card follows the finger and drops into the
+target day column). Fires `onMove(itemId, { item_date, before_id, after_id })`
+and `onUpload(itemId, file)` callbacks wired to the staging engine:
+
 
 - `onMove` stages a `moveItemOp` per item in the multi-selection (so
   dragging a single card while 3 are selected moves all 4). For
@@ -148,14 +147,18 @@ staging engine:
   editor (and defers) for a local id.
 
 Timeline. The timeline has its own pointer-based drag in
-`timeline.js:wireBarDrag`. Body drag = move the bar to a new time
-(same day) or to a new day (if the user drags the bar 30%+ of the
-column width across the boundary). Top/bottom edge = resize. Edges
-snap to the nearest 30-minute mark; the new end is clamped to
-`[startH + 0.5h, 24h]` so a bar never goes below 30 minutes or past
-midnight. Multi-drag: if the dragged bar is in a multi-selection, all
-selected items shift by the same delta and to the same target day,
-each keeping its own duration.
+`timeline.js:wireBarDrag` (works on touch natively via pointer events).
+Body drag = move the bar to a new time (same day) or to a new day
+(if the user drags the bar 30%+ of the column width across the boundary).
+Top/bottom edge = resize. Edges snap to the nearest 30-minute mark; the
+new end is clamped to `[startH + 0.5h, 24h]` so a bar never goes below
+30 minutes or past midnight. Multi-drag: if the dragged bar is in a
+multi-selection, all selected items shift by the same delta and to the
+same target day, each keeping its own duration.
+
+Map. The map's day-list sidebar uses HTML5 drag-and-drop in
+`map.js:wireItemDrag` / `enableDropZone`, with touch support via
+long-press (same 500ms hold pattern).
 
 Both pages call into the same `timeEditItemOp` (defined in
 `staging.js`) which PATCHes `item_date` + `details.start_time` +

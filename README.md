@@ -6,6 +6,13 @@ activity, transport), attach images/links, drag-and-drop items across days,
 manage members with per-plan sharing, and split expenses per item across
 currencies (you supply the exchange rates at settlement).
 
+The dashboard organises trips into three tabs (**Planning** / **Ongoing** /
+**Archived**) with drag-and-drop between them. Cards support single-click
+selection (Ctrl+click to toggle, Shift+click to range-select), double-click
+to open a trip, and a modal editor for inline changes. On touch devices,
+long-press initiates drag-and-drop (board, map, and dashboard all support
+this).
+
 - **Backend:** Python / Flask + stdlib `sqlite3` (no ORM, no separate DB server).
 - **Frontend:** vanilla HTML/CSS/JS (ES modules, no build step).
 - **Data & config:** everything lives under `data/` (SQLite DB, uploaded images,
