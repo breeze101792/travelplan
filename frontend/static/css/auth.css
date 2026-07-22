@@ -7,7 +7,7 @@ body[data-page="members"] {
   background: var(--bg);
 }
 
-#view.auth-view {
+#view .auth-view {
   max-width: 420px;
   margin: 0 auto;
   padding: 40px 16px;
@@ -42,7 +42,8 @@ body[data-page="members"] {
 body[data-page="members"] #view {
   max-width: 760px;
 }
-body[data-page="members"] #view.auth-view {
+body[data-page="members"] #view .auth-view {
+  max-width: 760px;
   justify-content: flex-start;
   padding-top: 32px;
 }
@@ -57,7 +58,8 @@ body[data-page="members"] #view.auth-view {
 body[data-page="settings"] #view {
   max-width: 820px;
 }
-body[data-page="settings"] #view.auth-view {
+body[data-page="settings"] #view .auth-view {
+  max-width: 820px;
   justify-content: flex-start;
   padding-top: 32px;
 }
