@@ -13,7 +13,7 @@ function pickColor(i) { return DAY_COLORS[i % DAY_COLORS.length]; }
 let map = null;
 let dayLayers = {};
 let geocodeCache = {};
-let activeDayIndex = null;
+let expIndex = null;        // which day index is expanded
 let days = [];
 let dayCoords = {};
 let allItems = [];
@@ -41,8 +41,8 @@ async function geocode(query) {
 
 function extractLocationQueries(item) {
   const d = item.details || {};
-  const queries = [];
   const t = item.item_type;
+  const queries = [];
   if (t === 'hotel' && d.address) queries.push(d.address);
   else if (t === 'restaurant' && d.address) queries.push(d.address);
   else if (t === 'activity' && d.location) queries.push(d.location);
@@ -72,15 +72,12 @@ function drawDay(dayIndex, coords, color) {
     m.addTo(map);
     markers.push(m);
   }
-
   let polyline = null;
   if (coords.length > 1) {
     polyline = L.polyline(coords.map(c => [c.lat, c.lng]), { color, weight: 3, opacity: .7 });
     polyline.addTo(map);
   }
-
   dayLayers[dayIndex] = { markers, polyline, visible: true };
-
   if (coords.length) {
     const lats = coords.map(c => c.lat);
     const lngs = coords.map(c => c.lng);
@@ -88,103 +85,150 @@ function drawDay(dayIndex, coords, color) {
   }
 }
 
-/* ---------- drawer ---------- */
+/* ---------- drag helpers ---------- */
 
-function openDrawer(index) {
-  const drawer = document.getElementById('item-drawer');
-  const title = document.getElementById('drawer-title');
-  const list = document.getElementById('drawer-items');
-  if (!drawer) return;
-
-  const dayItems = allItems.filter(it => it.item_date === days[index].date && it.item_type !== 'hotel');
-  title.textContent = days[index].label + ' — ' + dayItems.length + ' item' + (dayItems.length !== 1 ? 's' : '');
-  list.innerHTML = '';
-
-  if (!dayItems.length) {
-    list.innerHTML = '<div class="drawer-empty">No items for this day</div>';
-  } else {
-    for (const it of dayItems) {
-      const card = document.createElement('div');
-      card.className = 'drawer-item';
-      card.draggable = true;
-      card.dataset.itemId = it.id;
-      card.dataset.sourceDay = it.item_date;
-      card.innerHTML = `
-        <div class="di-type">${it.item_type}</div>
-        <div class="di-title">${it.title}</div>
-      `;
-      card.addEventListener('dragstart', (e) => {
-        e.dataTransfer.setData('text/plain', String(it.id));
-        e.dataTransfer.effectAllowed = 'move';
-        card.classList.add('dragging');
-      });
-      card.addEventListener('dragend', () => { card.classList.remove('dragging'); });
-      list.appendChild(card);
-    }
-  }
-
-  document.getElementById('drawer-close').onclick = () => { drawer.hidden = true; };
-  drawer.hidden = false;
+function wireItemDrag(el, itemId) {
+  el.draggable = true;
+  el.addEventListener('dragstart', (e) => {
+    e.dataTransfer.setData('text/plain', String(itemId));
+    e.dataTransfer.effectAllowed = 'move';
+    el.classList.add('dragging');
+  });
+  el.addEventListener('dragend', () => el.classList.remove('dragging'));
 }
 
-/* ---------- UI ---------- */
+/* Container-level drop zone: on dragover find the closest day-header below
+ * the cursor (or the last one if past the end) and highlight it. On drop,
+ * move the item to that day. */
+function enableDropZone(container) {
+  container.addEventListener('dragover', (e) => {
+    e.preventDefault();
+    const hdr = findDayHeaderAt(container, e.clientY);
+    container.querySelectorAll('.day-header.drop-target').forEach(el => el.classList.remove('drop-target'));
+    if (hdr) hdr.classList.add('drop-target');
+  });
+  container.addEventListener('dragleave', (e) => {
+    if (!container.contains(e.relatedTarget)) {
+      container.querySelectorAll('.drop-target').forEach(el => el.classList.remove('drop-target'));
+    }
+  });
+  container.addEventListener('drop', async (e) => {
+    e.preventDefault();
+    container.querySelectorAll('.drop-target').forEach(el => el.classList.remove('drop-target'));
+    const hdr = findDayHeaderAt(container, e.clientY);
+    if (!hdr) return;
+    const targetDate = hdr.dataset.targetDate;
+    const itemId = e.dataTransfer.getData('text/plain');
+    if (!itemId || !targetDate) return;
+    const item = allItems.find(it => String(it.id) === itemId);
+    if (!item || item.item_date === targetDate) return;
+    try {
+      const r = await fetch(`/api/items/${itemId}/move`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ item_date: targetDate }),
+      });
+      if (!r.ok) return;
+      item.item_date = targetDate;
+      await reloadAll();
+    } catch {}
+  });
+}
 
-function renderDayList() {
+function findDayHeaderAt(container, clientY) {
+  const headers = [...container.querySelectorAll('.day-header')];
+  if (!headers.length) return null;
+  for (const h of headers) {
+    const r = h.getBoundingClientRect();
+    if (clientY < r.top + r.height / 2) return h;
+  }
+  return headers[headers.length - 1];
+}
+
+/* ---------- render ---------- */
+
+function renderList() {
   const container = document.getElementById('day-list');
   container.innerHTML = '';
   for (let i = 0; i < days.length; i++) {
     const day = days[i];
     const color = pickColor(i);
-    const count = (dayCoords[i] || []).length;
-    const card = document.createElement('div');
-    card.className = 'day-card' + (i === activeDayIndex ? ' active' : '');
-    card.dataset.dayIndex = i;
-    card.dataset.targetDate = day.date;
-    card.innerHTML = `
+    const isExpanded = i === expIndex;
+
+    // day header row
+    const hdr = document.createElement('div');
+    hdr.className = 'day-header' + (isExpanded ? ' expanded' : '') + (i === expIndex ? ' active' : '');
+    hdr.dataset.targetDate = day.date;
+    hdr.innerHTML = `
       <span class="day-dot" style="background:${color}"></span>
+      <span class="day-expand-icon">&#9654;</span>
       <span class="day-label">${day.label}</span>
-      <span class="day-count">${count} place${count !== 1 ? 's' : ''}</span>
+      <span class="day-count">${dayItemsFor(i).length}</span>
     `;
-    card.addEventListener('click', () => selectDay(i));
+    hdr.addEventListener('click', () => toggleDay(i));
+    container.appendChild(hdr);
 
-    card.addEventListener('dragover', (e) => { e.preventDefault(); card.classList.add('drop-target'); });
-    card.addEventListener('dragleave', () => { card.classList.remove('drop-target'); });
-    card.addEventListener('drop', async (e) => {
-      e.preventDefault();
-      card.classList.remove('drop-target');
-      const itemId = e.dataTransfer.getData('text/plain');
-      if (!itemId) return;
-      const targetDate = card.dataset.targetDate;
-      if (!targetDate) return;
-      const item = allItems.find(it => String(it.id) === itemId);
-      if (!item || item.item_date === targetDate) return;
-
-      try {
-        const res = await fetch(`/api/items/${itemId}/move`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ item_date: targetDate }),
-        });
-        if (!res.ok) return;
-        item.item_date = targetDate;
-        await reloadMap();
-      } catch {}
-    });
-
-    container.appendChild(card);
+    // item rows (only if expanded)
+    if (isExpanded) {
+      const items = dayItemsFor(i);
+      if (!items.length) {
+        const empty = document.createElement('div');
+        empty.className = 'day-item';
+        empty.style.cssText = 'cursor:default;opacity:.5;';
+        empty.innerHTML = '<span class="di-title">No items</span>';
+        container.appendChild(empty);
+      } else {
+        for (const it of items) {
+          const row = document.createElement('div');
+          row.className = 'day-item';
+          row.dataset.itemId = it.id;
+          row.innerHTML = `
+            <span class="di-type">${it.item_type}</span>
+            <span class="di-title">${it.title}</span>
+          `;
+          wireItemDrag(row, it.id);
+          container.appendChild(row);
+        }
+      }
+    }
   }
 }
 
-async function reloadMap() {
+function dayItemsFor(dayIndex) {
+  return allItems.filter(it => it.item_date === days[dayIndex].date && it.item_type !== 'hotel');
+}
+
+function toggleDay(index) {
+  const wasExpanded = expIndex === index;
+  if (wasExpanded) {
+    expIndex = null;
+    for (const idx in dayLayers) removeDay(Number(idx));
+    dayLayers = {};
+    renderList();
+    return;
+  }
+  expIndex = index;
+  for (const idx in dayLayers) removeDay(Number(idx));
+  dayLayers = {};
+  const coords = dayCoords[index] || [];
+  if (coords.length) drawDay(index, coords, pickColor(index));
+  renderList();
+  // scroll the expanded day into view
+  const hdr = document.querySelector('.day-header.active');
+  if (hdr) hdr.scrollIntoView({ block: 'nearest' });
+}
+
+/* ---------- reload ---------- */
+
+async function reloadAll() {
   const res = await apiGet(`/api/plans/${plan.id}/items`);
   allItems = res.items || [];
   dayCoords = {};
   const seen = new Set();
   const limiter = rateLimiter(1000);
   for (let i = 0; i < days.length; i++) {
-    const dayItems = allItems.filter(it => it.item_date === days[i].date && it.item_type !== 'hotel');
     const batch = [];
-    for (const it of dayItems) {
+    for (const it of dayItemsFor(i)) {
       const queries = extractLocationQueries(it);
       for (const q of queries) {
         if (seen.has(q)) continue;
@@ -201,22 +245,11 @@ async function reloadMap() {
   }
   for (const idx in dayLayers) removeDay(Number(idx));
   dayLayers = {};
-  renderDayList();
-  if (activeDayIndex !== null) {
-    const activeCoords = dayCoords[activeDayIndex] || [];
-    if (activeCoords.length) drawDay(activeDayIndex, activeCoords, pickColor(activeDayIndex));
-    openDrawer(activeDayIndex);
+  renderList();
+  if (expIndex !== null) {
+    const coords = dayCoords[expIndex] || [];
+    if (coords.length) drawDay(expIndex, coords, pickColor(expIndex));
   }
-}
-
-function selectDay(index) {
-  activeDayIndex = index;
-  for (const idx in dayLayers) removeDay(Number(idx));
-  dayLayers = {};
-  const coords = dayCoords[index] || [];
-  if (coords.length) drawDay(index, coords, pickColor(index));
-  renderDayList();
-  openDrawer(index);
 }
 
 /* ---------- init ---------- */
@@ -249,9 +282,8 @@ export async function initMap(ctx) {
   const seen = new Set();
   const limiter = rateLimiter(1000);
   for (let i = 0; i < days.length; i++) {
-    const dayItems = allItems.filter(it => it.item_date === days[i].date && it.item_type !== 'hotel');
     const batch = [];
-    for (const it of dayItems) {
+    for (const it of dayItemsFor(i)) {
       const queries = extractLocationQueries(it);
       for (const q of queries) {
         if (seen.has(q)) continue;
@@ -267,13 +299,12 @@ export async function initMap(ctx) {
     dayCoords[i] = batch;
   }
 
-  renderDayList();
-
+  enableDropZone(document.getElementById('day-list'));
+  renderList();
+  expIndex = 0;
+  toggleDay(0);
   const anyCoords = Object.values(dayCoords).some(c => c.length);
-  if (days.length) {
-    selectDay(0);
-    if (!anyCoords) map.setView([35.6762, 139.6503], 5);
-  }
+  if (!anyCoords) map.setView([35.6762, 139.6503], 5);
 }
 
 function rateLimiter(ms) {
