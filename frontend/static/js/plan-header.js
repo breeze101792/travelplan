@@ -120,12 +120,12 @@ export function wirePlanHeader({ plan, staging, ctx, onChange }) {
     const datesEl = document.getElementById('plan-dates');
     const v = staging.viewPlan();
     const wantTitle = v.title || '';
-    if (titleEl && !titleEl.querySelector('input') && titleEl.textContent !== wantTitle) {
+    if (titleEl && !titleEl.querySelector('input') && titleEl.textContent.trim() !== wantTitle) {
       titleEl.textContent = wantTitle;
     }
     if (datesEl && !datesEl.querySelector('input')) {
       const wantDates = datesText(v.start_date, v.end_date);
-      if (datesEl.textContent !== wantDates) datesEl.textContent = wantDates;
+      if (datesEl.textContent.trim() !== wantDates) datesEl.textContent = wantDates;
     }
   }
 

@@ -101,14 +101,16 @@
       "fields": [
         {"key": "name", "label": "Name", "type": "text"},
         {"key": "address", "label": "Address", "type": "text"},
-        {"key": "time", "label": "Time", "type": "datetime-local"},
+        {"key": "start_time", "label": "Start", "type": "datetime-local"},
+        {"key": "end_time", "label": "End", "type": "datetime-local"},
         {"key": "party_size", "label": "Party size", "type": "number"},
         {"key": "link", "label": "Reservation link", "type": "url"}
       ],
       "rows": [
         ["name", "party_size"],
-        ["time", "link"],
-        ["address"]
+        ["start_time", "end_time"],
+        ["address"],
+        ["link"]
       ]
     },
     "activity": {
@@ -139,7 +141,8 @@
         {"key": "mode", "label": "Mode (taxi/rental/bus)", "type": "text"},
         {"key": "from", "label": "From", "type": "text"},
         {"key": "to", "label": "To", "type": "text"},
-        {"key": "time", "label": "Time", "type": "datetime-local"},
+        {"key": "start_time", "label": "Start", "type": "datetime-local"},
+        {"key": "end_time", "label": "End", "type": "datetime-local"},
         {"key": "price", "label": "Price", "type": "money"},
         {"key": "currency", "label": "Currency", "type": "currency"},
         {"key": "link", "label": "Link", "type": "url"}
@@ -147,8 +150,8 @@
       "rows": [
         ["mode", "price"],
         ["from", "to"],
-        ["time", "currency"],
-        ["link"]
+        ["start_time", "end_time"],
+        ["currency", "link"]
       ]
     },
     "note": {

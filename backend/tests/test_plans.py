@@ -289,6 +289,12 @@ class PlanHeaderRenderTests(unittest.TestCase):
         self.assertIn("Sep 12, 2026", html, "board: end date is server-formatted")
         self.assertNotIn("2026-09-10 → 2026-09-12", html,
                          "board: raw ISO range must NOT appear (that was the flash)")
+        # The .editable class is rendered server-side (no JS-driven class
+        # addition that shifts the layout on first paint).
+        self.assertIn('class="plan-dates editable"', html.replace("  ", " "),
+                      "board: dates are rendered .editable server-side")
+        self.assertIn('class="plan-title editable"', html.replace("  ", " "),
+                      "board: title is rendered .editable server-side")
 
     def test_timeline_renders_formatted_dates(self):
         r = self.client.get(f"/plans/{self.plan['id']}/timeline")
