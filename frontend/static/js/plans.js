@@ -7,6 +7,7 @@ import {
 
 let baseCurrencies = ['USD'];
 let currentTab = 'ongoing';
+let dragPlanId = null;
 
 export async function initDashboard(_ctx) {
   const newToggle = document.getElementById('new-trip-toggle');
@@ -43,14 +44,53 @@ export async function initDashboard(_ctx) {
     });
   }
 
-  document.getElementById('tab-bar').addEventListener('click', (ev) => {
-    const btn = ev.target.closest('.tab-btn');
-    if (!btn) return;
-    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
-    btn.classList.add('active');
-    currentTab = btn.dataset.tab;
-    renderPlans(plansSection, currentTab, false);
-  });
+  {
+    const tabBar = document.getElementById('tab-bar');
+    tabBar.addEventListener('click', (ev) => {
+      const btn = ev.target.closest('.tab-btn');
+      if (!btn) return;
+      document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      currentTab = btn.dataset.tab;
+      renderPlans(plansSection, currentTab, false);
+    });
+
+    let dragOverTab = null;
+    tabBar.addEventListener('dragenter', (ev) => {
+      const btn = ev.target.closest('.tab-btn');
+      if (!btn) return;
+      dragOverTab = btn;
+      btn.classList.add('drag-over');
+    });
+    tabBar.addEventListener('dragover', (ev) => {
+      const btn = ev.target.closest('.tab-btn');
+      if (!btn) return;
+      ev.preventDefault();
+      if (dragOverTab && dragOverTab !== btn) {
+        dragOverTab.classList.remove('drag-over');
+        dragOverTab = btn;
+        btn.classList.add('drag-over');
+      }
+    });
+    tabBar.addEventListener('dragleave', (ev) => {
+      const btn = ev.target.closest('.tab-btn');
+      if (!btn) return;
+      btn.classList.remove('drag-over');
+      if (dragOverTab === btn) dragOverTab = null;
+    });
+    tabBar.addEventListener('drop', async (ev) => {
+      ev.preventDefault();
+      const btn = ev.target.closest('.tab-btn');
+      if (!btn || !dragPlanId) return;
+      btn.classList.remove('drag-over');
+      dragOverTab = null;
+      const newStatus = btn.dataset.tab;
+      if (newStatus === currentTab) return;
+      await apiPatch(`/api/plans/${dragPlanId}`, { status: newStatus });
+      dragPlanId = null;
+      renderPlans(plansSection, currentTab, false);
+    });
+  }
 
   currentTab = await resolveDefaultTab();
   document.querySelectorAll('.tab-btn').forEach(b => {
@@ -134,7 +174,20 @@ function planCard(plan, section) {
     el('span', { class: `badge status-${plan.status || 'planning'}` }, [statusLabels[plan.status] || 'Planning']),
   ].filter(Boolean);
 
-  const card = el('article', { class: 'card plan-card', dataset: { id: plan.id } }, [
+  const card = el('article', {
+    class: 'card plan-card',
+    dataset: { id: plan.id },
+    draggable: 'true',
+    ondragstart: (ev) => {
+      dragPlanId = plan.id;
+      card.classList.add('dragging');
+      ev.dataTransfer.effectAllowed = 'move';
+    },
+    ondragend: () => {
+      dragPlanId = null;
+      card.classList.remove('dragging');
+    },
+  }, [
     el('div', { class: 'card-head' }, [
       el('h3', { class: 'card-title' }, [plan.title || 'Untitled trip']),
       el('div', { class: 'card-badges' }, badges),
@@ -144,6 +197,25 @@ function planCard(plan, section) {
     links,
     controls,
   ].filter(Boolean));
+
+  let selTimer = null;
+  card.addEventListener('click', (e) => {
+    if (e.target.closest('button') || e.target.closest('a')) return;
+    if (selTimer) { clearTimeout(selTimer); selTimer = null; return; }
+    selTimer = setTimeout(() => {
+      selTimer = null;
+      card.classList.toggle('selected');
+      if (card.classList.contains('selected')) {
+        document.querySelectorAll('.plan-card.selected').forEach(c => {
+          if (c !== card) c.classList.remove('selected');
+        });
+      }
+    }, 250);
+  });
+  card.addEventListener('dblclick', (e) => {
+    if (selTimer) { clearTimeout(selTimer); selTimer = null; }
+    window.location.href = `/plans/${plan.id}`;
+  });
 
   return card;
 }

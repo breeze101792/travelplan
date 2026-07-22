@@ -399,6 +399,24 @@
   color: #92400e;
 }
 
+/* Card selection & drag ----------------------------------------------- */
+
+.plan-card.selected {
+  outline: 2px solid var(--accent, #2563eb);
+  outline-offset: -2px;
+}
+
+.plan-card.dragging {
+  opacity: 0.5;
+  transform: scale(0.97);
+}
+
+.tab-btn.drag-over {
+  background: var(--accent-bg, #eff6ff);
+  border-bottom-color: var(--accent, #2563eb);
+  color: var(--accent, #2563eb);
+}
+
 /* Plan editor modal --------------------------------------------------- */
 
 .plan-editor {
