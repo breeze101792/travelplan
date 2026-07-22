@@ -1,0 +1,30 @@
+{% extends "layout.html" %}
+{% block title %}{{ plan.title }} — Map — TravelPlan{% endblock %}
+{% block page %}map{% endblock %}
+
+{% block styles %}
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="">
+<link rel="stylesheet" href="/static/css/map.css">
+<script>window.__CONTEXT__ = { planId: {{ plan.id }}, role: {{ plan_role|tojson|safe }} };</script>
+{% endblock %}
+
+{% block content %}
+{% set plan_active_page = 'map' %}
+{% include "_plan_header.html" %}
+
+<div class="map-page">
+  <div id="map-container" class="map-container"></div>
+  <aside class="map-sidebar">
+    <h2 class="map-sidebar-title">Days</h2>
+    <div id="day-list" class="day-list"></div>
+  </aside>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
+<script type="module">
+import { initMap } from '/static/js/map.js';
+initMap(window.__CONTEXT__);
+</script>
+{% endblock %}

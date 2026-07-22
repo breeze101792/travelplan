@@ -1,0 +1,74 @@
+.map-page {
+  display: flex;
+  gap: 12px;
+  height: calc(100vh - 120px);
+  margin-top: 12px;
+}
+
+.map-container {
+  flex: 1;
+  border-radius: 10px;
+  border: 1px solid var(--border, #e5e7eb);
+  overflow: hidden;
+  min-height: 400px;
+}
+
+.map-sidebar {
+  flex: 0 0 280px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.map-sidebar-title {
+  font-size: 1rem;
+  font-weight: 600;
+  margin: 0;
+  color: var(--ink, #1f2937);
+}
+
+.day-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  overflow-y: auto;
+  flex: 1;
+}
+
+.day-card {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--border, #e5e7eb);
+  background: var(--surface, #fff);
+  cursor: pointer;
+  transition: background .12s, border-color .12s;
+  font-size: .9rem;
+}
+.day-card:hover { background: var(--surface-2, #f1f5f9); }
+.day-card.active { border-color: var(--accent, #6366f1); }
+.day-card .day-dot {
+  width: 14px; height: 14px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.day-card .day-label {
+  font-weight: 500;
+  color: var(--ink, #1f2937);
+}
+.day-card .day-count {
+  margin-left: auto;
+  font-size: .8rem;
+  color: var(--muted, #64748b);
+}
+
+.map-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  color: var(--muted, #64748b);
+  font-size: .95rem;
+}
