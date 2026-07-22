@@ -324,6 +324,21 @@ def _save_geocode_cache():
     (path / "geocode.json").write_text(
         json.dumps(_GEOCODE_CACHE, ensure_ascii=False, indent=2), encoding="utf-8")
 
+def _geocode_photon(q):
+    """Try Photon (komoot) geocoder — no API key needed, generous rate limit."""
+    url = "https://photon.komoot.io/api/?limit=1&q=" + urllib.parse.quote(q)
+    req = urllib.request.Request(url, headers={"User-Agent": "TravelPlan/1.0"})
+    with urllib.request.urlopen(req, timeout=10) as resp:
+        data = json.loads(resp.read().decode())
+    features = data.get("features") or []
+    if not features:
+        return None
+    geom = features[0].get("geometry") or {}
+    coords = geom.get("coordinates")
+    if not coords or len(coords) < 2:
+        return None
+    return {"lat": coords[1], "lng": coords[0]}
+
 @plans_bp.route("/api/geocode")
 @login_required
 def api_geocode():
@@ -333,25 +348,18 @@ def api_geocode():
     _load_geocode_cache()
     if q in _GEOCODE_CACHE:
         return jsonify(_GEOCODE_CACHE[q])
-    # Throttle to 1 req / 1.1 s
     global _GEOCODE_LAST
     elapsed = time_mod.time() - _GEOCODE_LAST
-    if elapsed < 1.1:
-        time_mod.sleep(1.1 - elapsed)
-    url = "https://nominatim.openstreetmap.org/search?format=json&limit=1&q=" + urllib.parse.quote(q)
-    req = urllib.request.Request(url, headers={"User-Agent": "TravelPlan/1.0"})
+    if elapsed < 0.5:
+        time_mod.sleep(0.5 - elapsed)
+    result = {"lat": None, "lng": None}
     try:
-        with urllib.request.urlopen(req, timeout=10) as resp:
-            data = json.loads(resp.read().decode())
+        r = _geocode_photon(q)
+        if r:
+            result = r
     except Exception:
-        _GEOCODE_LAST = time_mod.time()
-        return jsonify({"lat": None, "lng": None})
+        pass
     _GEOCODE_LAST = time_mod.time()
-    if not data:
-        _GEOCODE_CACHE[q] = {"lat": None, "lng": None}
-        _save_geocode_cache()
-        return jsonify({"lat": None, "lng": None})
-    result = {"lat": float(data[0]["lat"]), "lng": float(data[0]["lon"])}
     _GEOCODE_CACHE[q] = result
     _save_geocode_cache()
     return jsonify(result)
