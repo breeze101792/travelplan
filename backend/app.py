@@ -57,7 +57,14 @@ def create_app(config: dict | None = None) -> Flask:
     @app.context_processor
     def inject_user():
         from .auth import current_user
-        return {"current_user": current_user()}
+        from .util import fmt_date
+        return {
+            "current_user": current_user(),
+            # Server-side date formatter used by the per-plan header
+            # partial so the initial render matches the frontend's
+            # fmtDate() output (no "flash" of raw ISO dates).
+            "fmt_date": fmt_date,
+        }
 
     @app.route("/")
     def index():

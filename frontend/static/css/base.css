@@ -280,8 +280,18 @@ tr:last-child td { border-bottom: none; }
 .plan-title.editable:hover { outline-color: var(--line); background: rgba(0,0,0,.02); }
 .title-edit { font-size: 1.6rem; font-weight: 600; padding: 2px 4px; width: 100%; max-width: 420px; }
 .plan-dates { margin: 4px 0 0; color: var(--muted); font-size: .95rem; }
+.plan-dates.editable { cursor: text; outline: 1px dashed transparent; border-radius: 4px; padding: 1px 4px; display: inline-block; }
+.plan-dates.editable:hover { outline-color: var(--line, #e5e7eb); background: rgba(0,0,0,.02); }
+.dates-edit-wrap { display: inline-flex; align-items: center; gap: 6px; }
+.dates-edit-wrap .input { font-size: .9rem; padding: 3px 6px; max-width: 160px; }
+.dates-sep { color: var(--muted, #64748b); }
 .plan-currency { margin: 2px 0 0; color: var(--muted); font-size: .9rem; }
 .plan-currency strong { color: var(--ink); }
+/* Inline block message on pages without a pending bar (expenses, share):
+ * shown when a dates edit would orphan items or a save fails. The board
+ * and timeline use the pending bar's .pb-status.pb-blocked instead. */
+.ph-block-msg { margin: 6px 0 0; color: #b91c1c; font-size: .85rem; }
+.ph-block-msg[hidden] { display: none; }
 
 .plan-nav-wrap { display: flex; }
 .plan-nav {
@@ -321,6 +331,92 @@ tr:last-child td { border-bottom: none; }
 /* "All plans" sits visually slightly apart from the plan-specific tabs. */
 .pn-link--muted { color: var(--muted); }
 .pn-link--muted:hover { color: var(--ink); }
+
+/* Add toolbar (range + buffer + quick add) --------------------------------
+ * Shared by Board / Timeline (and any future page that mounts the
+ * add-toolbar via plan-header.js). The toolbar is a sticky strip right
+ * under the plan header, holding the range buttons (+1 day / -1 day
+ * on each side), + Buffer day, and the Quick add type picker. The
+ * page that mounts it fills it via `renderPlanToolbar()`; the CSS
+ * just lays out whatever buttons are inside.
+ */
+.add-toolbar {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 8px;
+  padding: 12px 24px; border-bottom: 1px solid var(--border, #e5e7eb);
+  position: sticky; top: 0; z-index: 5;
+  background: var(--surface, #ffffff);
+}
+.toolbar-label { color: var(--muted, #64748b); font-size: .85rem; margin-right: 4px; }
+.toolbar-btn {
+  padding: 5px 11px; border-radius: 999px; border: 1px solid var(--border, #cbd5e1);
+  background: var(--surface, #fff); color: var(--text, #1f2937);
+  font-size: .82rem; cursor: pointer;
+}
+.toolbar-btn:hover { background: var(--surface-2, #f1f5f9); border-color: var(--accent, #6366f1); }
+.toolbar-btn:disabled { opacity: .45; cursor: not-allowed; }
+.toolbar-btn:disabled:hover { background: var(--surface, #fff); border-color: var(--border, #cbd5e1); }
+/* Range buttons get a slightly different look — pill on each end of a
+ * group, with the arrow pointing to the side the affected day lives on.
+ * `data-action` is set by plan-header.js so the test suite (and any
+ * future styling hooks) can target specific buttons. */
+.toolbar-range-group { display: inline-flex; gap: 4px; padding: 0 10px; margin-right: 4px; border-right: 1px solid var(--border, #e5e7eb); }
+.toolbar-range-group:last-of-type { border-right: none; margin-right: 8px; }
+.toolbar-btn.toolbar-range { font-weight: 500; font-variant-numeric: tabular-nums; }
+.toolbar-btn.toolbar-range:disabled { opacity: .4; cursor: not-allowed; }
+
+/* Per-day action chip (× close button on buffer days) ------------------
+ * Shared by Board / Timeline. Buffer days get a small round × chip in
+ * their day-head; the shared `makeDayActions()` helper in
+ * plan-header.js creates it. Trip days don't get a chip. */
+.day-title-row {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 6px; margin: 0 0 2px;
+}
+.day-title-row .day-title { margin: 0; }
+.day-action {
+  font-size: .7rem; font-weight: 600; letter-spacing: .02em;
+  padding: 2px 8px; border-radius: 999px;
+  border: 1px dashed var(--border, #cbd5e1);
+  background: var(--surface, #fff); color: var(--muted, #475569);
+  cursor: pointer; flex-shrink: 0;
+}
+.day-action:hover { color: var(--accent, #6366f1); border-color: var(--accent, #6366f1); border-style: solid; }
+.day-action.day-action-on {
+  background: var(--warn-weak, #fef3c7);
+  color: var(--warn, #d97706);
+  border-style: solid;
+  border-color: var(--warn, #d97706);
+}
+.day-action.day-action-on:hover { background: #fde68a; }
+/* Close (×) button on a buffer day: a small round chip. The text "×" is
+ * the actual content; we size it as a pictogram so the user sees a clear
+ * close affordance, not a labeled "Buffer" pill. */
+.day-action.day-action-close {
+  width: 22px; height: 22px; padding: 0;
+  display: inline-flex; align-items: center; justify-content: center;
+  font-size: 1.1rem; line-height: 1; font-weight: 700;
+  background: transparent;
+  color: var(--muted, #94a3b8);
+  border-color: transparent;
+  border-radius: 50%;
+}
+.day-action.day-action-close:hover {
+  color: var(--warn, #d97706);
+  background: var(--warn-weak, #fef3c7);
+  border-color: transparent;
+}
+/* Buffer day column: dashed border, soft tint so the user sees the
+ * distinction without losing the day. */
+.day.day-buffer {
+  background: repeating-linear-gradient(45deg,
+    rgba(217, 119, 6, .04) 0 6px,
+    transparent 6px 12px),
+    var(--surface-2, #f8fafc);
+  border-style: dashed;
+  border-color: var(--warn, #d97706);
+}
+.day.day-buffer .day-title { color: var(--warn, #d97706); }
+.day.day-buffer .day-items { background: rgba(217, 119, 6, .03); }
 
 .share-root { max-width: 720px; margin: 0 auto; padding: 0 4px; }
 

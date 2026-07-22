@@ -193,5 +193,152 @@ class PlanBufferDaysTests(unittest.TestCase):
         self.assertEqual(remaining, 0)
 
 
+class FmtDateTests(unittest.TestCase):
+    """`fmt_date()` produces the same Mon-DD-YYYY format as the
+    frontend's `fmtDate()`, so the per-plan header doesn't flash from
+    raw ISO on first paint. Locked in by tests so a future change in
+    either side doesn't quietly desync them."""
+
+    def test_iso_string(self):
+        from backend.util import fmt_date
+        self.assertEqual(fmt_date("2026-07-01"), "Jul 1, 2026")
+        self.assertEqual(fmt_date("2026-01-09"), "Jan 9, 2026")
+        self.assertEqual(fmt_date("2026-12-31"), "Dec 31, 2026")
+
+    def test_date_object(self):
+        from datetime import date
+        from backend.util import fmt_date
+        self.assertEqual(fmt_date(date(2026, 7, 1)), "Jul 1, 2026")
+
+    def test_falsy_returns_empty(self):
+        from backend.util import fmt_date
+        self.assertEqual(fmt_date(None), "")
+        self.assertEqual(fmt_date(""), "")
+        self.assertEqual(fmt_date(0), "")
+
+    def test_garbage_returns_empty(self):
+        from backend.util import fmt_date
+        self.assertEqual(fmt_date("not-a-date"), "")
+        self.assertEqual(fmt_date("2026-13-99"), "")
+        # `date.fromisoformat` is strict — any deviation from YYYY-MM-DD
+        # is rejected, which is the right behavior (the plan table
+        # stores ISO dates or NULL).
+
+    def test_short_month_names_match_frontend(self):
+        # The frontend's MONTHS array in util.js must be kept in sync
+        # with backend.util._MONTHS. This test would catch a rename in
+        # one place but not the other.
+        from backend.util import _MONTHS
+        self.assertEqual(_MONTHS, ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
+                                    "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"])
+
+
+class PlanHeaderRenderTests(unittest.TestCase):
+    """All four plan pages (board / timeline / expenses / share) render
+    the same header partial, and the dates are server-formatted to match
+    the frontend's fmtDate() output. This guards against (a) the four
+    pages drifting (e.g. share losing the dates line again) and (b) the
+    "flash" of raw ISO dates on first paint returning."""
+
+    def setUp(self):
+        self.app = _fresh_app()
+        self.client = self.app.test_client()
+        _user(self.app, username="admin", password="pw12345", role="admin")
+        _user(self.app, username="alice")
+        _login(self.client, "alice")
+        # A plan with explicit start/end dates so we can assert the
+        # rendered date string format.
+        self.plan = _create_plan(
+            self.client, title="Japan 2026",
+            start_date="2026-09-10", end_date="2026-09-12",
+            base_currency="JPY",
+        )
+
+    def tearDown(self):
+        shutil.rmtree(getattr(self.app, "_test_tmp", None) or "/tmp/__none__",
+                      ignore_errors=True)
+
+    def _assert_shared_header(self, html):
+        # Same plan-title, plan-dates, plan-currency, and nav on every page.
+        self.assertIn('id="plan-title"', html, "header has plan-title")
+        self.assertIn('id="plan-dates"', html, "header has plan-dates")
+        self.assertIn('id="plan-currency"', html, "header has plan-currency")
+        # The nav with all four tabs (board, timeline, expenses, share)
+        # plus the "All plans" link. The exact hrefs depend on the plan id.
+        self.assertIn('class="plan-nav"', html, "header has plan-nav")
+        self.assertIn("Board", html, "nav has Board tab")
+        self.assertIn("Timeline", html, "nav has Timeline tab")
+        self.assertIn("Expenses", html, "nav has Expenses tab")
+        self.assertIn("All plans", html, "nav has All plans link")
+        # The plan title appears verbatim in the header.
+        self.assertIn("Japan 2026", html, "header shows the plan title")
+        # The base currency appears verbatim.
+        self.assertIn("JPY", html, "header shows the base currency")
+
+    def test_board_renders_formatted_dates_no_flash(self):
+        r = self.client.get(f"/plans/{self.plan['id']}")
+        self.assertEqual(r.status_code, 200)
+        html = r.get_data(as_text=True)
+        self._assert_shared_header(html)
+        # The dates are server-formatted to Mon DD, YYYY (matching
+        # fmtDate()), not raw ISO. The previous "flash" came from the
+        # template emitting "2026-09-10 → 2026-09-12" and the page JS
+        # rewriting it client-side; now the first paint already shows
+        # "Sep 10, 2026 → Sep 12, 2026".
+        self.assertIn("Sep 10, 2026", html, "board: start date is server-formatted")
+        self.assertIn("Sep 12, 2026", html, "board: end date is server-formatted")
+        self.assertNotIn("2026-09-10 → 2026-09-12", html,
+                         "board: raw ISO range must NOT appear (that was the flash)")
+
+    def test_timeline_renders_formatted_dates(self):
+        r = self.client.get(f"/plans/{self.plan['id']}/timeline")
+        self.assertEqual(r.status_code, 200)
+        html = r.get_data(as_text=True)
+        self._assert_shared_header(html)
+        self.assertIn("Sep 10, 2026", html, "timeline: start date is server-formatted")
+        self.assertIn("Sep 12, 2026", html, "timeline: end date is server-formatted")
+        self.assertNotIn("2026-09-10 → 2026-09-12", html,
+                         "timeline: raw ISO range must NOT appear")
+
+    def test_expenses_renders_formatted_dates(self):
+        r = self.client.get(f"/plans/{self.plan['id']}/expenses")
+        self.assertEqual(r.status_code, 200)
+        html = r.get_data(as_text=True)
+        self._assert_shared_header(html)
+        self.assertIn("Sep 10, 2026", html, "expenses: start date is server-formatted")
+        self.assertIn("Sep 12, 2026", html, "expenses: end date is server-formatted")
+        # The expenses page now includes the dates line (was missing
+        # before the shared header partial), and uses the same
+        # Mon-DD-YYYY format as the other pages.
+
+    def test_share_renders_formatted_dates(self):
+        # Share is owner-only; alice is the owner here.
+        r = self.client.get(f"/plans/{self.plan['id']}/share")
+        self.assertEqual(r.status_code, 200)
+        html = r.get_data(as_text=True)
+        self._assert_shared_header(html)
+        self.assertIn("Sep 10, 2026", html, "share: start date is server-formatted")
+        self.assertIn("Sep 12, 2026", html, "share: end date is server-formatted")
+        # Share is the page that USED to omit the dates line entirely;
+        # now it has them, matching the other three.
+
+    def test_active_tab_is_per_page(self):
+        # Each page should highlight its own tab via `aria-current="page"`.
+        for path, expected in [
+            ("", "Board"),
+            ("/timeline", "Timeline"),
+            ("/expenses", "Expenses"),
+            ("/share", "Share"),
+        ]:
+            r = self.client.get(f"/plans/{self.plan['id']}{path}")
+            self.assertEqual(r.status_code, 200, f"GET {path} returned {r.status_code}")
+            html = r.get_data(as_text=True)
+            # Exactly one aria-current=page among the pn-link tabs.
+            self.assertEqual(html.count('aria-current="page"'), 1,
+                             f"{path or '/'}: exactly one tab is active")
+            self.assertIn(f'>{expected}</a>', html,
+                          f"{path or '/'}: '{expected}' tab is active")
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -2,8 +2,34 @@
 from __future__ import annotations
 
 from decimal import Decimal, ROUND_HALF_UP
+from datetime import date
 
 from flask import jsonify
+
+
+# Same short month names the frontend's fmtDate() uses, so server-rendered
+# headers don't "flash" to a different format on the first paint.
+_MONTHS = [
+    "Jan", "Feb", "Mar", "Apr", "May", "Jun",
+    "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+]
+
+
+def fmt_date(iso):
+    """Format an ISO date string (YYYY-MM-DD) the same way as
+    frontend's fmtDate() — "Jul 1, 2026". Returns '' for falsy / unparseable
+    values so the template can use `{{ fmt_date(plan.start_date) }}`
+    without a NoneType check. Also accepts a `date` object directly."""
+    if not iso:
+        return ""
+    if isinstance(iso, date):
+        d = iso
+    else:
+        try:
+            d = date.fromisoformat(iso)
+        except (TypeError, ValueError):
+            return ""
+    return f"{_MONTHS[d.month - 1]} {d.day}, {d.year}"
 
 
 def ok(payload=None, **extra):

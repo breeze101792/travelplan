@@ -1,0 +1,32 @@
+{# Per-plan header — used on every plan page (Board / Timeline / Expenses / Share).
+   Single source of truth so the four pages can't drift. The plan dates are
+   server-formatted (Mon DD, YYYY) to match the frontend's fmtDate() output,
+   so there's no "flash" of raw ISO dates before the page JS rewrites them.
+
+   Required context:
+     plan              — the plan dict (title, start_date, end_date, base_currency, id)
+     plan_role         — 'owner' | 'editor' | 'viewer'
+     plan_active_page  — 'board' | 'timeline' | 'expenses' | 'share'
+
+   The title + dates are inline-editable on pages that mount plan-header.js
+   (board, timeline). On other pages (expenses, share) they remain static —
+   the wirePlanHeader() helper adds the click-to-edit affordance only where
+   it's loaded. #}
+<header class="plan-header">
+  <div class="plan-head-main">
+    <h1 id="plan-title" class="plan-title">{{ plan.title }}</h1>
+    <p id="plan-dates" class="plan-dates">
+      {%- if plan.start_date and plan.end_date -%}
+        {{ fmt_date(plan.start_date) }} &rarr; {{ fmt_date(plan.end_date) }}
+      {%- elif plan.start_date -%}
+        {{ fmt_date(plan.start_date) }}
+      {%- else -%}
+        Dates not set
+      {%- endif -%}
+    </p>
+    <p class="plan-currency">Base currency: <strong id="plan-currency">{{ plan.base_currency }}</strong></p>
+  </div>
+  <nav class="plan-nav-wrap">
+    {% include "_plan_nav.html" %}
+  </nav>
+</header>

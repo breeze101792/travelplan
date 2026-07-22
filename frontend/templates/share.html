@@ -5,16 +5,8 @@
 {% block styles %}<link rel="stylesheet" href="/static/css/board.css">{% endblock %}
 
 {% block content %}
-<header class="plan-header">
-  <div class="plan-head-main">
-    <h1 id="plan-title" class="plan-title">{{ plan.title }}</h1>
-    <p class="plan-currency">Base currency: <strong id="plan-currency">{{ plan.base_currency }}</strong></p>
-  </div>
-  <nav class="plan-nav-wrap">
-    {% set plan_active_page = 'share' %}
-    {% include "_plan_nav.html" %}
-  </nav>
-</header>
+{% set plan_active_page = 'share' %}
+{% include "_plan_header.html" %}
 
 <div id="share-root" class="share-root"></div>
 
@@ -25,10 +17,16 @@
 <script type="module">
 import { apiGet, apiPost, apiPatch, apiDel } from '/static/js/api.js';
 import { el, clear } from '/static/js/util.js';
+import { wirePlanHeaderDirect } from '/static/js/plan-header.js';
 
 const ctx = window.__CONTEXT__;
 const root = document.getElementById('share-root');
 const isOwner = ctx.role === 'owner';
+
+// Same inline title/dates editing as the board + timeline, but saved
+// immediately (this page has no pending bar). Share is owner-only, so
+// the title is editable here too.
+wirePlanHeaderDirect(ctx);
 
 async function loadMembers() {
   const [planMembersData, accountsData] = await Promise.all([

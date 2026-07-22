@@ -812,6 +812,93 @@ const ownerStub = await boot('owner');
          'clicking a blank area after the editor is closed DOES exit multi-select');
 }
 
+/* =============== editor: restaurant/transport legacy `time` → start+end =============== */
+// Restaurant and transport used to have a single `time` field. They're
+// now mandatory `start_time` + `end_time`. The editor's makeFieldInput
+// pre-fills the new fields from the legacy `time` so users see their
+// old data plus a sensible default duration, and Apply commits the
+// new shape (stripping the legacy `time`).
+{
+  const itemEditorMod = await import('/static/js/item-editor.js');
+  const { makeFieldInput } = itemEditorMod;
+
+  const startField = { key: 'start_time', label: 'Start', type: 'datetime-local' };
+  const endField   = { key: 'end_time',   label: 'End',   type: 'datetime-local' };
+  const SETTINGS = { base_currencies: ['USD', 'JPY'] };
+
+  // Legacy restaurant/transport: only `time` on details.
+  const legacy = { time: '2026-09-11T19:00' };
+  // start_time is prefilled from `time`.
+  eq(makeFieldInput(startField, legacy, SETTINGS, { base_currency: 'JPY' }).value,
+     '2026-09-11T19:00',
+     'legacy: start_time input prefilled from `time`');
+  // end_time is prefilled to `time + 1h` so the user has a default.
+  eq(makeFieldInput(endField, legacy, SETTINGS, { base_currency: 'JPY' }).value,
+     '2026-09-11T20:00',
+     'legacy: end_time input defaults to start + 1h');
+
+  // New-shape restaurant/transport: both fields present, no `time`.
+  const fresh = { start_time: '2026-09-11T19:00', end_time: '2026-09-11T20:30' };
+  eq(makeFieldInput(startField, fresh, SETTINGS, { base_currency: 'JPY' }).value,
+     '2026-09-11T19:00',
+     'new shape: start_time reads its own value');
+  eq(makeFieldInput(endField, fresh, SETTINGS, { base_currency: 'JPY' }).value,
+     '2026-09-11T20:30',
+     'new shape: end_time reads its own value');
+
+  // Edge case: `time` is near midnight. +1h clamps to 23:00 (we don't
+  // wrap into the next day; the user can adjust).
+  const late = { time: '2026-09-11T23:30' };
+  eq(makeFieldInput(endField, late, SETTINGS, { base_currency: 'JPY' }).value,
+     '2026-09-11T23:30',
+     'legacy late: end_time clamped to 23:30 (no date wrap)');
+}
+
+/* =============== owner: card detail lines show start→end range =============== */
+// The board's card subtitle should show the time range as one line
+// ("19:00 → 20:30") for items with both start_time and end_time.
+{
+  const SETTINGS_R = {
+    base_currencies: ['JPY'],
+    item_types: {
+      restaurant: {
+        label: 'Restaurant', fields: [
+          { key: 'name', label: 'Name', type: 'text' },
+          { key: 'start_time', label: 'Start', type: 'datetime-local' },
+          { key: 'end_time',   label: 'End',   type: 'datetime-local' },
+          { key: 'party_size', label: 'Party size', type: 'number' },
+        ],
+      },
+    },
+  };
+  installDom({ ids: PAGE_IDS });
+  installFetch([
+    ['GET /api/settings', () => SETTINGS_R],
+    ['GET /api/plans/1', () => ({ plan: { id: 1, title: 'P', start_date: '2026-09-11', end_date: '2026-09-11',
+                                       base_currency: 'JPY', buffer_days: [] } })],
+    ['GET /api/plans/1/members', () => ({ owner: { id: 1, username: 'admin', display_name: 'Admin' }, members: [] })],
+    ['GET /api/plans/1/items', () => ({ items: [
+      { id: 50, item_type: 'restaurant', title: 'Ichiran', item_date: '2026-09-11', end_date: null,
+        sort_key: 1, status: 'planned',
+        details: { name: 'Ichiran', start_time: '2026-09-11T19:00', end_time: '2026-09-11T20:30',
+                   party_size: 3 },
+        attachments: [] },
+    ] })],
+    ['GET /api/plans/1/expenses/by-item', () => ({ items: [] })],
+  ]);
+  const { initItinerary } = await import('/static/js/itinerary.js');
+  await initItinerary({ planId: 1, role: 'owner' });
+  const board = document.getElementById('board');
+  const card = board.querySelector('.card.restaurant');
+  const detailLines = [...card.querySelectorAll('.card-details li')].map(li => li.textContent);
+  // First line is the time range "19:00 → 20:30" (date prefix stripped).
+  assert(detailLines[0] === '19:00 → 20:30',
+         'card detail shows the start–end time range: ' + JSON.stringify(detailLines));
+  // The detail list does NOT have separate "Start: ..." / "End: ..." lines.
+  assert(!detailLines.some(l => /^Start:/.test(l) || /^End:/.test(l)),
+         'card detail does not duplicate start/end as separate lines');
+}
+
 /* =============== viewer: bar hidden, board renders =============== */
 {
   const stub = await boot('viewer');

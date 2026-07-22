@@ -60,6 +60,16 @@
   background: var(--surface, #fff);
   overflow: hidden;
 }
+/* Buffer day: planning scratchpad. No hour grid (renderDay skips it),
+ * lighter background so the eye reads it as "not part of the schedule".
+ * The base .day-buffer style (base.css) covers the shared look; the
+ * rules here just soften it for the timeline (no diagonal stripes, no
+ * dashed border — the hour-less day already reads as different). */
+.timeline .day.day-buffer { background: #f5f3ff; }
+.timeline .day.day-buffer .day-head { background: #f5f3ff; }
+/* .day-action styles (× close button on buffer days) come from base.css
+ * so the board and timeline show the same affordance. */
+
 .timeline .day-head {
   position: sticky;
   top: 0;
@@ -67,6 +77,7 @@
   background: var(--surface, #fff);
   padding: 8px 10px 6px;
   border-bottom: var(--tl-border);
+  display: flex; align-items: center; justify-content: space-between; gap: 6px;
 }
 .timeline .day-head .date { font-weight: 600; font-size: .92rem; }
 .timeline .day-head .sub  { font-size: .74rem; color: var(--tl-muted); margin-top: 1px; }
@@ -146,6 +157,37 @@
 .tl-item.empty { background: #94a3b8; color: #1f2937; }
 .tl-item.multi { box-shadow: inset 3px 0 0 rgba(255,255,255,.45); } /* marker when stacked side-by-side */
 
+/* Multi-select outline: same visual language as the board's
+ * .card-selected. Non-hotel bars get the outline when their id is in the
+ * selection set; hotels never do, since they don't participate in
+ * multi-select. */
+.tl-item.tl-item-selected {
+  outline: 2px solid #6366f1;
+  outline-offset: -2px;
+  box-shadow: 0 0 0 1px #6366f1;
+}
+
+/* Drag / resize affordances (only on editable timelines). The bar's body
+ * gets a grab cursor; thin 6px strips at the top/bottom get resize cursors
+ * so the user can stretch start/end. Hotels opt out (the whole bar is
+ * display-only — span changes go through the editor). */
+.timeline.editable .tl-item:not(.tl-item-hotel) { cursor: grab; }
+.timeline.editable .tl-item:not(.tl-item-hotel).dragging { cursor: grabbing; opacity: .85; }
+.timeline.editable .tl-item:not(.tl-item-hotel) .tl-resize {
+  position: absolute; left: 0; right: 0; height: 6px;
+  cursor: ns-resize; z-index: 3;
+}
+.timeline.editable .tl-item:not(.tl-item-hotel) .tl-resize.top { top: 0; }
+.timeline.editable .tl-item:not(.tl-item-hotel) .tl-resize.bottom { bottom: 0; }
+
+/* Day column shows a "drop here" outline when a drag is hovering over it,
+ * so the user has a clear visual target on cross-day moves. */
+.timeline .day.drop-target .day-grid {
+  outline: 2px dashed #6366f1;
+  outline-offset: -2px;
+  background-color: #eef2ff;
+}
+
 /* type accents — same palette as the board */
 .tl-item.hotel      { background: #6366f1; }
 .tl-item.flight     { background: #0ea5e9; }
@@ -222,4 +264,124 @@
 @media (max-width: 720px) {
   :root { --tl-day-min: 150px; }
   .timeline .hour-col { flex-basis: 36px; }
+}
+
+/* ---------- pending-changes bar (Revert / Redo / Save) ----------
+ * Mirrors the board's .pending-bar look so the two pages feel like one
+ * app. The board's full version lives in board.css and includes the Add
+ * dropdown; the timeline doesn't add items, so we only include what we
+ * use here (Revert, Redo, Save, status). Keep this block in sync with
+ * board.css if the design changes. */
+.pending-bar {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  padding: 10px 24px;
+  background: linear-gradient(180deg, #fff7ed 0%, #fffbeb 100%);
+  border-bottom: 1px solid #fde68a;
+  position: sticky; top: 0; z-index: 6;
+  font-size: .9rem;
+}
+.pending-bar[hidden] { display: none; }
+.pb-btn {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 5px 11px; border-radius: 8px;
+  border: 1px solid #d8b4fe; background: #fff; color: #1f2937;
+  font: inherit; font-size: .85rem; cursor: pointer;
+  transition: background .12s, border-color .12s, opacity .12s;
+}
+.pb-btn:hover:not(:disabled) { background: #faf5ff; border-color: #a78bfa; }
+.pb-btn:disabled { opacity: .5; cursor: not-allowed; }
+.pb-save {
+  background: #6366f1; border-color: #6366f1; color: #fff;
+  font-weight: 600;
+}
+.pb-save:hover:not(:disabled) { background: #4f46e5; border-color: #4f46e5; }
+.pb-status {
+  margin-left: auto; color: #92400e; font-size: .85rem;
+  display: inline-flex; align-items: center; gap: 6px;
+}
+.pb-status::before {
+  content: ""; width: 8px; height: 8px; border-radius: 50%;
+  background: #f59e0b;
+}
+.pb-failed { color: #b91c1c; }
+.pb-failed::before { background: #dc2626; }
+
+/* ---------- right-click context menu ----------
+ * Mirrors the board's .context-menu so the two pages feel like one app.
+ * Lives in <body>, positioned absolutely at the click coordinates. */
+.context-menu {
+  position: fixed;
+  z-index: 1000;
+  min-width: 200px;
+  margin: 0; padding: 4px;
+  list-style: none;
+  background: var(--surface, #fff);
+  border: 1px solid var(--border, #cbd5e1);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(15, 23, 42, .15);
+  font-size: .9rem;
+}
+.context-menu-item { display: flex; align-items: center; }
+.context-menu-item button {
+  flex: 1; text-align: left;
+  padding: 6px 10px; border: 0; background: transparent;
+  color: var(--text, #1f2937); cursor: pointer;
+  border-radius: 4px;
+  font: inherit;
+}
+.context-menu-item button:hover:not(:disabled) {
+  background: var(--surface-2, #f1f5f9);
+}
+.context-menu-item button:disabled { color: var(--muted, #94a3b8); cursor: not-allowed; }
+.context-menu-item.is-danger button { color: var(--warn, #b91c1c); }
+.context-menu-item.is-danger button:hover:not(:disabled) {
+  background: rgba(185, 28, 28, .08);
+}
+.context-menu-shortcut {
+  margin-left: auto; padding: 0 8px;
+  color: var(--muted, #94a3b8); font-size: .8rem;
+  font-variant: tabular-nums;
+}
+.context-menu-sep {
+  height: 1px; margin: 4px 6px;
+  background: var(--border, #e5e7eb);
+  list-style: none;
+}
+
+/* ---------- transient toasts (top-right) ----------
+ * Used for "hotels can't be multi-selected" and similar single-shot
+ * warnings. Multiple toasts stack vertically. */
+.toast-stack {
+  position: fixed;
+  top: 16px; right: 16px;
+  display: flex; flex-direction: column; gap: 8px;
+  z-index: 1100;
+  pointer-events: none;
+}
+.toast {
+  pointer-events: auto;
+  min-width: 220px; max-width: 360px;
+  padding: 10px 14px;
+  background: var(--surface, #fff);
+  color: var(--text, #1f2937);
+  border: 1px solid var(--border, #cbd5e1);
+  border-left: 4px solid var(--accent, #6366f1);
+  border-radius: 8px;
+  box-shadow: 0 6px 18px rgba(15, 23, 42, .12);
+  font-size: .9rem;
+  animation: toast-in .18s ease-out;
+}
+.toast.toast-warn {
+  border-left-color: var(--warn, #d97706);
+  color: var(--warn, #92400e);
+  background: var(--warn-weak, #fffbeb);
+}
+.toast.toast-error {
+  border-left-color: var(--danger, #b91c1c);
+  color: var(--danger, #991b1b);
+  background: var(--danger-weak, #fef2f2);
+}
+@keyframes toast-in {
+  from { opacity: 0; transform: translateY(-6px); }
+  to   { opacity: 1; transform: translateY(0); }
 }

@@ -1,0 +1,149 @@
+/* item-editor.css — the item editor modal opened from the board and
+ * the timeline (and any other page that needs to edit an item).
+ *
+ * Kept in its own file so the timeline doesn't have to load the entire
+ * board.css to get the editor styled. Pages that use the editor should
+ * link this file alongside their own page stylesheet.
+ *
+ * The editor markup uses both `.modal` (from base.css) and `.modal.item-editor`
+ * — the latter carries the wide-panel overrides here, since base.css's
+ * generic `.modal` would otherwise cap the editor at 540px.
+ */
+
+/* ---------- item editor modal (scope under .item-editor to avoid clashing) ---------- */
+.editor-backdrop {
+  position: fixed; inset: 0;
+  background: rgba(15, 23, 42, .55);
+  display: flex; align-items: flex-start; justify-content: center;
+  padding: 5vh clamp(8px, 1.5vw, 24px);
+  overflow-y: auto;
+  z-index: 100;
+}
+.modal.item-editor {
+  /* The item editor needs real space — type-specific fields, attachments
+   * grid, expense form, all in one modal. Sized to ~90% of the viewport
+   * (capped at 1800px) so it feels like a proper desktop panel that
+   * uses the available width, rather than a phone-sized pop-up with
+   * wasted space on either side, while still shrinking gracefully on
+   * narrower windows and filling the screen on phones. Collapses to a
+   * single column only when the modal itself is too narrow to fit both
+   * columns comfortably.
+   *
+   * NOTE: the item-editor markup carries BOTH `.modal` (from base.css)
+   * and `.modal.item-editor`. base.css's `.modal` is a generic
+   * small-dialog style with `max-width: 540px`; without these explicit
+   * overrides below, the higher-specificity `.modal` width would lose
+   * to the base.css `max-width: 540px`, capping this wide panel at
+   * phone size. We override width + max-width + padding + margin so the
+   * item editor is fully self-styled. */
+  width: min(90vw, 1800px);
+  max-width: min(90vw, 1800px);
+  background: var(--surface, #fff); border-radius: 14px;
+  box-shadow: 0 20px 60px rgba(15,23,42,.3);
+  display: flex; flex-direction: column;
+  max-height: 90vh;
+  padding: 0;
+  margin: 0 0 40px 0;
+}
+.modal.item-editor .modal-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 16px 22px; border-bottom: 1px solid var(--border, #eef2f7);
+}
+.modal.item-editor .modal-header h3 { margin: 0; font-size: 1.15rem; }
+.modal-close {
+  border: none; background: transparent; font-size: 1.4rem; line-height: 1; cursor: pointer;
+  color: var(--muted, #64748b); padding: 2px 6px; border-radius: 6px;
+}
+.modal-close:hover { background: var(--surface-2, #f1f5f9); color: var(--text, #111827); }
+.modal.item-editor .modal-body { padding: 18px 22px; overflow-y: auto; }
+.modal.item-editor .modal-footer {
+  display: flex; justify-content: flex-end; gap: 8px;
+  padding: 12px 22px; border-top: 1px solid var(--border, #eef2f7);
+}
+
+/* Two-column form layout: type-specific fields on the left, meta + attachments
+ * on the right. Collapses to one column when the modal itself is too
+ * narrow for the columns to read well — at min(80vw, 1600px) the modal
+ * hits ~900px wide at viewport ~1125px. */
+.modal.item-editor .ie-grid {
+  display: grid;
+  grid-template-columns: 1.4fr 1fr;
+  gap: 0 24px;
+}
+@media (max-width: 900px) {
+  .modal.item-editor .ie-grid { grid-template-columns: 1fr; }
+}
+.modal.item-editor .ie-col { min-width: 0; }
+
+.modal.item-editor .field { display: block; font-size: .8rem; font-weight: 600; color: var(--muted, #475569); margin: 12px 0 4px; }
+.modal.item-editor .field:first-child { margin-top: 0; }
+
+/* Row of fields side-by-side. Each child (.field-group) gets equal width
+ * inside a row. Single-element rows (e.g. a long Address) just look like a
+ * full-width input because the row has only one child. */
+.modal.item-editor .field-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: flex-start;
+}
+.modal.item-editor .field-row .field-group {
+  flex: 1 1 140px;
+  min-width: 140px;
+  display: flex;
+  flex-direction: column;
+}
+.modal.item-editor .field-row .field-group .field { margin-top: 0; }
+.modal.item-editor .field-row .field-group .input { width: 100%; }
+.modal.item-editor .checkbox-line {
+  display: flex; align-items: flex-start; gap: 8px;
+  margin: 8px 0 4px;
+  padding: 8px 10px;
+  border: 1px dashed var(--border, #cbd5e1);
+  border-radius: 8px;
+  background: var(--surface-2, #f8fafc);
+  font-size: .85rem; color: var(--muted, #475569);
+  cursor: pointer;
+}
+.modal.item-editor .checkbox-line input[type=checkbox] { margin: 2px 0 0; flex-shrink: 0; }
+.modal.item-editor .input {
+  width: 100%; box-sizing: border-box; padding: 8px 10px; font-size: .92rem;
+  border: 1px solid var(--border, #cbd5e1); border-radius: 8px; background: var(--surface, #fff);
+}
+.modal.item-editor select.input { width: 100%; }
+.modal.item-editor textarea.input { resize: vertical; min-height: 60px; }
+.modal.item-editor .section-title { margin: 18px 0 6px; font-size: .95rem; border-top: 1px solid var(--border, #eef2f7); padding-top: 14px; }
+
+.att-list { display: flex; flex-direction: column; gap: 8px; }
+.att-row { display: flex; align-items: center; gap: 12px; padding: 6px 0; }
+.att-thumb { width: 72px; height: 72px; object-fit: cover; border-radius: 8px; border: 1px solid var(--border, #e5e7eb); flex-shrink: 0; }
+.att-meta { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.att-caption { font-size: .85rem; color: var(--ink, #1f2937); word-break: break-word; }
+.att-link { color: var(--accent, #2563eb); text-decoration: none; word-break: break-all; font-size: .85rem; }
+.att-link:hover { text-decoration: underline; }
+.att-del { font-size: .78rem; padding: 3px 8px; flex-shrink: 0; }
+.muted { color: var(--muted, #94a3b8); font-size: .85rem; }
+
+.link-row { display: grid; grid-template-columns: 1fr 1fr auto; gap: 8px; margin-top: 8px; }
+@media (max-width: 540px) { .link-row { grid-template-columns: 1fr; } }
+.file-label { display: inline-block; margin-top: 10px; font-size: .85rem; color: var(--muted, #475569); cursor: pointer; }
+.file-label input[type=file] { margin-left: 6px; }
+
+.expense-mini { display: flex; flex-direction: column; gap: 8px; }
+.expense-mini .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.expense-mini .input { flex: 1 1 120px; }
+
+/* Editor: queued expenses list inside the expense form */
+.queued-list { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 4px; }
+.queued-row { display: flex; align-items: center; gap: 8px; font-size: .85rem; color: #475569; }
+.queued-row .att-del { margin-left: auto; }
+/* shared button styles (fallback if base.css doesn't define .btn) */
+.btn {
+  padding: 8px 14px; border-radius: 8px; border: 1px solid var(--border, #cbd5e1);
+  background: var(--surface, #fff); color: var(--text, #1f2937); font-size: .9rem; cursor: pointer;
+}
+.btn:hover { background: var(--surface-2, #f1f5f9); }
+.btn-primary { background: var(--accent, #6366f1); border-color: var(--accent, #6366f1); color: #fff; }
+.btn-primary:hover { filter: brightness(1.05); background: var(--accent, #6366f1); }
+.btn-ghost { background: transparent; border-color: transparent; }
+.btn-ghost:hover { background: var(--surface-2, #f1f5f9); }

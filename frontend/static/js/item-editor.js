@@ -290,6 +290,12 @@ export function openItemEditor(ctx, { plan, item, settings, members, staging, se
       else delete details[k];
     }
     details.is_backup = !!backupInput.checked;
+    // Clean up the legacy `time` field for restaurant/transport once the
+    // new start_time + end_time shape is in place — otherwise the item
+    // would carry two ways of saying the same thing.
+    if (details.start_time && (item.item_type === 'restaurant' || item.item_type === 'transport')) {
+      delete details.time;
+    }
     const snapshot = {
       id: item.id,
       item_type: item.item_type,
@@ -473,9 +479,32 @@ export function openItemEditor(ctx, { plan, item, settings, members, staging, se
 
 /* Build the right <input>/<select>/<textarea> for a type-specific field.
  * `plan` is used to pre-fill a currency field with the plan's base currency
- * when the item doesn't already have one — a value the app already knows. */
-function makeFieldInput(f, details, settings, plan) {
-  const val = details && details[f.key] != null ? details[f.key] : '';
+ * when the item doesn't already have one — a value the app already knows.
+ *
+ * Backward-compat: types whose settings.json used to define a single
+ * `time` field (restaurant, transport) now define `start_time` and
+ * `end_time`. Items saved under the old shape still only have `time`.
+ * For these legacy items, the editor pre-fills the new start_time input
+ * with the legacy value and the new end_time with `time + 1h` so the
+ * user sees their old data plus a sensible default duration. The next
+ * Apply commits both fields in the new shape. */
+export function makeFieldInput(f, details, settings, plan) {
+  let val = details && details[f.key] != null ? details[f.key] : '';
+  if (!val && f.key === 'start_time' && details && details.time) {
+    val = details.time;
+  } else if (!val && f.key === 'end_time' && details && details.time) {
+    // Default the end to start + 1h. If the legacy `time` somehow
+    // already encodes an end-time like 19:00 the user can adjust.
+    const t = String(details.time);
+    const m = t.match(/T?(\d{1,2}):(\d{2})/);
+    if (m) {
+      let h = Number(m[1]) + 1;
+      const datePart = t.match(/^([^T]+)/);
+      const dateStr = datePart ? datePart[1] : '';
+      if (h > 23) h = 23; // clamp; we can't go past midnight
+      val = `${dateStr}T${String(h).padStart(2, '0')}:${m[2]}`;
+    }
+  }
   if (f.type === 'textarea') {
     const t = document.createElement('textarea');
     t.className = 'input'; t.rows = 2; t.value = val;

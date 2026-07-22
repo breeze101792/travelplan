@@ -216,6 +216,42 @@ export function updateItemOp({ planId, item, sessionId }) {
   };
 }
 
+/* Staged time/date edit from the timeline (drag to move time, drag across
+ * day columns to change date, drag top/bottom edge to resize start/end).
+ * The label summarizes what the user did so the pending bar reads naturally
+ * ("Move Lunch 14:00→15:30", "Resize Train 09:00→10:00"). The op bundles
+ * the new item_date + details into one PATCH so the server sees the whole
+ * change in one request. */
+export function timeEditItemOp({ planId, itemId, item_date, details, title, sessionId }) {
+  const label = title || 'item';
+  return {
+    id: null, kind: 'TIME_EDIT', label: `Reschedule ${label}`, sessionId,
+    apply(items) {
+      const it = items.find(x => String(x.id) === String(itemId));
+      if (!it) return items;
+      const next = Object.assign({}, it, {
+        item_date: item_date || null,
+        details: details ? Object.assign({}, details) : (it.details || {}),
+      });
+      return patchItem(items, itemId, next);
+    },
+    planApply() { return null; },
+    async execute(api) {
+      if (isLocalId(itemId)) {
+        // Drag on a draft — the upcoming SAVE_ITEM op carries the new
+        // item_date + details, so the standalone PATCH would 404.
+        return { skipped: true };
+      }
+      const body = {
+        item_date: item_date || null,
+        details: details || {},
+      };
+      const res = await api.patch(`/api/items/${itemId}`, body);
+      return { updatedItem: res.item };
+    },
+  };
+}
+
 export function updatePlanTitleOp({ planId, title, sessionId }) {
   return {
     id: null, kind: 'UPDATE_PLAN_TITLE', label: 'Rename plan', sessionId,

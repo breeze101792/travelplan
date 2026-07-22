@@ -24,12 +24,21 @@ export function money(cents, decimals, currency) {
   }
 }
 
-// 'Jul 1, 2026'; tolerant of null/empty -> ''
+// 'Jul 1, 2026'; tolerant of null/empty -> ''.
+// Parse the YYYY-MM-DD components directly (not via `new Date(iso)`) so
+// the output is the same regardless of the user's timezone — `new
+// Date("2026-09-10")` is parsed as UTC midnight, which is the day
+// before in any negative-offset timezone. The server's fmt_date()
+// also parses as a local date, so the two stay in sync.
 export function fmtDate(iso) {
   if (!iso) return '';
-  const d = new Date(iso);
-  if (isNaN(d.getTime())) return '';
-  return MONTHS[d.getMonth()] + ' ' + d.getDate() + ', ' + d.getFullYear();
+  const m = String(iso).match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!m) return '';
+  const year = Number(m[1]);
+  const month = Number(m[2]);
+  const day = Number(m[3]);
+  if (!month || month < 1 || month > 12) return '';
+  return MONTHS[month - 1] + ' ' + day + ', ' + year;
 }
 
 // 'Jul 1, 2026, 14:30'
