@@ -160,9 +160,18 @@ function assignColumns(intervals) {
     else cols[placed] = it.end;
     it.col = placed;
   }
-  // Total columns for the day = cols.length (or 1 if empty).
+  // Per-item column count: only items whose time range actually overlaps
+  // share the reduced width — items that sit alone at their time stay full-width.
   for (const it of sorted) {
-    it.totalCols = cols.length || 1;
+    const overlapCols = new Set([it.col]);
+    for (const other of sorted) {
+      if (other === it) continue;
+      if (other.start < it.end && other.end > it.start) {
+        overlapCols.add(other.col);
+      }
+    }
+    it.totalCols = overlapCols.size;
+    if (it.totalCols === 1) it.col = 0;
   }
   return sorted;
 }
