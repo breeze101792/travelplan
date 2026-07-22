@@ -93,7 +93,7 @@ function planCard(plan) {
   const links = el('div', { class: 'card-links' }, [
     el('a', { class: 'btn ghost', href: `/plans/${plan.id}` }, ['View']),
     el('a', { class: 'btn ghost', href: `/plans/${plan.id}/expenses` }, ['Expenses']),
-    el('a', { class: 'btn ghost', href: `/plans/${plan.id}/share` }, ['Share']),
+    el('a', { class: 'btn ghost', href: `/plans/${plan.id}/members` }, ['Members']),
   ]);
 
   let controls = null;

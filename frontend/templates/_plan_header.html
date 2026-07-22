@@ -6,10 +6,10 @@
    Required context:
      plan              — the plan dict (title, start_date, end_date, base_currency, id)
      plan_role         — 'owner' | 'editor' | 'viewer'
-     plan_active_page  — 'board' | 'timeline' | 'expenses' | 'share'
+      plan_active_page  — 'board' | 'timeline' | 'expenses' | 'members'
 
    The title + dates are inline-editable on pages that mount plan-header.js
-   (board, timeline). On other pages (expenses, share) they remain static —
+   (board, timeline). On other pages (expenses, members) they remain static —
    the wirePlanHeader() helper adds the click-to-edit affordance only where
    it's loaded. #}
 <header class="plan-header">

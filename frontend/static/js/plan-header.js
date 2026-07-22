@@ -47,7 +47,8 @@ export function buildDays(plan) {
   if (!plan || !plan.start_date || !plan.end_date) {
     return [{ date: '', index: 0, label: 'Undated' }];
   }
-  const fmt = new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric' });
+  const dayFmt = new Intl.DateTimeFormat('en-US', { weekday: 'short' });
+  const dateFmt = new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric' });
   const tripStart = new Date(plan.start_date + 'T00:00:00');
   const tripEnd = new Date(plan.end_date + 'T00:00:00');
   const tripDates = new Set();
@@ -69,11 +70,12 @@ export function buildDays(plan) {
       return { date, is_buffer: true, index: 0, label: 'Buffer' };
     }
     dayIndex += 1;
+    const dt = new Date(date + 'T00:00:00');
     return {
       date,
       is_buffer: false,
       index: dayIndex,
-      label: `Day ${dayIndex} · ${fmt.format(new Date(date + 'T00:00:00'))}`,
+      label: `Day ${dayIndex} · ${dayFmt.format(dt)} · ${dateFmt.format(dt)}`,
     };
   });
 }
@@ -289,7 +291,7 @@ function paintDates(el_, start, end) {
  * commit path differs:
  *   - board/timeline: `applyDates` stages an updatePlanDatesOp (shows in
  *     the pending bar until Save).
- *   - expenses/share: `applyDates` PATCHes the server directly (there's
+ *   - expenses/members: `applyDates` PATCHes the server directly (there's
  *     no pending bar on those pages, so the edit is saved immediately).
  *
  * `view` is the current plan (for input prefill + reset). `resolveItems`

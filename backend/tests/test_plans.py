@@ -317,15 +317,15 @@ class PlanHeaderRenderTests(unittest.TestCase):
         # before the shared header partial), and uses the same
         # Mon-DD-YYYY format as the other pages.
 
-    def test_share_renders_formatted_dates(self):
-        # Share is owner-only; alice is the owner here.
-        r = self.client.get(f"/plans/{self.plan['id']}/share")
+    def test_members_renders_formatted_dates(self):
+        # Members is owner-only; alice is the owner here.
+        r = self.client.get(f"/plans/{self.plan['id']}/members")
         self.assertEqual(r.status_code, 200)
         html = r.get_data(as_text=True)
         self._assert_shared_header(html)
-        self.assertIn("Sep 10, 2026", html, "share: start date is server-formatted")
-        self.assertIn("Sep 12, 2026", html, "share: end date is server-formatted")
-        # Share is the page that USED to omit the dates line entirely;
+        self.assertIn("Sep 10, 2026", html, "members: start date is server-formatted")
+        self.assertIn("Sep 12, 2026", html, "members: end date is server-formatted")
+        # Members is the page that USED to omit the dates line entirely;
         # now it has them, matching the other three.
 
     def test_active_tab_is_per_page(self):
@@ -334,7 +334,7 @@ class PlanHeaderRenderTests(unittest.TestCase):
             ("", "Board"),
             ("/timeline", "Timeline"),
             ("/expenses", "Expenses"),
-            ("/share", "Share"),
+            ("/members", "Members"),
         ]:
             r = self.client.get(f"/plans/{self.plan['id']}{path}")
             self.assertEqual(r.status_code, 200, f"GET {path} returned {r.status_code}")

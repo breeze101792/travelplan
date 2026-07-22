@@ -3,7 +3,7 @@
 HTML pages: GET /            dashboard
             GET /plans/<id>   plan board
             GET /plans/<id>/expenses
-            GET /plans/<id>/share
+            GET /plans/<id>/members
 API:        GET/POST /api/plans
             GET/PATCH/DELETE /api/plans/<id>
             GET /api/plans/<id>/members
@@ -63,12 +63,10 @@ def timeline_page(plan_id):
     return render_template("timeline.html", plan=g.plan, plan_role=g.plan_role)
 
 
-@plans_bp.route("/plans/<int:plan_id>/share")
+@plans_bp.route("/plans/<int:plan_id>/members")
 @plan_access()
-def share_page(plan_id):
-    if g.plan_role != "owner":
-        abort(403)
-    return render_template("share.html", plan=g.plan, plan_role=g.plan_role)
+def members_page(plan_id):
+    return render_template("members.html", plan=g.plan, plan_role=g.plan_role)
 
 
 # ------------------------------------------------------------------ API

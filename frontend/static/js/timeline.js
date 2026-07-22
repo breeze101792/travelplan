@@ -332,11 +332,13 @@ function renderDay(day, items, settings, nowFraction, ctx, staging, setBlockErro
     const startTxt = f.start ? (d[f.start] || (d.time || '').replace('T', ' ')).replace('T', ' ') : '';
     const endTxt   = f.end   ? (d[f.end]   || '').replace('T', ' ') : '';
     const isBackup = s.isBackup;
+    const durationHrs = s.end - s.start;
+    const barTime = durationHrs > 1.5 ? (startTxt + (endTxt ? ' → ' + endTxt.split(' ').pop() : '')) : '';
     grid.appendChild(makeBar({
       kind: it.item_type,
       top: s.start, end: s.end, totalCols: s.totalCols, col: s.col,
       title: (isBackup ? '⤷ ' : '') + (it.title || ti.label),
-      time: startTxt + (endTxt ? ' → ' + endTxt.split(' ').pop() : ''),
+      time: barTime,
       titleText: (isBackup ? '[BACKUP] ' : '') + `${ti.label}: ${it.title}`
                  + (startTxt ? ` (${startTxt}${endTxt ? ' – ' + endTxt : ''})` : ''),
       extraClass: isBackup ? ' tl-item-backup' : '',
