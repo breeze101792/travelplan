@@ -418,8 +418,6 @@ tr:last-child td { border-bottom: none; }
 .day.day-buffer .day-title { color: var(--warn, #d97706); }
 .day.day-buffer .day-items { background: rgba(217, 119, 6, .03); }
 
-.share-root { max-width: 720px; margin: 0 auto; padding: 0 4px; }
-
 /* Responsive */
 @media (max-width: 640px) {
   #view { padding: 16px; }
