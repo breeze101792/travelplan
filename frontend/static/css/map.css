@@ -63,6 +63,12 @@
   font-size: .8rem;
   color: var(--muted, #64748b);
 }
+.day-card.drop-target {
+  background: #eef2ff;
+  border-color: var(--accent, #6366f1);
+  outline: 2px dashed var(--accent, #6366f1);
+  outline-offset: -2px;
+}
 
 .map-empty {
   display: flex;
@@ -71,4 +77,97 @@
   height: 100%;
   color: var(--muted, #64748b);
   font-size: .95rem;
+}
+
+/* ---------- item drawer ---------- */
+
+.item-drawer {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  background: var(--surface, #fff);
+  border-top: 1px solid var(--border, #e5e7eb);
+  box-shadow: 0 -4px 20px rgba(0,0,0,.08);
+  z-index: 100;
+  max-height: 40vh;
+  display: flex;
+  flex-direction: column;
+  animation: drawer-up .2s ease-out;
+}
+.item-drawer[hidden] { display: none; }
+
+@keyframes drawer-up {
+  from { transform: translateY(100%); }
+  to   { transform: translateY(0); }
+}
+
+.drawer-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 20px;
+  border-bottom: 1px solid var(--border, #e5e7eb);
+}
+
+.drawer-title {
+  font-weight: 600;
+  font-size: .95rem;
+  color: var(--ink, #1f2937);
+}
+
+.drawer-close {
+  background: none;
+  border: none;
+  font-size: 1.4rem;
+  cursor: pointer;
+  color: var(--muted, #64748b);
+  line-height: 1;
+  padding: 0 4px;
+}
+.drawer-close:hover { color: var(--ink, #1f2937); }
+
+.drawer-items {
+  display: flex;
+  gap: 8px;
+  padding: 12px 20px;
+  overflow-x: auto;
+  flex: 1;
+  align-items: start;
+}
+
+.drawer-item {
+  flex: 0 0 200px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--border, #e5e7eb);
+  background: var(--surface, #fff);
+  cursor: grab;
+  font-size: .85rem;
+  user-select: none;
+  transition: opacity .12s, box-shadow .12s;
+}
+.drawer-item:active { cursor: grabbing; }
+.drawer-item.dragging { opacity: .5; }
+.drawer-item .di-type {
+  font-size: .75rem;
+  color: var(--muted, #64748b);
+  text-transform: uppercase;
+  letter-spacing: .03em;
+}
+.drawer-item .di-title {
+  font-weight: 500;
+  color: var(--ink, #1f2937);
+  margin-top: 2px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.drawer-empty {
+  color: var(--muted, #64748b);
+  font-size: .9rem;
+  padding: 20px;
+  text-align: center;
+  width: 100%;
 }
