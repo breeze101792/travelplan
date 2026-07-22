@@ -309,6 +309,27 @@ def seed() -> None:
         rate(p3, "USD", 7.2)  # 1 USD = 7.2 CNY
         payment(p3, alice, admin, 20000, "CNY", "settle duck")
 
+        # =========================================================== Plan 4: Tokyo 1-Day Test
+        p4 = db.execute(
+            """INSERT INTO plans (title, description, owner_id, start_date, end_date, base_currency)
+               VALUES (?, ?, ?, ?, ?, ?)""",
+            ("Tokyo 1-Day Test", "3 quick stops for map testing.",
+             admin, "2026-07-03", "2026-07-03", "JPY"),
+        ).lastrowid
+        db.commit()
+
+        item(p4, "activity", "Tokyo Tower", "2026-07-03",
+             details={"name": "Tokyo Tower", "location": "Minato, Tokyo",
+                      "start_time": "2026-07-03T10:00", "end_time": "2026-07-03T11:30"})
+
+        item(p4, "activity", "Meiji Shrine", "2026-07-03",
+             details={"name": "Meiji Shrine", "location": "Shibuya, Tokyo",
+                      "start_time": "2026-07-03T13:00", "end_time": "2026-07-03T14:00"})
+
+        item(p4, "activity", "Shibuya Crossing", "2026-07-03",
+             details={"name": "Shibuya Crossing", "location": "Shibuya, Tokyo",
+                      "start_time": "2026-07-03T15:00", "end_time": "2026-07-03T15:30"})
+
     print("\nSeeded fake data. Login credentials (password for ALL accounts): password")
     print("  admin  / password   (admin — owns all three trips)")
     print("  alice  / password   (editor on all three trips)")
@@ -318,6 +339,7 @@ def seed() -> None:
     print("  Japan 2026          base JPY  (expenses in JPY + USD)")
     print("  Iceland Ring Road   base EUR  (expenses in EUR + ISK)")
     print("  Beijing 2026        base CNY  (expenses in CNY + USD; rate 1 USD = 7.2 CNY)")
+    print("  Tokyo 1-Day Test    base JPY  (3 stops for map testing)")
     print("\nOpen http://127.0.0.1:5000 and sign in as admin.\n")
 
 
