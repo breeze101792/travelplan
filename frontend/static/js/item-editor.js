@@ -264,7 +264,7 @@ export function openItemEditor(ctx, { plan, item, settings, members, staging, se
   colSide.appendChild(todoSection);
 
   // attachments (right col)
-  colSide.appendChild(el('h4', { class: 'section-title', text: 'Attachments' }));
+  colSide.appendChild(el('h4', { class: 'section-title', text: 'Attachments / Links' }));
   const attList = el('div', { class: 'att-list' });
   colSide.appendChild(attList);
   renderAttachments();
@@ -575,6 +575,20 @@ export function openItemEditor(ctx, { plan, item, settings, members, staging, se
       }
       row.appendChild(meta);
       if (!readOnly) {
+        if (a.kind !== 'image') {
+          const editBtn = document.createElement('button');
+          editBtn.type = 'button'; editBtn.className = 'btn btn-ghost att-del'; editBtn.textContent = 'Edit';
+          editBtn.addEventListener('click', () => {
+            const newUrl = prompt('Edit URL:', a.value);
+            if (newUrl && newUrl.trim()) {
+              a.value = newUrl.trim();
+              const newCaption = prompt('Edit label:', a.caption || '');
+              if (newCaption !== null) a.caption = newCaption.trim();
+              renderAttachments();
+            }
+          });
+          row.appendChild(editBtn);
+        }
         const del = document.createElement('button');
         del.type = 'button'; del.className = 'btn btn-ghost att-del'; del.textContent = 'Delete';
         del.addEventListener('click', () => {
