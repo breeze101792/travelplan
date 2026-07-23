@@ -32,6 +32,7 @@ img { max-width: 100%; display: block; }
   --shadow-lg: 0 10px 30px rgba(16, 24, 40, 0.14);
   --font: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial,
     "Apple Color Emoji", "Segoe UI Emoji", sans-serif;
+  --day-col: 300px;
 }
 
 body {
