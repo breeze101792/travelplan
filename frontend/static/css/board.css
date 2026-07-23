@@ -10,11 +10,11 @@
   gap: 12px;
   align-items: flex-start;
   overflow-x: auto;
-  padding: 18px 24px 40px;
+  padding: 18px 0 40px;
   min-height: 200px;
 }
 .day {
-  flex: 0 0 236px;
+  flex: 0 0 var(--day-col);
   display: flex;
   flex-direction: column;
   gap: 10px;

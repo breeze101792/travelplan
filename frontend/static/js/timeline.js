@@ -1143,6 +1143,7 @@ export async function initTimeline(ctx) {
     const viewItems = staging.viewItems();
 
     root.appendChild(renderHourCol());
+    const scrollWrap = el('div', { class: 'timeline-scroll' });
     for (const day of days) {
       try {
         const node = renderDay(day, viewItems, settings, nowFractionFor(day.date),
@@ -1152,7 +1153,7 @@ export async function initTimeline(ctx) {
         // styling can branch on it (e.g. to skip the 30% cross-day drag
         // for buffer days if we ever want to).
         if (day.is_buffer) node.dataset.buffer = '1';
-        root.appendChild(node);
+        scrollWrap.appendChild(node);
       } catch (e) {
         // Surface render errors in the page rather than silently killing the
         // whole view — without this, a single bad day would leave the timeline
@@ -1163,11 +1164,12 @@ export async function initTimeline(ctx) {
             el('div', { class: 'sub', text: 'render error: ' + e.message }),
           ]),
         ]);
-        root.appendChild(fail);
+        scrollWrap.appendChild(fail);
         // also dump the error to the console for the dev tools
         console.error('timeline renderDay failed for', day, e);
       }
     }
+    root.appendChild(scrollWrap);
 
     // Wire drag/resize + click/menu on every bar. Hotels are wired too
     // (for click → editor) but they have no drag/resize handles; only

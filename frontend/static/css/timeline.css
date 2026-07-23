@@ -6,7 +6,7 @@
 
 :root {
   --tl-h: 36px;          /* pixels per hour (timeline scale) */
-  --tl-day-min: 270px;   /* minimum column width (1.5×) */
+  --tl-day-min: var(--day-col);   /* minimum column width (1.5×) */
   --tl-gutter: 8px;
   --tl-border: 1px solid var(--border, #e5e7eb);
   --tl-muted: var(--muted, #64748b);
@@ -21,16 +21,20 @@
   display: flex;
   align-items: stretch;
   gap: var(--tl-gutter);
-  overflow-x: auto;
-  padding: 12px 24px 28px;
+  padding: 12px 0 28px;
   position: relative;
+}
+.timeline-scroll {
+  display: flex;
+  align-items: stretch;
+  gap: var(--tl-gutter);
+  overflow-x: auto;
+  flex: 1;
 }
 
 /* The left hour-label column is sticky so it stays visible while
  * scrolling through long plans or when you scroll horizontally. */
 .timeline .hour-col {
-  position: sticky;
-  left: 0;
   z-index: 3;
   background: var(--surface, #fff);
   flex: 0 0 44px;
@@ -276,7 +280,7 @@
 /* On narrow screens, shrink the day min-width a bit so 3-4 days still fit. */
 @media (max-width: 720px) {
   :root { --tl-day-min: 200px; }
-  .timeline { scroll-snap-type: x mandatory; }
+  .timeline-scroll { scroll-snap-type: x mandatory; }
   .timeline .day { scroll-snap-align: start; scroll-snap-stop: always; flex: 0 0 calc(100vw - 92px); }
   .timeline .hour-col { flex-basis: 36px; }
 }
