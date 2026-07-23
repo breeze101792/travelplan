@@ -301,13 +301,13 @@ tr:last-child td { border-bottom: none; }
   padding: 4px;
   background: var(--surface-2);
   border: 1px solid var(--line);
-  border-radius: 999px;
+  border-radius: 10px;
 }
 .pn-link {
   display: inline-flex;
   align-items: center;
   padding: 6px 14px;
-  border-radius: 999px;
+  border-radius: 6px;
   text-decoration: none;
   color: var(--ink);
   font-size: .9rem;
