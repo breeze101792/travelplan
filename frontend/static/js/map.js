@@ -54,6 +54,20 @@ function drawDay(dayIndex, coords, color) {
     m.bindTooltip(sty.labelPrefix + c.label, { permanent: false, direction: 'top' });
     m.itemId = c.item.id;
     m.coordIdx = i;
+    m.geoIdx = c.geoIdx;
+    m.on('click', () => {
+      const item = c.item;
+      selectedItemId = item.id;
+      const container = document.getElementById('day-list');
+      container.querySelectorAll('.day-item.selected').forEach(el => el.classList.remove('selected'));
+      const row = container.querySelector('.day-item[data-item-id="' + item.id + '"]');
+      if (row) row.classList.add('selected');
+      highlightItemMarkers(item.id);
+      if (c.geoIdx != null && c.geoIdx >= 0) {
+        highlightGeocodeMarker(item.id, c.geoIdx);
+      }
+      showItemGeocodes(item.id, c.geoIdx != null ? c.geoIdx : -1);
+    });
     m.addTo(map);
     markers.push(m);
   }
@@ -86,6 +100,19 @@ function highlightItemMarkers(itemId) {
     for (const m of dayLayers[dayIdx].markers) {
       if (m.itemId === itemId) highlightMarker(m);
       else resetMarkerStyle(m, dayIdx);
+    }
+  }
+}
+
+function highlightGeocodeMarker(itemId, geoIdx) {
+  for (const dayIdx in dayLayers) {
+    for (const m of dayLayers[dayIdx].markers) {
+      if (m.itemId === itemId && m.geoIdx === geoIdx) {
+        m.setStyle({ radius: 16, fillColor: '#818cf8', color: '#4338ca', weight: 4, fillOpacity: 1 });
+        m.bringToFront();
+      } else if (m.itemId === itemId) {
+        resetMarkerStyle(m, dayIdx);
+      }
     }
   }
 }
@@ -360,7 +387,7 @@ function dayItemsFor(dayIndex) {
   return allItems.filter(it => it.item_date === days[dayIndex].date && it.item_type !== 'hotel');
 }
 
-function showItemGeocodes(itemId) {
+function showItemGeocodes(itemId, selectGeoIdx) {
   const container = document.getElementById('day-list');
   container.querySelectorAll('.di-geocodes').forEach(el => el.remove());
   const selectedRow = container.querySelector('.day-item.selected');
@@ -370,7 +397,7 @@ function showItemGeocodes(itemId) {
   const geocodes = it.geocodes || [];
   if (!geocodes.length) return;
   const geoEl = el('div', { class: 'di-geocodes' });
-  let selectedGeoIdx = -1;
+  let selectedGeoIdx = selectGeoIdx != null && selectGeoIdx >= 0 ? selectGeoIdx : -1;
 
   function renderGeoRows() {
     clear(geoEl);
@@ -403,9 +430,11 @@ function showItemGeocodes(itemId) {
         geoEl.querySelectorAll('.di-geo-row.di-geo-selected').forEach(el => el.classList.remove('di-geo-selected'));
         if (selectedGeoIdx === i) {
           selectedGeoIdx = -1;
+          highlightItemMarkers(itemId);
         } else {
           selectedGeoIdx = i;
           row.classList.add('di-geo-selected');
+          highlightGeocodeMarker(itemId, i);
         }
       });
 
@@ -469,9 +498,9 @@ function updateItemGeocodes(itemId, geocodes) {
   for (let i = 0; i < days.length; i++) {
     const batch = [];
     for (const it of dayItemsFor(i)) {
-      for (const g of (it.geocodes || [])) {
-        batch.push({ lat: g.lat, lng: g.lng, label: g.label, item: it });
-      }
+      (it.geocodes || []).forEach((g, gi) => {
+        batch.push({ lat: g.lat, lng: g.lng, label: g.label, item: it, geoIdx: gi });
+      });
     }
     dayCoords[i] = batch;
   }
@@ -517,9 +546,9 @@ async function reloadAll() {
   for (let i = 0; i < days.length; i++) {
     const batch = [];
     for (const it of dayItemsFor(i)) {
-      for (const g of (it.geocodes || [])) {
-        batch.push({ lat: g.lat, lng: g.lng, label: g.label, item: it });
-      }
+      (it.geocodes || []).forEach((g, gi) => {
+        batch.push({ lat: g.lat, lng: g.lng, label: g.label, item: it, geoIdx: gi });
+      });
     }
     dayCoords[i] = batch;
   }
@@ -586,9 +615,9 @@ export async function initMap(c) {
   for (let i = 0; i < days.length; i++) {
     const batch = [];
     for (const it of dayItemsFor(i)) {
-      for (const g of (it.geocodes || [])) {
-        batch.push({ lat: g.lat, lng: g.lng, label: g.label, item: it });
-      }
+      (it.geocodes || []).forEach((g, gi) => {
+        batch.push({ lat: g.lat, lng: g.lng, label: g.label, item: it, geoIdx: gi });
+      });
     }
     dayCoords[i] = batch;
   }
