@@ -1367,30 +1367,27 @@ function wireBarClick({ bar, ctx, getViewItems, onPlainClick, onToggleSelect, on
   bar.addEventListener('click', (e) => {
     if (e.button != null && e.button !== 0) return;
     if (e.detail > 1) return; // part of double-click
-    if (isHotel) {
-      if (e.metaKey || e.ctrlKey || e.shiftKey) {
+    if (e.metaKey || e.ctrlKey) {
+      if (isHotel) {
         showToast("Spanning items (e.g. hotels) can't be multi-selected. Drag or open the editor to change dates.", 'warn');
         return;
       }
-      // Plain click on a hotel: no-op (use double-click to open editor).
-      return;
-    }
-    if (e.metaKey || e.ctrlKey) {
       e.stopPropagation();
       if (onToggleSelect) onToggleSelect(itemId);
       return;
     }
     if (e.shiftKey) {
+      if (isHotel) {
+        showToast("Spanning items (e.g. hotels) can't be multi-selected. Drag or open the editor to change dates.", 'warn');
+        return;
+      }
       e.stopPropagation();
       if (onRangeSelect) onRangeSelect(itemId);
       return;
     }
-    // Plain click on a non-hotel: select only this item.
+    // Plain click: select + open editor.
     e.stopPropagation();
-    if (onPlainClick) onPlainClick(itemId);
-  });
-  bar.addEventListener('dblclick', (e) => {
-    e.preventDefault();
+    if (!isHotel && onPlainClick) onPlainClick(itemId);
     const it = findItem();
     if (it && onDblClick) onDblClick(it);
   });

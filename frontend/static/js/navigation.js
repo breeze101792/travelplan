@@ -1,6 +1,6 @@
 import { apiGet, apiPost, apiPatch, apiDel, apiUpload } from '/static/js/api.js';
 import { el, clear, loadSettings } from '/static/js/util.js';
-import { buildDays, isoOf, addDaysIso } from '/static/js/plan-header.js';
+import { buildDays, isoOf, addDaysIso, wirePlanHeader } from '/static/js/plan-header.js';
 import { openItemEditor } from '/static/js/item-editor.js';
 import { Staging } from '/static/js/staging.js';
 
@@ -42,6 +42,7 @@ export async function initNavigation(pageCtx) {
   members = memRes ? [memRes.owner, ...(memRes.members || [])] : [];
   days = buildDays(plan);
   staging = new Staging({ baseItems: allItems, basePlan: plan });
+  wirePlanHeader({ plan, staging, ctx, onChange: () => { renderSchedule(); renderDayBar(); } });
 
   const todayStr = isoOf(new Date());
   selectedDay = days.find(d => d.date === todayStr) || days[0];
@@ -437,6 +438,7 @@ function renderPendingBar() {
         apiGet(`/api/plans/${ctx.planId}/items`).then(res => {
           allItems = res.items || [];
           staging = new Staging({ baseItems: allItems, basePlan: plan });
+          wirePlanHeader({ plan, staging, ctx, onChange: () => { renderSchedule(); renderDayBar(); } });
           renderSchedule();
           renderPendingBar();
         });

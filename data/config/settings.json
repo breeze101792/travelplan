@@ -63,6 +63,24 @@
         ["note"]
       ]
     },
+    "restaurant": {
+      "label": "Restaurant",
+      "icon": "restaurant",
+      "spans_days": false,
+      "fields": [
+        {"key": "name", "label": "Restaurant name", "type": "text"},
+        {"key": "address", "label": "Address", "type": "text"},
+        {"key": "start_time", "label": "Time", "type": "datetime-local"},
+        {"key": "party_size", "label": "Party size", "type": "number"},
+        {"key": "note", "label": "Note", "type": "textarea"}
+      ],
+      "rows": [
+        ["name", "start_time"],
+        ["address"],
+        ["party_size"],
+        ["note"]
+      ]
+    },
     "note": {
       "label": "Note",
       "icon": "note",

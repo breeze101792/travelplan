@@ -290,13 +290,8 @@ export async function initItinerary(ctx) {
 
     card.addEventListener('click', (e) => {
       if (e.button != null && e.button !== 0) return;
-      if (e.detail > 1) return; // part of double-click
+      if (e.detail > 1) return; // part of double-click (dblclick event handles it)
       handleCardClick(item, e);
-    });
-    card.addEventListener('dblclick', (e) => {
-      if (ctx.role === 'viewer') return;
-      e.preventDefault();
-      openEditorFor(item);
     });
     card.addEventListener('contextmenu', (e) => {
       if (ctx.role === 'viewer') return;
@@ -510,27 +505,20 @@ export async function initItinerary(ctx) {
    *                            Cmd+click on a hotel.
    */
   function handleCardClick(item, ev) {
-    if (!isSelectable(item)) {
-      if (ev.metaKey || ev.ctrlKey || ev.shiftKey) {
-        // The user tried to multi-select a spanning item. Reject with a
-        // single, brief toast — hotels only move by drag or by editing
-        // their dates in the editor.
+    if (ev.metaKey || ev.ctrlKey) {
+      if (!isSelectable(item)) {
         showToast('Spanning items (e.g. hotels) can\'t be multi-selected. Drag or open the editor to change dates.', 'warn');
         return;
       }
-      // Plain click on a hotel: no-op (use double-click to open editor).
-      return;
-    }
-    if (ev.metaKey || ev.ctrlKey) {
       toggleSelect(item.id);
       return;
     }
     if (ev.shiftKey) {
+      if (!isSelectable(item)) {
+        showToast('Spanning items (e.g. hotels) can\'t be multi-selected. Drag or open the editor to change dates.', 'warn');
+        return;
+      }
       const from = lastSelectedId || (selection.size ? [...selection][selection.size - 1] : null);
-      // Range select across days: if the anchor and target are on the
-      // same day we can use the fast in-day path, otherwise we walk the
-      // whole board sequence and select everything in between (skipping
-      // hotels).
       const target = item;
       const allItems = staging.viewItems();
       const fromItem = from ? allItems.find(i => String(i.id) === String(from)) : null;
@@ -541,8 +529,9 @@ export async function initItinerary(ctx) {
       }
       return;
     }
-    // Plain click: select only this item, clear any previous selection.
-    selectOnly(item.id);
+    // Plain click: select only this item and open the editor.
+    if (isSelectable(item)) selectOnly(item.id);
+    if (ctx.role !== 'viewer') openEditorFor(item);
   }
 
   /* Items in the current selection as objects (from the staged view).
