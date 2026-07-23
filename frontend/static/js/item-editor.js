@@ -138,10 +138,14 @@ export function openItemEditor(ctx, { plan, item, settings, members, staging, se
     endInput.className = 'input';
     endInput.value = item.end_date || '';
     if (readOnly) endInput.disabled = true;
+    const isHotel = item.item_type === 'hotel';
     colSide.appendChild(el('div', { class: 'field-row' }, [
-      el('div', { class: 'field-group' }, [dateInput]),
       el('div', { class: 'field-group' }, [
-        el('label', { class: 'field', text: 'End (checkout)' }),
+        el('label', { class: 'field', text: isHotel ? 'Check-in' : 'Start' }),
+        dateInput,
+      ]),
+      el('div', { class: 'field-group' }, [
+        el('label', { class: 'field', text: isHotel ? 'Check-out' : 'End' }),
         endInput,
       ]),
     ]));
