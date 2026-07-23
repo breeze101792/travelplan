@@ -2,10 +2,11 @@
 # start.sh — set up the Python environment and run TravelPlan.
 #
 # Usage:
-#   ./start.sh [PORT]        Start the server on PORT (default 5050)
-#   PORT=8080 ./start.sh     Set the port via environment instead
-#   DEBUG=1 ./start.sh       Enable Flask debug + auto-reload (local dev only)
-#   ./start.sh -h|--help     Show this help message
+#   ./start.sh [PORT]             Start the server on PORT (default 5050)
+#   PORT=8080 ./start.sh          Set the port via environment instead
+#   DEBUG=1 ./start.sh            Enable Flask debug + auto-reload (local dev only)
+#   ./start.sh --no-test          Skip self-tests (quick dev start)
+#   ./start.sh -h|--help          Show this help message
 #
 # First run: open the printed URL in a browser and create the admin account.
 set -euo pipefail
@@ -21,42 +22,44 @@ Usage:
   ./start.sh [PORT]            Start on PORT (default 5050)
   PORT=8080 ./start.sh          Start on port 8080 via env var
   DEBUG=1 ./start.sh [PORT]     Enable auto-reload/debug (local dev only)
+  ./start.sh --no-test [PORT]   Skip self-tests (quick dev start)
   ./start.sh -h | --help        Show this help message
 
 Arguments / environment:
-  PORT   Port to listen on (1-65535). Positional arg wins over the env var.
-         Env: PORT   Default: 5050
-  HOST   Bind address.          Env: HOST  Default: 0.0.0.0  (all interfaces,
-         so friends on the same network can reach it)
-  DEBUG  Set to 1 to enable the Flask debugger + auto-reload. Off by default
-         because the debugger is unsafe to expose on a shared network.
+  PORT     Port to listen on (1-65535). Positional arg wins over the env var.
+           Env: PORT   Default: 5050
+  HOST     Bind address.          Env: HOST  Default: 0.0.0.0  (all interfaces,
+           so friends on the same network can reach it)
+  DEBUG    Set to 1 to enable the Flask debugger + auto-reload. Off by default
+           because the debugger is unsafe to expose on a shared network.
+  NO_TEST  Set to 1 to skip self-tests (alias for --no-test).
 
 Data lives under ./data/ (SQLite DB, uploads, config). It is created on first
 run and is gitignored. Stop the server with Ctrl-C.
 
 Examples:
-  ./start.sh                 # http://0.0.0.0:5050
-  ./start.sh 8080            # http://0.0.0.0:8080
-  PORT=9000 ./start.sh       # http://0.0.0.0:9000
-  DEBUG=1 ./start.sh 5050    # dev mode with auto-reload
+  ./start.sh                   # http://0.0.0.0:5050
+  ./start.sh 8080              # http://0.0.0.0:8080
+  PORT=9000 ./start.sh         # http://0.0.0.0:9000
+  DEBUG=1 ./start.sh 5050      # dev mode with auto-reload
+  ./start.sh --no-test         # skip tests, start fast
+  NO_TEST=1 ./start.sh         # same via env var
 EOF
 }
 
 # ---- parse args ----
+NO_TEST="${NO_TEST:-0}"
 PORT="${PORT:-5050}"
-if [[ $# -ge 1 ]]; then
+while [[ $# -ge 1 ]]; do
   case "$1" in
     -h|--help) usage; exit 0 ;;
+    --no-test) NO_TEST=1 ;;
     --) shift; [[ $# -ge 1 ]] && PORT="$1" ;;
     -*) echo "Unknown option: $1" >&2; echo >&2; usage >&2; exit 2 ;;
     *) PORT="$1" ;;
   esac
   shift
-fi
-if [[ $# -ge 1 ]]; then
-  echo "Unexpected extra arguments: $*" >&2
-  echo >&2; usage >&2; exit 2
-fi
+done
 
 if ! [[ "$PORT" =~ ^[0-9]+$ ]] || (( PORT < 1 || PORT > 65535 )); then
   echo "Invalid port: '$PORT' (expected 1-65535)" >&2
@@ -84,7 +87,10 @@ if ! "$VENV_DIR/bin/python" -c "import flask" >/dev/null 2>&1; then
 fi
 
 # ---- self-tests (run quietly; surface output only on failure) ----
-echo ">> running expense engine self-tests"
+if [[ "$NO_TEST" == "1" ]]; then
+  echo ">> self-tests skipped (NO_TEST=1)"
+else
+  echo ">> running expense engine self-tests"
 if ! out=$("$VENV_DIR/bin/python" -m backend.expense 2>&1); then
   echo "!! self-tests FAILED:" >&2
   printf '%s\n' "$out" >&2
@@ -109,6 +115,7 @@ if [[ -f frontend/tests/run.sh ]]; then
     printf '%s\n' "$out" >&2
     exit 1
   fi
+fi
 fi
 
 # ---- start ----

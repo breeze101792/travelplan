@@ -22,8 +22,8 @@ from ..db import get_db
 
 items_bp = Blueprint("items", __name__)
 
-ITEM_TYPES = {"hotel", "flight", "train", "ticket", "restaurant",
-              "activity", "transport", "note"}
+ITEM_TYPES = {"hotel", "transit", "ticket", "restaurant",
+              "activity", "note"}
 STATUSES = {"planned", "confirmed", "done"}
 
 

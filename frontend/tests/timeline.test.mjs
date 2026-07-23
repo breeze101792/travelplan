@@ -29,6 +29,7 @@ const SETTINGS = {
     hotel: { label: 'Hotel', spans_days: true, fields: [] },
     activity: { label: 'Activity', fields: [] },
     flight: { label: 'Flight', fields: [] },
+    transit: { label: 'Transit', fields: [] },
     note: { label: 'Note', fields: [] },
   },
 };
@@ -428,9 +429,9 @@ function staging_pendingCount() {
         sort_key: 1, status: 'planned',
         details: { start_time: '2026-09-11T19:00', end_time: '2026-09-11T20:30' },
         attachments: [] },
-      { id: 21, item_type: 'transport', title: 'Airport bus', item_date: '2026-09-11', end_date: null,
+      { id: 21, item_type: 'transit', title: 'Airport bus', item_date: '2026-09-11', end_date: null,
         sort_key: 2, status: 'planned',
-        details: { start_time: '2026-09-11T16:30', end_time: '2026-09-11T17:30' },
+        details: { depart_time: '2026-09-11T16:30', arrive_time: '2026-09-11T17:30' },
         attachments: [] },
       { id: 22, item_type: 'activity', title: 'Fushimi Inari', item_date: '2026-09-11', end_date: null,
         sort_key: 3, status: 'planned',
@@ -443,7 +444,7 @@ function staging_pendingCount() {
   await initTimeline({ planId: 1, role: 'owner' });
 
   const restaurant = document.querySelector('.tl-item.restaurant');
-  const transport  = document.querySelector('.tl-item.transport');
+  const transport  = document.querySelector('.tl-item.transit');
   const activity   = document.querySelector('.tl-item.activity');
 
   // All three timed types get both resize handles — uniform contract.

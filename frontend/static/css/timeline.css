@@ -193,6 +193,7 @@
 
 /* type accents — same palette as the board */
 .tl-item.hotel      { background: #6366f1; }
+.tl-item.transit    { background: #0ea5e9; }
 .tl-item.flight     { background: #0ea5e9; }
 .tl-item.train      { background: #10b981; }
 .tl-item.ticket     { background: #f59e0b; }

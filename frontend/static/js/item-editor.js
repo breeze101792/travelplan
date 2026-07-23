@@ -664,6 +664,19 @@ export function makeFieldInput(f, details, settings, plan) {
     }
     return s;
   }
+  if (f.type === 'select') {
+    const s = document.createElement('select');
+    s.className = 'input';
+    const blank = document.createElement('option');
+    blank.value = ''; blank.textContent = '—'; s.appendChild(blank);
+    for (const opt of (f.options || [])) {
+      const o = document.createElement('option');
+      o.value = opt; o.textContent = opt;
+      if (opt === val) o.selected = true;
+      s.appendChild(o);
+    }
+    return s;
+  }
   const inp = document.createElement('input');
   inp.className = 'input';
   switch (f.type) {

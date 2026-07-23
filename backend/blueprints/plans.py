@@ -367,7 +367,7 @@ def _item_location_queries(item):
             queries.append(("LOC", d["location"], d["location"]))
         elif d.get("address"):
             queries.append(("ADDR", d["address"], d["address"]))
-    if t in ("flight", "train", "transport"):
+    if t == "transit":
         if d.get("from"):
             queries.append(("FROM", d["from"], "From " + d["from"]))
         if d.get("to"):

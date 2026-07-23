@@ -91,10 +91,11 @@ function detailLines(item, settings) {
   const d = item.details || {};
   const lines = [];
   if (d.from && d.to) lines.push(`${d.from} → ${d.to}`);
-  // Time range line: combine start_time + end_time (legacy `time` is
-  // shown alone since it has no end).
-  const startV = d.start_time || d.time;
-  const endV = d.end_time;
+  // Time range line: combine depart_time + arrive_time (transit) or
+  // start_time + end_time (everything else). Legacy `time` is shown
+  // alone since it has no end.
+  const startV = d.depart_time || d.start_time || d.time;
+  const endV = d.arrive_time || d.end_time;
   if (startV && endV) {
     // Strip the date prefix — "2026-09-11T19:00" → "19:00". The day
     // column already shows the date.
@@ -108,9 +109,10 @@ function detailLines(item, settings) {
   const fields = ti ? ti.fields : [];
   for (const f of fields) {
     if (f.key === 'from' || f.key === 'to') continue;
-    // Skip start_time/end_time/time — already covered above (or they're
-    // the only time field, which we show as a single value).
-    if (f.key === 'start_time' || f.key === 'end_time' || f.key === 'time') continue;
+    // Skip start_time/end_time/time/depart_time/arrive_time — already
+    // covered above (or they're the only time field, shown as a single value).
+    if (f.key === 'start_time' || f.key === 'end_time' || f.key === 'time' ||
+        f.key === 'depart_time' || f.key === 'arrive_time') continue;
     const v = d[f.key];
     if (v !== undefined && v !== null && String(v).trim() !== '') {
       lines.push(`${f.label}: ${v}`);

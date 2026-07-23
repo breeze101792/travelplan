@@ -135,16 +135,17 @@ def seed() -> None:
         add_image(h1, "hotel", "hotel lobby")
         add_link(h1, "https://example.com/granvia", "booking")
 
-        f1 = item(p1, "flight", "JL 005 LAX -> NRT", "2026-07-01", status="confirmed",
-                  details={"airline": "JAL", "flight_no": "JL005", "from": "LAX", "to": "NRT",
+        f1 = item(p1, "transit", "JL 005 LAX -> NRT", "2026-07-01", status="confirmed",
+                  details={"mode": "Flight", "provider": "JAL", "ref_no": "JL005", "from": "LAX", "to": "NRT",
                            "depart_time": "2026-07-01T11:30", "arrive_time": "2026-07-02T15:45",
                            "confirmation": "JAL-7H9XQ", "price": "820", "currency": "USD",
                            "link": "https://example.com/jal005"})
         add_image(f1, "flight", "boarding pass")
 
-        t1 = item(p1, "transport", "Airport limo bus to Shinjuku", "2026-07-02",
-                  details={"mode": "limo bus", "from": "NRT", "to": "Shinjuku",
-                           "time": "2026-07-02T16:30", "price": "1300", "currency": "JPY"})
+        t1 = item(p1, "transit", "Airport limo bus to Shinjuku", "2026-07-02",
+                  details={"mode": "Bus", "from": "NRT", "to": "Shinjuku",
+                           "depart_time": "2026-07-02T16:30", "arrive_time": "2026-07-02T17:30",
+                           "price": "1300", "currency": "JPY"})
 
         rest1 = item(p1, "restaurant", "Ichiran Ramen Shibuya", "2026-07-02",
                      details={"name": "Ichiran", "address": "Shibuya, Tokyo",
@@ -158,8 +159,9 @@ def seed() -> None:
                             "qty": 2, "price": "3200", "currency": "JPY",
                             "link": "https://example.com/teamlab"})
 
-        tr1 = item(p1, "train", "Shinkansen Tokyo -> Kyoto", "2026-07-04", status="confirmed",
-                   details={"train_no": "Nozomi 7", "from": "Tokyo", "to": "Kyoto",
+        tr1 = item(p1, "transit", "Shinkansen Tokyo -> Kyoto", "2026-07-04", status="confirmed",
+                   details={"mode": "Train", "provider": "JR Central", "ref_no": "Nozomi 7",
+                            "from": "Tokyo", "to": "Kyoto",
                             "depart_time": "2026-07-04T08:00", "arrive_time": "2026-07-04T10:15",
                             "seat": "12-A/B/C", "price": "14000", "currency": "JPY"})
 
@@ -208,9 +210,10 @@ def seed() -> None:
                              "start_time": "2026-08-10T16:00", "end_time": "2026-08-10T19:00",
                              "price": "90", "currency": "EUR", "link": "https://example.com/bluelagoon"})
         add_image(act2, "lagoon", "geothermal pool")
-        t2 = item(p2, "transport", "Rental car (Dacia Duster)", "2026-08-11", end="2026-08-16",
-                  details={"mode": "rental", "from": "KEF", "to": "Ring Road",
-                           "time": "2026-08-11T09:00", "price": "420", "currency": "EUR"})
+        t2 = item(p2, "transit", "Rental car (Dacia Duster)", "2026-08-11",
+                  details={"mode": "Rental car", "from": "KEF", "to": "Ring Road",
+                           "depart_time": "2026-08-11T09:00", "arrive_time": "2026-08-11T09:30",
+                           "price": "420", "currency": "EUR"})
         tk2 = item(p2, "ticket", "Glacier hike Vatnajokull", "2026-08-13", status="planned",
                    details={"name": "Glacier hike", "venue": "Skaftafell",
                             "start_time": "2026-08-13T10:00", "end_time": "2026-08-13T14:00",
@@ -250,16 +253,18 @@ def seed() -> None:
                            "link": "https://example.com/wangfujing", "note": "5 nights, breakfast included"})
         add_image(h3, "hotel", "hotel lobby")
 
-        f3 = item(p3, "flight", "CA 985 SFO -> PEK", "2026-09-10", status="confirmed",
-                  details={"airline": "Air China", "flight_no": "CA985", "from": "SFO", "to": "PEK",
+        f3 = item(p3, "transit", "CA 985 SFO -> PEK", "2026-09-10", status="confirmed",
+                  details={"mode": "Flight", "provider": "Air China", "ref_no": "CA985",
+                           "from": "SFO", "to": "PEK",
                            "depart_time": "2026-09-10T13:00", "arrive_time": "2026-09-11T17:00",
                            "confirmation": "CA-9F4K2", "price": "700", "currency": "USD",
                            "link": "https://example.com/ca985"})
         add_image(f3, "flight", "boarding pass")
 
-        t3 = item(p3, "transport", "DiDi from PEK to hotel", "2026-09-11",
-                  details={"mode": "taxi", "from": "PEK", "to": "Wangfujing",
-                           "time": "2026-09-11T17:30", "price": "200", "currency": "CNY"})
+        t3 = item(p3, "transit", "DiDi from PEK to hotel", "2026-09-11",
+                  details={"mode": "Taxi", "from": "PEK", "to": "Wangfujing",
+                           "depart_time": "2026-09-11T17:30", "arrive_time": "2026-09-11T18:00",
+                           "price": "200", "currency": "CNY"})
 
         rest3 = item(p3, "restaurant", "全聚德烤鸭 Quanjude (Wangfujing)", "2026-09-11",
                      details={"name": "Quanjude", "address": "9 Wangfujing Dajie, Beijing",

@@ -59,6 +59,7 @@ function timeOfDay(v) {
 // default-fill in itemTimeWindow() below handles existing rows that
 // only have `time`.
 const TIME_FIELDS = {
+  transit:    { start: 'depart_time', end: 'arrive_time', label: 'transit' },
   flight:     { start: 'depart_time', end: 'arrive_time', label: 'flight' },
   train:      { start: 'depart_time', end: 'arrive_time', label: 'train' },
   ticket:     { start: 'start_time',  end: 'end_time'    },
@@ -635,7 +636,7 @@ function wireBarDrag({ bar, staging, getViewItems, getSelection, onMultiDrag, ct
       if (fields.end) newDetails[fields.end] = combineDateHour(hoverDayIso, newEndH);
       // Clear the legacy `time` field once the new shape is in place,
       // so the item doesn't carry two ways of saying the same thing.
-      if (newDetails.time && (it.item_type === 'restaurant' || it.item_type === 'transport')) {
+      if (newDetails.time && it.item_type === 'restaurant') {
         delete newDetails.time;
       }
 
@@ -1234,7 +1235,7 @@ export async function initTimeline(ctx) {
       if (f.end && newEndH != null) newDetails[f.end] = combineDateHour(item_date, newEndH);
       // Clear the legacy field if it was there so the item doesn't
       // carry two different ways of saying the same thing.
-      if (d.time && (it.item_type === 'restaurant' || it.item_type === 'transport')) {
+      if (d.time && (it.item_type === 'restaurant' || it.item_type === 'transport' || it.item_type === 'transit')) {
         delete newDetails.time;
       }
       staging.add(timeEditItemOp({
