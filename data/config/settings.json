@@ -55,13 +55,11 @@
         {"key": "venue", "label": "Venue", "type": "text"},
         {"key": "start_time", "label": "Start", "type": "datetime-local"},
         {"key": "end_time", "label": "End", "type": "datetime-local"},
-        {"key": "qty", "label": "Qty", "type": "number"},
         {"key": "note", "label": "Note", "type": "textarea"}
       ],
       "rows": [
         ["name", "venue"],
         ["start_time", "end_time"],
-        ["qty"],
         ["note"]
       ]
     },

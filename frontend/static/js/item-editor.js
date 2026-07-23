@@ -111,67 +111,6 @@ export function openItemEditor(ctx, { plan, item, settings, members, staging, se
     colMain.appendChild(rowEl);
   }
 
-  // geolocation picker (for all types except note)
-  if (item.item_type !== 'note') {
-    const locSection = el('div', { class: 'geo-section' });
-    colMain.appendChild(el('hr', { class: 'geo-sep' }));
-
-    if (!readOnly) {
-      colMain.appendChild(el('label', { class: 'field', text: 'Map locations' }));
-
-      const geoListEl = el('div', { class: 'geo-list' });
-      const addBtn = el('button', { type: 'button', class: 'btn geo-add-btn', text: '+ Add location' });
-
-      function renderGeoList() {
-        clear(geoListEl);
-        for (let i = 0; i < selectedGeocodes.length; i++) {
-          const g = selectedGeocodes[i];
-          const row = el('div', { class: 'geo-list-row' });
-          row.appendChild(el('span', { class: 'geo-pin', text: '\uD83D\uDCCD' }));
-          row.appendChild(el('span', { class: 'geo-label', text: g.label }));
-          row.appendChild(el('span', {
-            class: 'geo-coords',
-            text: `(${g.lat.toFixed(4)}, ${g.lng.toFixed(4)})`,
-          }));
-          const removeBtn = document.createElement('button');
-          removeBtn.type = 'button'; removeBtn.className = 'btn btn-ghost geo-remove';
-          removeBtn.textContent = '\u2715';
-          removeBtn.addEventListener('click', () => {
-            selectedGeocodes.splice(i, 1);
-            renderGeoList();
-          });
-          row.appendChild(removeBtn);
-          geoListEl.appendChild(row);
-        }
-      }
-
-      addBtn.addEventListener('click', () => {
-        openGeoSearchPopup((result) => {
-          selectedGeocodes.push(result);
-          renderGeoList();
-        });
-      });
-
-      locSection.appendChild(geoListEl);
-      locSection.appendChild(addBtn);
-      renderGeoList();
-    } else {
-      // read-only: show all existing locations
-      if (selectedGeocodes.length > 0) {
-        for (const g of selectedGeocodes) {
-          const info = el('div', { class: 'geo-readonly' });
-          info.appendChild(el('span', { text: '\uD83D\uDCCD ' + g.label }));
-          info.appendChild(el('span', {
-            class: 'geo-coords',
-            text: `(${g.lat.toFixed(4)}, ${g.lng.toFixed(4)})`,
-          }));
-          locSection.appendChild(info);
-        }
-      }
-    }
-    colMain.appendChild(locSection);
-  }
-
   // status + dates (right col)
   colSide.appendChild(el('label', { class: 'field', text: 'Status' }));
   const statusSel = document.createElement('select');
@@ -199,8 +138,6 @@ export function openItemEditor(ctx, { plan, item, settings, members, staging, se
     endInput.className = 'input';
     endInput.value = item.end_date || '';
     if (readOnly) endInput.disabled = true;
-    // Place check-in / check-out on the same row — they are short date
-    // inputs and almost always edited together.
     colSide.appendChild(el('div', { class: 'field-row' }, [
       el('div', { class: 'field-group' }, [dateInput]),
       el('div', { class: 'field-group' }, [
@@ -219,7 +156,6 @@ export function openItemEditor(ctx, { plan, item, settings, members, staging, se
   renderAttachments();
 
   if (!readOnly) {
-    // add-link row
     const linkUrl = document.createElement('input');
     linkUrl.type = 'url'; linkUrl.className = 'input'; linkUrl.placeholder = 'https://link';
     const linkCap = document.createElement('input');
@@ -229,8 +165,6 @@ export function openItemEditor(ctx, { plan, item, settings, members, staging, se
     linkBtn.addEventListener('click', () => {
       const v = linkUrl.value.trim();
       if (!v) return;
-      // Add to the editor's local attachment list; the sub-op is built
-      // lazily on Apply, capturing the local id.
       const localId = '__pending__' + Math.random().toString(36).slice(2, 10);
       attachments.push({
         id: localId,
@@ -248,7 +182,6 @@ export function openItemEditor(ctx, { plan, item, settings, members, staging, se
     const linkRow = el('div', { class: 'link-row' }, [linkUrl, linkCap, linkBtn]);
     colSide.appendChild(linkRow);
 
-    // file upload input
     const fileLabel = el('label', { class: 'file-label', text: 'Upload image: ' });
     const fileInput = document.createElement('input');
     fileInput.type = 'file'; fileInput.accept = 'image/*';
@@ -274,7 +207,7 @@ export function openItemEditor(ctx, { plan, item, settings, members, staging, se
     fileLabel.appendChild(fileInput);
     colSide.appendChild(fileLabel);
 
-    // expense button (right col, below attachments) — opens a modal
+    // expense button
     colSide.appendChild(el('h4', { class: 'section-title', text: 'Expenses' }));
     const openExpenseBtn = document.createElement('button');
     openExpenseBtn.type = 'button'; openExpenseBtn.className = 'btn';
@@ -302,6 +235,64 @@ export function openItemEditor(ctx, { plan, item, settings, members, staging, se
       });
     }
   }
+
+  // geolocation picker (right col, last)
+  const locSection = el('div', { class: 'geo-section' });
+  colSide.appendChild(el('hr', { class: 'geo-sep' }));
+
+  if (!readOnly) {
+    colSide.appendChild(el('label', { class: 'field', text: 'Map locations' }));
+
+    const geoListEl = el('div', { class: 'geo-list' });
+    const addBtn = el('button', { type: 'button', class: 'btn geo-add-btn', text: '+ Add location' });
+
+    function renderGeoList() {
+      clear(geoListEl);
+      for (let i = 0; i < selectedGeocodes.length; i++) {
+        const g = selectedGeocodes[i];
+        const row = el('div', { class: 'geo-list-row' });
+        row.appendChild(el('span', { class: 'geo-pin', text: '\uD83D\uDCCD' }));
+        row.appendChild(el('span', { class: 'geo-label', text: g.label }));
+        row.appendChild(el('span', {
+          class: 'geo-coords',
+          text: `(${g.lat.toFixed(4)}, ${g.lng.toFixed(4)})`,
+        }));
+        const removeBtn = document.createElement('button');
+        removeBtn.type = 'button'; removeBtn.className = 'btn btn-ghost geo-remove';
+        removeBtn.textContent = '\u2715';
+        removeBtn.addEventListener('click', () => {
+          selectedGeocodes.splice(i, 1);
+          renderGeoList();
+        });
+        row.appendChild(removeBtn);
+        geoListEl.appendChild(row);
+      }
+    }
+
+    addBtn.addEventListener('click', () => {
+      openGeoSearchPopup((result) => {
+        selectedGeocodes.push(result);
+        renderGeoList();
+      });
+    });
+
+    locSection.appendChild(geoListEl);
+    locSection.appendChild(addBtn);
+    renderGeoList();
+  } else {
+    if (selectedGeocodes.length > 0) {
+      for (const g of selectedGeocodes) {
+        const info = el('div', { class: 'geo-readonly' });
+        info.appendChild(el('span', { text: '\uD83D\uDCCD ' + g.label }));
+        info.appendChild(el('span', {
+          class: 'geo-coords',
+          text: `(${g.lat.toFixed(4)}, ${g.lng.toFixed(4)})`,
+        }));
+        locSection.appendChild(info);
+      }
+    }
+  }
+  colSide.appendChild(locSection);
 
   // footer
   const footer = el('div', { class: 'modal-footer' });
@@ -520,7 +511,7 @@ function openExpenseModal({ plan, members, settings, item, pendingExpenses, onRe
 
   const qtyInput = document.createElement('input');
   qtyInput.type = 'number'; qtyInput.step = '1'; qtyInput.min = '1';
-  qtyInput.className = 'input'; qtyInput.value = '1'; qtyInput.placeholder = '1';
+  qtyInput.className = 'input'; qtyInput.value = '1';
 
   const amtInput = document.createElement('input');
   amtInput.type = 'number'; amtInput.step = '0.01'; amtInput.min = '0';
@@ -576,7 +567,7 @@ function openExpenseModal({ plan, members, settings, item, pendingExpenses, onRe
   body.appendChild(el('label', { class: 'field', text: 'Description' }));
   body.appendChild(descInput);
 
-  // Quantity + Amount on one row
+  // Qty + Amount on one row
   const row1 = el('div', { class: 'field-row' });
   row1.appendChild(el('div', { class: 'field-group' }, [
     el('label', { class: 'field', text: 'Qty' }),
