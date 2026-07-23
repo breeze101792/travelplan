@@ -4,7 +4,7 @@ body[data-page="navigation"] #view {
 }
 
 #nav-page {
-  max-width: 960px;
+  max-width: 780px;
   margin: 0 auto;
 }
 
@@ -33,7 +33,6 @@ body[data-page="navigation"] #view {
   transition: background 0.15s, border-color 0.15s;
 }
 .nav-day-arrow:hover { background: #f1f5f9; border-color: #94a3b8; }
-.nav-day-arrow:active { background: #e2e8f0; }
 
 .nav-day-select {
   padding: 7px 30px 7px 12px;
@@ -68,188 +67,233 @@ body[data-page="navigation"] #view {
 }
 .nav-day-today:hover { background: #eff6ff; }
 
-/* ---- timeline ---- */
-#nav-timeline-wrap {
+/* ---- section dividers ---- */
+.nav-section-divider {
   display: flex;
-  position: relative;
-  margin-bottom: 24px;
-}
-
-#nav-axis {
-  width: 46px;
-  position: relative;
-  flex-shrink: 0;
-}
-
-.nav-axis-label {
-  position: absolute;
-  right: 6px;
-  transform: translateY(-50%);
+  align-items: center;
+  gap: 10px;
   font-size: 11px;
-  color: #64748b;
-  font-variant-numeric: tabular-nums;
-  font-weight: 500;
-  line-height: 1;
-}
-.nav-axis-label.major {
-  font-size: 12px;
-  color: #334155;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  color: #94a3b8;
   font-weight: 600;
+  margin: 20px 0 12px;
+  padding: 0 4px;
 }
-
-#nav-items {
+.nav-section-divider::after {
+  content: '';
   flex: 1;
-  position: relative;
-  margin-left: 4px;
-  border-left: 1px solid #e2e8f0;
-}
-
-.nav-gridline {
-  position: absolute;
-  left: 0;
-  right: 0;
   height: 1px;
-  background: #f1f5f9;
-  pointer-events: none;
-}
-.nav-gridline.major {
   background: #e2e8f0;
 }
+.nav-section-divider.now-divider {
+  color: #ef4444;
+  font-size: 13px;
+}
+.nav-section-divider.now-divider::after {
+  background: #fca5a5;
+  height: 2px;
+}
 
-/* ---- timed item cards ---- */
-.nav-item {
-  position: absolute;
+/* ---- cards ---- */
+.nav-card {
   display: flex;
-  border-radius: 10px;
+  border-radius: 12px;
   background: #fff;
   border: 1px solid #e2e8f0;
   overflow: hidden;
-  min-height: 32px;
   cursor: pointer;
-  transition: box-shadow 0.15s;
-  right: 0;
+  transition: box-shadow 0.15s, border-color 0.15s, opacity 0.3s;
+  margin-bottom: 10px;
 }
-
-.nav-item:hover {
+.nav-card:hover {
   box-shadow: 0 2px 10px rgba(0,0,0,0.08);
   border-color: #cbd5e1;
 }
 
-.nav-item-indicator {
+.nav-card-indicator {
   width: 4px;
   flex-shrink: 0;
 }
 
-.type-hotel .nav-item-indicator { background: #3b82f6; }
-.type-transit .nav-item-indicator { background: #8b5cf6; }
-.type-activity .nav-item-indicator { background: #10b981; }
-.type-restaurant .nav-item-indicator { background: #f59e0b; }
-.type-note .nav-item-indicator { background: #eab308; }
-
-.nav-item-body {
+.nav-card-body {
   flex: 1;
-  padding: 5px 10px 5px 8px;
+  padding: 12px 14px;
   display: flex;
   flex-direction: column;
-  gap: 1px;
-  overflow: hidden;
-  min-height: 0;
+  gap: 6px;
+  min-width: 0;
 }
 
-.nav-item-head {
+.nav-card-header {
   display: flex;
-  justify-content: space-between;
   align-items: center;
   gap: 8px;
+  flex-wrap: wrap;
 }
 
-.nav-item-type {
-  font-size: 10px;
+.nav-card-type {
+  font-size: 11px;
   text-transform: uppercase;
   letter-spacing: 0.4px;
   color: #64748b;
   font-weight: 600;
-  white-space: nowrap;
 }
 
-.nav-item-time {
+.nav-card-time {
   font-size: 11px;
   color: #64748b;
   font-variant-numeric: tabular-nums;
-  white-space: nowrap;
   font-weight: 500;
 }
 
-.nav-item-title {
-  font-size: 13px;
+.nav-badge {
+  font-size: 10px;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 999px;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+  margin-left: auto;
+}
+
+.now-badge {
+  background: #fef2f2;
+  color: #dc2626;
+  border: 1px solid #fecaca;
+}
+
+.past-badge {
+  background: #f0fdf4;
+  color: #16a34a;
+  border: 1px solid #bbf7d0;
+}
+
+.nav-card-title {
+  font-size: 16px;
   font-weight: 600;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
   color: #0f172a;
   line-height: 1.3;
 }
 
-.nav-item-details {
-  font-size: 11px;
-  color: #475569;
+.nav-card-details {
   display: flex;
   flex-direction: column;
-  gap: 1px;
-  line-height: 1.3;
-  overflow: hidden;
+  gap: 3px;
 }
 
-.nav-item-open {
-  align-self: flex-end;
-  margin-top: auto;
-  font-size: 11px;
-  padding: 1px 8px;
+.nav-card-detail {
+  font-size: 13px;
+  color: #475569;
+  line-height: 1.4;
+}
+
+/* ---- card image ---- */
+.nav-card-image {
+  margin-top: 4px;
+  border-radius: 8px;
+  overflow: hidden;
+  border: 1px solid #e2e8f0;
+  max-height: 200px;
+}
+
+.nav-card-image img {
+  width: 100%;
+  height: auto;
+  max-height: 200px;
+  object-fit: cover;
+  display: block;
+}
+
+/* ---- card actions ---- */
+.nav-card-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  margin-top: 4px;
+}
+
+.nav-card-link {
+  font-size: 12px;
   color: #2563eb;
-  font-weight: 500;
-  border: none;
-  background: none;
-  cursor: pointer;
-  border-radius: 4px;
+  text-decoration: none;
+  padding: 4px 10px;
+  border: 1px solid #bfdbfe;
+  border-radius: 6px;
+  background: #eff6ff;
+  transition: background 0.12s;
   white-space: nowrap;
 }
-.nav-item-open:hover {
-  background: #eff6ff;
+.nav-card-link:hover {
+  background: #dbeafe;
+  text-decoration: none;
 }
 
-/* ---- now line ---- */
-.nav-now-line {
-  position: absolute;
-  left: -1px;
-  right: 0;
-  height: 2px;
-  background: #ef4444;
-  z-index: 10;
-  pointer-events: none;
+.nav-map-group {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  width: 100%;
 }
-.nav-now-line::before {
-  content: '';
-  position: absolute;
-  left: -5px;
-  top: -4px;
-  width: 10px;
-  height: 10px;
-  background: #ef4444;
-  border-radius: 50%;
+.nav-map-label {
+  font-size: 11px;
+  color: #64748b;
+  font-weight: 500;
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
-.nav-now-label {
-  position: absolute;
-  left: 10px;
-  top: -7px;
-  font-size: 10px;
-  color: #ef4444;
+.map-link {
+  min-width: 28px;
+  text-align: center;
   font-weight: 700;
-  letter-spacing: 0.3px;
+  font-size: 12px;
+  padding: 3px 6px;
+}
+
+.nav-card-open {
+  font-size: 12px;
+  color: #64748b;
+  font-weight: 500;
+  padding: 4px 10px;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  background: #f8fafc;
+  cursor: pointer;
+  transition: background 0.12s;
+  margin-left: auto;
+}
+.nav-card-open:hover {
+  background: #f1f5f9;
+  color: #0f172a;
+}
+
+/* ---- card states ---- */
+.nav-card.past {
+  opacity: 0.6;
+}
+.nav-card.past:hover {
+  opacity: 0.8;
+}
+
+.nav-card.now {
+  border-color: #fca5a5;
+  box-shadow: 0 0 0 1px #fca5a5, 0 4px 16px rgba(239, 68, 68, 0.1);
+}
+.nav-card.now:hover {
+  box-shadow: 0 0 0 1px #f87171, 0 4px 20px rgba(239, 68, 68, 0.15);
+}
+
+.nav-card.untimed {
+  background: #fafafa;
 }
 
 /* ---- hotel banners ---- */
 .nav-hotels {
-  margin-bottom: 20px;
+  margin-bottom: 16px;
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -271,7 +315,6 @@ body[data-page="navigation"] #view {
 }
 
 .nav-hotel-icon { font-size: 20px; line-height: 1; }
-
 .nav-hotel-info { flex: 1; min-width: 0; }
 
 .nav-hotel-name {
@@ -287,72 +330,6 @@ body[data-page="navigation"] #view {
   font-size: 12px;
   color: #475569;
   margin-top: 1px;
-}
-
-/* ---- untimed section ---- */
-.nav-untimed {
-  margin-top: 8px;
-}
-
-.nav-untimed-header {
-  font-size: 11px;
-  text-transform: uppercase;
-  letter-spacing: 0.6px;
-  color: #94a3b8;
-  font-weight: 600;
-  margin-bottom: 10px;
-  padding-bottom: 6px;
-  border-bottom: 1px solid #e2e8f0;
-}
-
-.nav-untimed-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
-  gap: 8px;
-}
-
-.nav-untimed-card {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  background: #fff;
-  border: 1px solid #e2e8f0;
-  border-radius: 8px;
-  padding: 10px 12px;
-  cursor: pointer;
-  transition: box-shadow 0.15s, border-color 0.15s;
-}
-.nav-untimed-card:hover {
-  box-shadow: 0 2px 6px rgba(0,0,0,0.06);
-  border-color: #cbd5e1;
-}
-
-.nav-untimed-icon {
-  font-size: 16px;
-  line-height: 1;
-  flex-shrink: 0;
-}
-
-.nav-untimed-body {
-  flex: 1;
-  min-width: 0;
-}
-
-.nav-untimed-title {
-  font-size: 13px;
-  font-weight: 600;
-  color: #0f172a;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.nav-untimed-sub {
-  font-size: 11px;
-  color: #64748b;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
 }
 
 /* ---- empty state ---- */

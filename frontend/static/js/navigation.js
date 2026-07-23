@@ -1,13 +1,10 @@
 import { apiGet, apiPost, apiPatch, apiDel, apiUpload } from '/static/js/api.js';
-import { el, clear, loadSettings, fmtDate } from '/static/js/util.js';
+import { el, clear, loadSettings } from '/static/js/util.js';
 import { buildDays, isoOf, addDaysIso } from '/static/js/plan-header.js';
 import { openItemEditor } from '/static/js/item-editor.js';
 import { Staging } from '/static/js/staging.js';
 
 const api = { get: apiGet, post: apiPost, patch: apiPatch, del: apiDel, upload: apiUpload };
-
-const HOUR_PX = 48;
-const TOTAL_HEIGHT = 24 * HOUR_PX;
 
 const TYPE_ICONS = {
   hotel: '\u{1F3E8}',
@@ -27,7 +24,7 @@ const TYPE_LABELS = {
 
 let ctx, plan, settings, allItems, members, days, staging;
 let selectedDay;
-let nowInterval;
+let statusTimer;
 
 export async function initNavigation(pageCtx) {
   ctx = pageCtx;
@@ -50,12 +47,9 @@ export async function initNavigation(pageCtx) {
   selectedDay = days.find(d => d.date === todayStr) || days[0];
 
   renderDayBar();
-  renderView();
+  renderSchedule();
   renderPendingBar();
-
-  updateNowLine();
-  if (nowInterval) clearInterval(nowInterval);
-  nowInterval = setInterval(updateNowLine, 30000);
+  startStatusTimer();
 }
 
 /* ---------------------------------------------------------------- day bar */
@@ -115,8 +109,7 @@ function renderDayBar() {
   function onDayChange() {
     select.value = selectedDay.date;
     todayBtn.hidden = (selectedDay.date === todayStr);
-    renderView();
-    updateNowLine();
+    renderSchedule();
     renderPendingBar();
   }
 }
@@ -129,9 +122,9 @@ function formatDayLabel(day) {
   return `Day ${day.index} \u2014 ${weekday}, ${month} ${d.getDate()}`;
 }
 
-/* ---------------------------------------------------------------- render */
+/* ---------------------------------------------------------------- schedule */
 
-function renderView() {
+function renderSchedule() {
   const container = document.getElementById('nav-page');
   let content = container.querySelector('#nav-content');
   if (!content) {
@@ -153,40 +146,70 @@ function renderView() {
   const hotels = dayItems.filter(i => i.item_type === 'hotel');
   const nonHotels = dayItems.filter(i => i.item_type !== 'hotel');
 
+  const isToday = dateStr === isoOf(new Date());
+  const now = new Date();
+  const nowMinutes = now.getHours() * 60 + now.getMinutes();
+
+  // Hotels
   if (hotels.length) {
-    content.appendChild(renderHotels(hotels, dateStr));
+    content.appendChild(renderHotelBanners(hotels, dateStr));
   }
 
-  const timedItems = [];
-  const untimedItems = [];
+  // Split non-hotels
+  const timed = [];
+  const untimed = [];
 
   for (const item of nonHotels) {
     const tw = itemTimeWindow(item);
     if (tw) {
-      timedItems.push({ ...tw, item });
+      timed.push({ ...tw, item });
     } else {
-      untimedItems.push(item);
+      untimed.push(item);
+    }
+  }
+  timed.sort((a, b) => a.start - b.start);
+
+  if (!timed.length && !untimed.length) {
+    content.appendChild(el('div', { class: 'nav-empty', html: 'Nothing planned for this day \u2728' }));
+    return;
+  }
+
+  // Timed items with section dividers (only for today)
+  if (timed.length) {
+    if (isToday) {
+      const past = timed.filter(tw => tw.end * 60 <= nowMinutes);
+      const curr = timed.filter(tw => tw.start * 60 <= nowMinutes && tw.end * 60 > nowMinutes);
+      const upcom = timed.filter(tw => tw.start * 60 > nowMinutes);
+
+      if (past.length) {
+        content.appendChild(el('div', { class: 'nav-section-divider', text: 'Earlier' }));
+        for (const tw of past) content.appendChild(renderCard(tw.item, 'past'));
+      }
+      if (curr.length) {
+        content.appendChild(el('div', { class: 'nav-section-divider now-divider', html: '\u{1F4CD} Now' }));
+        for (const tw of curr) content.appendChild(renderCard(tw.item, 'now'));
+      }
+      if (upcom.length) {
+        content.appendChild(el('div', { class: 'nav-section-divider', text: 'Up next' }));
+        for (const tw of upcom) content.appendChild(renderCard(tw.item, 'upcoming'));
+      }
+    } else {
+      for (const tw of timed) content.appendChild(renderCard(tw.item, null));
     }
   }
 
-  assignColumns(timedItems);
-
-  if (timedItems.length) {
-    content.appendChild(renderTimeline(timedItems, dateStr));
+  // Untimed
+  if (untimed.length) {
+    content.appendChild(el('div', { class: 'nav-section-divider', text: 'Notes' }));
+    for (const item of untimed) content.appendChild(renderCard(item, 'untimed'));
   }
 
-  if (untimedItems.length) {
-    content.appendChild(renderUntimed(untimedItems));
-  }
-
-  if (!hotels.length && !timedItems.length && !untimedItems.length) {
-    content.appendChild(el('div', { class: 'nav-empty', html: 'Nothing planned for this day \u2728' }));
-  }
+  if (isToday) setTimeout(() => scrollToNow(), 150);
 }
 
 /* ---------------------------------------------------------------- hotels */
 
-function renderHotels(hotels, dateStr) {
+function renderHotelBanners(hotels, dateStr) {
   const section = el('div', { class: 'nav-hotels' });
   for (const hotel of hotels) {
     const d = hotel.details || {};
@@ -223,81 +246,87 @@ function renderHotels(hotels, dateStr) {
   return section;
 }
 
-/* ---------------------------------------------------------------- timeline */
+/* ---------------------------------------------------------------- card */
 
-function renderTimeline(timedItems, dateStr) {
-  const wrap = el('div', { id: 'nav-timeline-wrap' });
-  const axis = el('div', { id: 'nav-axis' });
-  const itemsArea = el('div', { id: 'nav-items', style: `height:${TOTAL_HEIGHT}px` });
+function renderCard(item, status) {
+  const card = el('div', { class: `nav-card${status ? ' ' + status : ''}` });
 
-  for (let h = 0; h <= 24; h++) {
-    const isMajor = h % 6 === 0;
-    const label = String(h).padStart(2, '0') + ':00';
-    axis.appendChild(el('div', {
-      class: 'nav-axis-label' + (isMajor ? ' major' : ''),
-      style: `top:${h * HOUR_PX}px`,
-      text: h === 24 ? '00:00' : label,
-    }));
-    itemsArea.appendChild(el('div', {
-      class: 'nav-gridline' + (isMajor ? ' major' : ''),
-      style: `top:${h * HOUR_PX}px`,
-    }));
-  }
+  card.appendChild(el('div', { class: 'nav-card-indicator', style: `background:${getTypeColor(item.item_type)}` }));
 
-  for (const tw of timedItems) {
-    itemsArea.appendChild(renderTimedItemCard(tw.item, tw));
-  }
+  const body = el('div', { class: 'nav-card-body' });
 
-  if (dateStr === isoOf(new Date())) {
-    const now = new Date();
-    const px = ((now.getHours() * 60 + now.getMinutes()) / (24 * 60)) * TOTAL_HEIGHT;
-    const line = el('div', { class: 'nav-now-line', style: `top:${px}px`, id: 'nav-now-line' });
-    line.appendChild(el('span', { class: 'nav-now-label', text: 'Now' }));
-    itemsArea.appendChild(line);
-  }
+  // Header: type + time + badge
+  const header = el('div', { class: 'nav-card-header' });
+  const tw = itemTimeWindow(item);
+  const timeStr = tw ? formatItemTime(item, tw) : '';
+  const typeIcon = TYPE_ICONS[item.item_type] || '\u{1F4CB}';
+  const typeDef = settings.item_types[item.item_type] || {};
+  const typeLabel = typeDef.label || TYPE_LABELS[item.item_type] || item.item_type;
 
-  wrap.appendChild(axis);
-  wrap.appendChild(itemsArea);
-  return wrap;
-}
+  header.appendChild(el('span', { class: 'nav-card-type', text: `${typeIcon} ${typeLabel}` }));
+  if (timeStr) header.appendChild(el('span', { class: 'nav-card-time', text: timeStr }));
+  if (status === 'now') header.appendChild(el('span', { class: 'nav-badge now-badge', text: 'Now' }));
+  else if (status === 'past') header.appendChild(el('span', { class: 'nav-badge past-badge', text: '\u2713' }));
+  body.appendChild(header);
 
-function renderTimedItemCard(item, tw) {
-  const top = tw.start * HOUR_PX;
-  const height = Math.max((tw.end - tw.start) * HOUR_PX, 32);
-  const col = tw.col || 0;
-  const totalCols = tw.totalCols || 1;
-  const widthPct = (1 / totalCols) * 100;
-  const leftPct = (col / totalCols) * 100;
+  // Title
+  body.appendChild(el('div', { class: 'nav-card-title', text: item.title }));
 
-  const card = el('div', {
-    class: `nav-item type-${item.item_type}`,
-    style: `top:${top}px;height:${height}px;width:calc(${widthPct}% - 4px);left:calc(${leftPct}% + 2px)`,
-  });
-
-  const indicator = el('div', { class: 'nav-item-indicator' });
-  const body = el('div', { class: 'nav-item-body' });
-
-  const head = el('div', { class: 'nav-item-head' });
-  head.appendChild(el('span', {
-    class: 'nav-item-type',
-    text: `${TYPE_ICONS[item.item_type] || '\u{1F4CB}'} ${TYPE_LABELS[item.item_type] || item.item_type}`,
-  }));
-  head.appendChild(el('span', { class: 'nav-item-time', text: formatItemTime(item, tw) }));
-  body.appendChild(head);
-
-  body.appendChild(el('div', { class: 'nav-item-title', text: item.title }));
-
-  const details = buildDetailLines(item);
+  // Details
+  const details = buildCardDetails(item);
   if (details) body.appendChild(details);
 
-  const openBtn = el('button', { class: 'nav-item-open', text: '\u25B8' });
-  openBtn.addEventListener('click', e => {
-    e.stopPropagation();
-    openEditorFor(item);
-  });
-  body.appendChild(openBtn);
+  // Image (first image attachment)
+  const imgAtt = (item.attachments || []).find(a => a.kind === 'image');
+  if (imgAtt) {
+    body.appendChild(el('div', { class: 'nav-card-image' }, [
+      el('img', { src: `/uploads/${imgAtt.value}`, alt: imgAtt.caption || item.title, loading: 'lazy' }),
+    ]));
+  }
 
-  card.appendChild(indicator);
+  // Actions
+  const actions = el('div', { class: 'nav-card-actions' });
+
+  for (const att of (item.attachments || [])) {
+    if (att.kind === 'link') {
+      actions.appendChild(el('a', {
+        class: 'nav-card-link',
+        href: att.value,
+        target: '_blank',
+        rel: 'noopener',
+        text: `\u{1F517} ${att.caption || 'Link'}`,
+      }));
+    }
+  }
+
+  if (item.geocodes && item.geocodes.length) {
+    for (const g of item.geocodes) {
+      const label = encodeURIComponent(g.label || item.title);
+      const mapGroup = el('span', { class: 'nav-map-group', title: g.label || item.title });
+      mapGroup.appendChild(el('a', {
+        class: 'nav-card-link map-link', href: `https://www.google.com/maps?q=${g.lat},${g.lng}`,
+        target: '_blank', rel: 'noopener', text: 'G',
+      }));
+      mapGroup.appendChild(el('a', {
+        class: 'nav-card-link map-link', href: `https://maps.apple.com/?ll=${g.lat},${g.lng}&q=${label}`,
+        target: '_blank', rel: 'noopener', text: 'A',
+      }));
+      mapGroup.appendChild(el('a', {
+        class: 'nav-card-link map-link', href: `https://www.openstreetmap.org/?mlat=${g.lat}&mlon=${g.lng}&zoom=15`,
+        target: '_blank', rel: 'noopener', text: 'O',
+      }));
+      if (g.label) mapGroup.appendChild(el('span', { class: 'nav-map-label', text: g.label }));
+      actions.appendChild(mapGroup);
+    }
+  }
+
+  actions.appendChild(el('button', {
+    class: 'nav-card-open',
+    text: 'Open details \u25B8',
+    onclick: e => { e.stopPropagation(); openEditorFor(item); },
+  }));
+
+  body.appendChild(actions);
   card.appendChild(body);
 
   card.addEventListener('click', () => openEditorFor(item));
@@ -305,51 +334,56 @@ function renderTimedItemCard(item, tw) {
   return card;
 }
 
-/* ---------------------------------------------------------------- untimed */
-
-function renderUntimed(items) {
-  const section = el('div', { class: 'nav-untimed' });
-  section.appendChild(el('div', { class: 'nav-untimed-header', text: 'Untimed' }));
-
-  const grid = el('div', { class: 'nav-untimed-grid' });
-  for (const item of items) {
-    grid.appendChild(renderUntimedCard(item));
-  }
-  section.appendChild(grid);
-  return section;
-}
-
-function renderUntimedCard(item) {
+function buildCardDetails(item) {
   const d = item.details || {};
-  const card = el('div', { class: 'nav-untimed-card', style: `border-left: 3px solid ${getTypeColor(item.item_type)}` });
+  const parts = [];
 
-  card.appendChild(el('span', { class: 'nav-untimed-icon', text: TYPE_ICONS[item.item_type] || '\u{1F4CB}' }));
-
-  const body = el('div', { class: 'nav-untimed-body' });
-  body.appendChild(el('div', { class: 'nav-untimed-title', text: item.title }));
-
-  let sub = '';
-  if (item.item_type === 'note' && d.text) {
-    sub = d.text.length > 80 ? d.text.slice(0, 80) + '\u2026' : d.text;
-  } else if (item.item_type === 'activity') {
-    sub = d.location || '';
-  } else if (item.item_type === 'restaurant') {
-    sub = d.address || '';
+  if (item.item_type === 'hotel') {
+    if (d.address) parts.push(`\u{1F4CD} ${d.address}`);
+    if (d.booking_ref) parts.push(`\u{1F511} ${d.booking_ref}`);
   } else if (item.item_type === 'transit') {
-    sub = d.from && d.to ? `${d.from} \u2192 ${d.to}` : '';
+    if (d.from && d.to) parts.push(`\u{1F689} ${d.from} \u2192 ${d.to}`);
+    if (d.provider) parts.push(`\u{1F3E2} ${d.provider}${d.ref_no ? ' ' + d.ref_no : ''}`);
+    if (d.confirmation) parts.push(`\u2705 Conf: ${d.confirmation}`);
+  } else if (item.item_type === 'activity') {
+    if (d.location) parts.push(`\u{1F4CD} ${d.location}`);
+  } else if (item.item_type === 'restaurant') {
+    if (d.address) parts.push(`\u{1F4CD} ${d.address}`);
+    if (d.party_size) parts.push(`\u{1F465} Party: ${d.party_size}`);
+  } else if (item.item_type === 'note') {
+    if (d.text) parts.push(d.text);
   }
-  if (sub) body.appendChild(el('div', { class: 'nav-untimed-sub', text: sub }));
 
-  card.appendChild(body);
-  card.appendChild(el('button', { class: 'nav-item-open', text: '\u25B8' }));
+  if (!parts.length) return null;
+  const container = el('div', { class: 'nav-card-details' });
+  for (const p of parts) {
+    container.appendChild(el('span', { class: 'nav-card-detail', text: p }));
+  }
+  return container;
+}
 
-  card.addEventListener('click', () => openEditorFor(item));
-  card.querySelector('.nav-item-open').addEventListener('click', e => {
-    e.stopPropagation();
-    openEditorFor(item);
-  });
+/* ---------------------------------------------------------------- scroll */
 
-  return card;
+function scrollToNow() {
+  const nowCard = document.querySelector('.nav-card.now');
+  if (nowCard) {
+    nowCard.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  } else {
+    const first = document.querySelector('.nav-card.upcoming');
+    if (first) first.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }
+}
+
+/* ---------------------------------------------------------------- timer */
+
+function startStatusTimer() {
+  if (statusTimer) clearInterval(statusTimer);
+  statusTimer = setInterval(() => {
+    const dateStr = selectedDay && selectedDay.date;
+    if (dateStr && dateStr === isoOf(new Date())) {
+      renderSchedule();
+    }
+  }, 30000);
 }
 
 /* ---------------------------------------------------------------- editor */
@@ -363,7 +397,7 @@ function openEditorFor(item) {
     members,
     staging,
     sessionId,
-    onApplied: () => { renderView(); renderPendingBar(); },
+    onApplied: () => { renderSchedule(); renderPendingBar(); },
   });
 }
 
@@ -382,41 +416,40 @@ function renderPendingBar() {
   const failed = staging.failedOpIndex >= 0;
   const lastLabel = hasPending ? staging.ops[staging.pointer - 1].label : '';
 
-  const undoBtn = el('button', {
-    type: 'button', class: 'pb-btn', text: '\u21B6 Revert',
-    disabled: !canUndo,
-    onclick: () => { staging.undo(); renderView(); renderPendingBar(); },
-  });
-  const redoBtn = el('button', {
-    type: 'button', class: 'pb-btn', text: '\u21B7 Redo',
-    disabled: !canRedo,
-    onclick: () => { staging.redo(); renderView(); renderPendingBar(); },
-  });
-  const saveBtn = el('button', {
-    type: 'button', class: 'pb-btn pb-save',
-    text: staging.saving ? 'Saving\u2026' : 'Save',
-    disabled: !canSave,
-    onclick: async () => {
-      await staging.saveAll(api);
-      renderPendingBar();
-      // Reload fresh items from server after save
-      apiGet(`/api/plans/${ctx.planId}/items`).then(res => {
-        allItems = res.items || [];
-        staging = new Staging({ baseItems: allItems, basePlan: plan });
-        renderView();
+  bar.append(
+    el('button', {
+      type: 'button', class: 'pb-btn', text: '\u21B6 Revert',
+      disabled: !canUndo,
+      onclick: () => { staging.undo(); renderSchedule(); renderPendingBar(); },
+    }),
+    el('button', {
+      type: 'button', class: 'pb-btn', text: '\u21B7 Redo',
+      disabled: !canRedo,
+      onclick: () => { staging.redo(); renderSchedule(); renderPendingBar(); },
+    }),
+    el('button', {
+      type: 'button', class: 'pb-btn pb-save',
+      text: staging.saving ? 'Saving\u2026' : 'Save',
+      disabled: !canSave,
+      onclick: async () => {
+        await staging.saveAll(api);
         renderPendingBar();
-      });
-    },
-  });
-
-  const statusClass = 'pb-status' + (failed ? ' pb-failed' : '');
-  let statusText;
-  if (staging.saving) statusText = 'Saving changes\u2026';
-  else if (failed) statusText = `Save failed: ${staging.failedError}`;
-  else if (hasPending) statusText = `${staging.pendingCount} pending \u2014 last: ${lastLabel}`;
-  else statusText = 'All changes saved';
-
-  bar.append(undoBtn, redoBtn, saveBtn, el('span', { class: statusClass, text: statusText }));
+        apiGet(`/api/plans/${ctx.planId}/items`).then(res => {
+          allItems = res.items || [];
+          staging = new Staging({ baseItems: allItems, basePlan: plan });
+          renderSchedule();
+          renderPendingBar();
+        });
+      },
+    }),
+    el('span', {
+      class: 'pb-status' + (failed ? ' pb-failed' : ''),
+      text: staging.saving ? 'Saving changes\u2026'
+        : failed ? `Save failed: ${staging.failedError}`
+        : hasPending ? `${staging.pendingCount} pending \u2014 last: ${lastLabel}`
+        : 'All changes saved',
+    }),
+  );
   bar.hidden = false;
 }
 
@@ -424,9 +457,7 @@ function renderPendingBar() {
 
 function itemTimeWindow(item) {
   const d = item.details || {};
-  let start = null;
-  let end = null;
-
+  let start = null, end = null;
   if (item.item_type === 'transit') {
     start = timeOfDay(d.depart_time);
     end = timeOfDay(d.arrive_time);
@@ -434,9 +465,9 @@ function itemTimeWindow(item) {
     start = timeOfDay(d.start_time);
     end = timeOfDay(d.end_time);
   }
-
   if (start === null) return null;
   if (end === null || end <= start) end = start + 1;
+  if (end > 24) end = 24;
   return { start, end };
 }
 
@@ -454,21 +485,17 @@ function extractTime(v) {
 
 function formatItemTime(item, tw) {
   const d = item.details || {};
-  let startStr = '';
-  let endStr = '';
-
+  let s = '', e = '';
   if (item.item_type === 'transit') {
-    startStr = extractTime(d.depart_time);
-    endStr = extractTime(d.arrive_time);
+    s = extractTime(d.depart_time);
+    e = extractTime(d.arrive_time);
   } else {
-    startStr = extractTime(d.start_time);
-    endStr = extractTime(d.end_time);
+    s = extractTime(d.start_time);
+    e = extractTime(d.end_time);
   }
-
-  if (!startStr) startStr = fmtHour(tw.start);
-  if (!endStr) endStr = fmtHour(tw.end);
-
-  return startStr + (endStr ? ` \u2013 ${endStr}` : '');
+  if (!s) s = fmtHour(tw.start);
+  if (!e) e = fmtHour(tw.end);
+  return s + (e ? ' \u2013 ' + e : '');
 }
 
 function fmtHour(h) {
@@ -477,81 +504,14 @@ function fmtHour(h) {
   return `${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}`;
 }
 
-function buildDetailLines(item) {
-  const d = item.details || {};
-  const lines = [];
-
-  if (item.item_type === 'transit') {
-    if (d.from && d.to) lines.push(`${d.from} \u2192 ${d.to}`);
-    if (d.provider) lines.push(`${d.provider}${d.ref_no ? ' ' + d.ref_no : ''}`);
-    if (d.confirmation) lines.push(`Conf: ${d.confirmation}`);
-  } else if (item.item_type === 'activity') {
-    if (d.location) lines.push(`\u{1F4CD} ${d.location}`);
-    if (d.note) lines.push(d.note);
-  } else if (item.item_type === 'restaurant') {
-    if (d.address) lines.push(`\u{1F4CD} ${d.address}`);
-    if (d.party_size) lines.push(`Party: ${d.party_size}`);
-    if (d.note) lines.push(d.note);
-  } else if (item.item_type === 'note') {
-    if (d.text) lines.push(d.text);
-  }
-
-  if (!lines.length) return null;
-  const container = el('div', { class: 'nav-item-details' });
-  for (const line of lines) {
-    container.appendChild(el('span', { text: line }));
-  }
-  return container;
-}
-
 function getTypeColor(type) {
-  const colors = {
+  return ({
     hotel: '#3b82f6',
     transit: '#8b5cf6',
     activity: '#10b981',
     restaurant: '#f59e0b',
     note: '#eab308',
-  };
-  return colors[type] || '#94a3b8';
+  })[type] || '#94a3b8';
 }
 
-function assignColumns(intervals) {
-  if (!intervals.length) return;
-  intervals.sort((a, b) => a.start - b.start || (b.end - b.end) - (a.end - a.start));
 
-  const ends = [];
-  for (const iv of intervals) {
-    let placed = false;
-    for (let col = 0; col < ends.length; col++) {
-      if (ends[col] <= iv.start) {
-        ends[col] = iv.end;
-        iv.col = col;
-        placed = true;
-        break;
-      }
-    }
-    if (!placed) {
-      ends.push(iv.end);
-      iv.col = ends.length - 1;
-    }
-  }
-
-  for (const iv of intervals) {
-    let maxCol = 0;
-    for (const other of intervals) {
-      if (other === iv) continue;
-      if (other.start < iv.end && other.end > iv.start) {
-        maxCol = Math.max(maxCol, other.col);
-      }
-    }
-    iv.totalCols = maxCol + 1;
-  }
-}
-
-function updateNowLine() {
-  const line = document.getElementById('nav-now-line');
-  if (!line) return;
-  const now = new Date();
-  const px = ((now.getHours() * 60 + now.getMinutes()) / (24 * 60)) * TOTAL_HEIGHT;
-  line.style.top = `${px}px`;
-}
