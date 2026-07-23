@@ -1,6 +1,6 @@
 import { apiGet, apiPost, apiPatch, apiDel, apiUpload } from '/static/js/api.js';
 import { el, clear, loadSettings } from '/static/js/util.js';
-import { buildDays, isoOf, addDaysIso, wirePlanHeader } from '/static/js/plan-header.js';
+import { buildDays, isoOf, addDaysIso, wirePlanHeaderDirect } from '/static/js/plan-header.js';
 import { openItemEditor } from '/static/js/item-editor.js';
 import { Staging } from '/static/js/staging.js';
 
@@ -42,14 +42,13 @@ export async function initNavigation(pageCtx) {
   members = memRes ? [memRes.owner, ...(memRes.members || [])] : [];
   days = buildDays(plan);
   staging = new Staging({ baseItems: allItems, basePlan: plan });
-  wirePlanHeader({ plan, staging, ctx, onChange: () => { renderSchedule(); renderDayBar(); } });
+  wirePlanHeaderDirect({ planId: ctx.planId, role: ctx.role });
 
   const todayStr = isoOf(new Date());
   selectedDay = days.find(d => d.date === todayStr) || days[0];
 
   renderDayBar();
   renderSchedule();
-  renderPendingBar();
   startStatusTimer();
 }
 
@@ -111,7 +110,6 @@ function renderDayBar() {
     select.value = selectedDay.date;
     todayBtn.hidden = (selectedDay.date === todayStr);
     renderSchedule();
-    renderPendingBar();
   }
 }
 
@@ -392,67 +390,15 @@ function startStatusTimer() {
 function openEditorFor(item) {
   const sessionId = 'sess-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 8);
   openItemEditor(ctx, {
-    plan,
-    item,
-    settings,
-    members,
-    staging,
-    sessionId,
-    onApplied: () => { renderSchedule(); renderPendingBar(); },
+    plan, item, settings, members, staging, sessionId,
+    onApplied: async () => {
+      await staging.saveAll(api);
+      const res = await apiGet(`/api/plans/${ctx.planId}/items`);
+      allItems = res.items || [];
+      staging = new Staging({ baseItems: allItems, basePlan: plan });
+      renderSchedule();
+    },
   });
-}
-
-/* ---------------------------------------------------------------- pending bar */
-
-function renderPendingBar() {
-  const bar = document.getElementById('pending-bar');
-  if (!bar) return;
-  clear(bar);
-  if (ctx.role === 'viewer') { bar.hidden = true; return; }
-
-  const hasPending = staging.hasPending;
-  const canUndo = staging.canUndo;
-  const canRedo = staging.canRedo;
-  const canSave = hasPending && !staging.saving;
-  const failed = staging.failedOpIndex >= 0;
-  const lastLabel = hasPending ? staging.ops[staging.pointer - 1].label : '';
-
-  bar.append(
-    el('button', {
-      type: 'button', class: 'pb-btn', text: '\u21B6 Revert',
-      disabled: !canUndo,
-      onclick: () => { staging.undo(); renderSchedule(); renderPendingBar(); },
-    }),
-    el('button', {
-      type: 'button', class: 'pb-btn', text: '\u21B7 Redo',
-      disabled: !canRedo,
-      onclick: () => { staging.redo(); renderSchedule(); renderPendingBar(); },
-    }),
-    el('button', {
-      type: 'button', class: 'pb-btn pb-save',
-      text: staging.saving ? 'Saving\u2026' : 'Save',
-      disabled: !canSave,
-      onclick: async () => {
-        await staging.saveAll(api);
-        renderPendingBar();
-        apiGet(`/api/plans/${ctx.planId}/items`).then(res => {
-          allItems = res.items || [];
-          staging = new Staging({ baseItems: allItems, basePlan: plan });
-          wirePlanHeader({ plan, staging, ctx, onChange: () => { renderSchedule(); renderDayBar(); } });
-          renderSchedule();
-          renderPendingBar();
-        });
-      },
-    }),
-    el('span', {
-      class: 'pb-status' + (failed ? ' pb-failed' : ''),
-      text: staging.saving ? 'Saving changes\u2026'
-        : failed ? `Save failed: ${staging.failedError}`
-        : hasPending ? `${staging.pendingCount} pending \u2014 last: ${lastLabel}`
-        : 'All changes saved',
-    }),
-  );
-  bar.hidden = false;
 }
 
 /* ---------------------------------------------------------------- helpers */
@@ -515,5 +461,3 @@ function getTypeColor(type) {
     note: '#eab308',
   })[type] || '#94a3b8';
 }
-
-

@@ -1,7 +1,4 @@
 /* ---- navigation page layout ---- */
-body[data-page="navigation"] #view {
-  padding: 0 24px 40px;
-}
 
 #nav-page {
   max-width: 780px;
@@ -374,3 +371,4 @@ body[data-page="navigation"] #view {
 }
 .pb-failed { color: #b91c1c; }
 .pb-failed::before { background: #dc2626; }
+
