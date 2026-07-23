@@ -1,8 +1,7 @@
 /* ---- navigation page layout ---- */
 
 #nav-page {
-  max-width: 780px;
-  margin: 0 auto;
+  padding: 0 24px;
 }
 
 /* ---- day selector bar ---- */
