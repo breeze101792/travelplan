@@ -274,10 +274,33 @@ export function openItemEditor(ctx, { plan, item, settings, members, staging, se
     fileLabel.appendChild(fileInput);
     colSide.appendChild(fileLabel);
 
-    // compact expense form (right col, below attachments)
-    colSide.appendChild(el('h4', { class: 'section-title', text: 'Add expense for this item' }));
-    const expenseSection = renderExpenseForm();
-    colSide.appendChild(expenseSection);
+    // expense button (right col, below attachments) — opens a modal
+    colSide.appendChild(el('h4', { class: 'section-title', text: 'Expenses' }));
+    const openExpenseBtn = document.createElement('button');
+    openExpenseBtn.type = 'button'; openExpenseBtn.className = 'btn';
+    openExpenseBtn.textContent = 'Add expense';
+    openExpenseBtn.addEventListener('click', () => {
+      openExpenseModal({ plan, members, settings, item, pendingExpenses, onRefresh: refreshQueuedList });
+    });
+    colSide.appendChild(openExpenseBtn);
+    const statusMsg = el('p', { class: 'muted' });
+    colSide.appendChild(statusMsg);
+    const queuedList = el('ul', { class: 'queued-list' });
+    colSide.appendChild(queuedList);
+
+    function refreshQueuedList() {
+      clear(queuedList);
+      pendingExpenses.forEach((e, idx) => {
+        const li = el('li', { class: 'queued-row' }, [
+          el('span', { text: `${e.currency} ${(e.amountCents / 100).toFixed(2)} for ${e.description}` }),
+          el('button', {
+            type: 'button', class: 'btn btn-ghost att-del', text: 'Remove',
+            onclick: () => { pendingExpenses.splice(idx, 1); refreshQueuedList(); },
+          }),
+        ]);
+        queuedList.appendChild(li);
+      });
+    }
   }
 
   // footer
@@ -473,74 +496,134 @@ export function openItemEditor(ctx, { plan, item, settings, members, staging, se
   // Cancel). Multiple expenses can be queued; each is bundled into the
   // SAVE_ITEM op as a separate sub-effect.
   let pendingExpenses = [];
+}
 
-  function renderExpenseForm() {
-    const wrap = el('div', { class: 'expense-mini' });
-    const descInput = document.createElement('input');
-    descInput.type = 'text'; descInput.className = 'input';
-    descInput.value = item.title || ''; descInput.placeholder = 'Description';
+/* Open a modal for adding an expense. Queues the expense into the
+ * item editor's pendingExpenses list (bundled into SAVE_ITEM on Apply). */
+function openExpenseModal({ plan, members, settings, item, pendingExpenses, onRefresh }) {
+  const backdrop = el('div', { class: 'modal-backdrop editor-backdrop' });
+  const modal = el('div', { class: 'modal expense-modal' });
+  backdrop.appendChild(modal);
 
-    const amtInput = document.createElement('input');
-    amtInput.type = 'number'; amtInput.step = '0.01'; amtInput.min = '0';
-    amtInput.className = 'input'; amtInput.placeholder = 'Amount';
+  modal.appendChild(el('div', { class: 'modal-header' }, [
+    el('h3', { text: 'New expense' }),
+    el('button', { type: 'button', class: 'modal-close', text: '\u00d7',
+      onclick: () => backdrop.remove() }),
+  ]));
 
-    const curSel = document.createElement('select');
-    for (const c of settings.base_currencies) {
-      const o = document.createElement('option');
-      o.value = c; o.textContent = c;
-      if (c === plan.base_currency) o.selected = true;
-      curSel.appendChild(o);
-    }
+  const body = el('div', { class: 'modal-body' });
+  modal.appendChild(body);
 
-    const payerSel = document.createElement('select');
-    for (const m of members) {
-      const o = document.createElement('option');
-      o.value = m.id; o.textContent = m.display_name || m.username;
-      payerSel.appendChild(o);
-    }
+  const descInput = document.createElement('input');
+  descInput.type = 'text'; descInput.className = 'input';
+  descInput.value = item.title || ''; descInput.placeholder = 'e.g. Dinner, taxi';
 
-    const addBtn = document.createElement('button');
-    addBtn.type = 'button'; addBtn.className = 'btn'; addBtn.textContent = 'Add expense';
-    const statusMsg = el('p', { class: 'muted' });
-    const queuedList = el('ul', { class: 'queued-list' });
+  const qtyInput = document.createElement('input');
+  qtyInput.type = 'number'; qtyInput.step = '1'; qtyInput.min = '1';
+  qtyInput.className = 'input'; qtyInput.value = '1'; qtyInput.placeholder = '1';
 
-    function refreshList() {
-      clear(queuedList);
-      pendingExpenses.forEach((e, idx) => {
-        const li = el('li', { class: 'queued-row' }, [
-          el('span', { text: `${e.currency} ${(e.amountCents / 100).toFixed(2)} for ${e.description}` }),
-          el('button', {
-            type: 'button', class: 'btn btn-ghost att-del', text: 'Remove',
-            onclick: () => { pendingExpenses.splice(idx, 1); refreshList(); },
-          }),
-        ]);
-        queuedList.appendChild(li);
-      });
-    }
+  const amtInput = document.createElement('input');
+  amtInput.type = 'number'; amtInput.step = '0.01'; amtInput.min = '0';
+  amtInput.className = 'input'; amtInput.placeholder = '0.00';
 
-    addBtn.addEventListener('click', () => {
-      const amt = amtInput.value.trim();
-      if (!amt) { statusMsg.textContent = 'Enter an amount.'; return; }
-      const cents = Math.round(parseFloat(amt) * 100);
-      if (!isFinite(cents) || cents <= 0) { statusMsg.textContent = 'Enter a positive amount.'; return; }
-      pendingExpenses.push({
-        description: descInput.value.trim() || item.title || '',
-        currency: curSel.value,
-        amountCents: cents,
-        payerId: Number(payerSel.value),
-        participantIds: members.map((m) => m.id),
-      });
-      statusMsg.textContent = 'Expense queued.';
-      amtInput.value = '';
-      refreshList();
-    });
-
-    wrap.appendChild(el('div', { class: 'row' }, [descInput]));
-    wrap.appendChild(el('div', { class: 'row' }, [amtInput, curSel, payerSel, addBtn]));
-    wrap.appendChild(statusMsg);
-    wrap.appendChild(queuedList);
-    return wrap;
+  const curSel = document.createElement('select');
+  curSel.className = 'input';
+  for (const c of settings.base_currencies) {
+    const o = document.createElement('option');
+    o.value = c; o.textContent = c;
+    if (c === plan.base_currency) o.selected = true;
+    curSel.appendChild(o);
   }
+
+  const payerSel = document.createElement('select');
+  payerSel.className = 'input';
+  for (const m of members) {
+    const o = document.createElement('option');
+    o.value = m.id; o.textContent = m.display_name || m.username;
+    payerSel.appendChild(o);
+  }
+
+  const msg = el('p', { class: 'muted' });
+
+  const addBtn = document.createElement('button');
+  addBtn.type = 'button'; addBtn.className = 'btn btn-primary';
+  addBtn.textContent = 'Add expense';
+
+  addBtn.addEventListener('click', () => {
+    const amt = amtInput.value.trim();
+    if (!amt) { msg.textContent = 'Enter an amount.'; return; }
+    const cents = Math.round(parseFloat(amt) * 100);
+    if (!isFinite(cents) || cents <= 0) { msg.textContent = 'Enter a positive amount.'; return; }
+    const qty = parseInt(qtyInput.value, 10) || 1;
+    const selectedParticipants = members.filter(m => {
+      const cb = body.querySelector(`.part-cb-${m.id}`);
+      return cb && cb.checked;
+    });
+    if (!selectedParticipants.length) { msg.textContent = 'Select at least one participant.'; return; }
+    pendingExpenses.push({
+      description: descInput.value.trim() || item.title || '',
+      currency: curSel.value,
+      amountCents: cents,
+      qty,
+      payerId: Number(payerSel.value),
+      participantIds: selectedParticipants.map(m => m.id),
+    });
+    backdrop.remove();
+    if (onRefresh) onRefresh();
+  });
+
+  // Description
+  body.appendChild(el('label', { class: 'field', text: 'Description' }));
+  body.appendChild(descInput);
+
+  // Quantity + Amount on one row
+  const row1 = el('div', { class: 'field-row' });
+  row1.appendChild(el('div', { class: 'field-group' }, [
+    el('label', { class: 'field', text: 'Qty' }),
+    qtyInput,
+  ]));
+  row1.appendChild(el('div', { class: 'field-group' }, [
+    el('label', { class: 'field', text: 'Amount' }),
+    amtInput,
+  ]));
+  body.appendChild(row1);
+
+  // Currency
+  body.appendChild(el('label', { class: 'field', text: 'Currency' }));
+  body.appendChild(curSel);
+
+  // Paid by
+  body.appendChild(el('label', { class: 'field', text: 'Paid by' }));
+  body.appendChild(payerSel);
+
+  // Split between
+  body.appendChild(el('label', { class: 'field', text: 'Split between' }));
+  const partWrap = el('div', { class: 'participant-grid' });
+  for (const m of members) {
+    const id = `part-${m.id}`;
+    const cb = document.createElement('input');
+    cb.type = 'checkbox'; cb.id = id;
+    cb.className = `part-cb-${m.id}`;
+    cb.checked = true;
+    const label = document.createElement('label');
+    label.className = 'check-row';
+    label.htmlFor = id;
+    label.appendChild(cb);
+    label.appendChild(document.createTextNode(m.display_name || m.username));
+    partWrap.appendChild(label);
+  }
+  body.appendChild(partWrap);
+
+  body.appendChild(msg);
+
+  const footer = el('div', { class: 'modal-footer' });
+  footer.appendChild(el('button', { type: 'button', class: 'btn btn-ghost',
+    text: 'Cancel', onclick: () => backdrop.remove() }));
+  footer.appendChild(addBtn);
+  modal.appendChild(footer);
+
+  document.body.appendChild(backdrop);
+  backdrop.addEventListener('click', (e) => { if (e.target === backdrop) backdrop.remove(); });
 }
 
 /* Open a popup modal for searching a location via Photon geocoding API.
