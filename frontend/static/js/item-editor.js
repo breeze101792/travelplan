@@ -1022,7 +1022,7 @@ function loadLeaflet(callback) {
 /* Open a popup with a Leaflet map showing a pin at the given coordinates.
    Marker is draggable. Footer has map links + an update button to save
    the new marker position back to the geocode. */
-function openGeoMapPopup(geocode, onUpdate) {
+export function openGeoMapPopup(geocode, onUpdate) {
   const backdrop = el('div', { class: 'modal-backdrop editor-backdrop' });
   const modal = el('div', { class: 'geo-map-popup' });
   backdrop.appendChild(modal);

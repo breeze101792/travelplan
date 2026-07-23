@@ -1,9 +1,9 @@
 import { apiGet, apiPost, apiPatch, apiDel, apiUpload } from '/static/js/api.js';
 const api = { get: apiGet, post: apiPost, patch: apiPatch, del: apiDel, upload: apiUpload };
 import { buildDays, wirePlanHeader } from '/static/js/plan-header.js';
-import { Staging, moveItemOp, deleteItemOp } from '/static/js/staging.js';
+import { Staging, moveItemOp, deleteItemOp, saveItemOp } from '/static/js/staging.js';
 import { el, clear } from '/static/js/util.js';
-import { openItemEditor } from '/static/js/item-editor.js';
+import { openItemEditor, openGeoMapPopup } from '/static/js/item-editor.js';
 import { clipboardGet, clipboardSet, serializeItem } from '/static/js/clipboard.js';
 
 const DAY_COLORS = [
@@ -121,6 +121,15 @@ function showContextMenu(x, y, item, dayIdx) {
       reloadAll();
     }},
     { sep: true },
+    { label: 'Center on map', enabled: (item.geocodes || []).length > 0, action: () => {
+      closeContextMenu();
+      const geoPoints = (item.geocodes || []).filter(g => g.lat != null && g.lng != null).map(g => [g.lat, g.lng]);
+      if (geoPoints.length === 1) {
+        map.setView(geoPoints[0], 15, { animate: true });
+      } else if (geoPoints.length > 1) {
+        map.fitBounds(geoPoints, { padding: [50, 50], animate: true, maxZoom: 15 });
+      }
+    }},
     { label: 'Open detail', enabled: true, action: () => {
       closeContextMenu();
       openItemEditor(ctx, {
@@ -320,6 +329,7 @@ function renderList() {
             selectedItemId = it.id;
             row.classList.add('selected');
             highlightItemMarkers(it.id);
+            showItemGeocodes(it.id);
           });
           row.addEventListener('dblclick', () => {
             openItemEditor(ctx, {
@@ -335,6 +345,7 @@ function renderList() {
             container.querySelectorAll('.day-item.selected').forEach(el => el.classList.remove('selected'));
             row.classList.add('selected');
             highlightItemMarkers(it.id);
+            showItemGeocodes(it.id);
             showContextMenu(e.clientX, e.clientY, it, i);
           });
           wireItemDrag(row, it.id);
@@ -347,6 +358,132 @@ function renderList() {
 
 function dayItemsFor(dayIndex) {
   return allItems.filter(it => it.item_date === days[dayIndex].date && it.item_type !== 'hotel');
+}
+
+function showItemGeocodes(itemId) {
+  const container = document.getElementById('day-list');
+  container.querySelectorAll('.di-geocodes').forEach(el => el.remove());
+  const selectedRow = container.querySelector('.day-item.selected');
+  if (!selectedRow) return;
+  const it = allItems.find(item => item.id === itemId);
+  if (!it) return;
+  const geocodes = it.geocodes || [];
+  if (!geocodes.length) return;
+  const geoEl = el('div', { class: 'di-geocodes' });
+  let selectedGeoIdx = -1;
+
+  function renderGeoRows() {
+    clear(geoEl);
+    for (let i = 0; i < geocodes.length; i++) {
+      const g = geocodes[i];
+      const row = el('div', {
+        class: 'di-geo-row' + (i === selectedGeoIdx ? ' di-geo-selected' : ''),
+        draggable: true,
+      });
+      row.dataset.geoIdx = i;
+
+      row.appendChild(el('span', { class: 'di-geo-handle', text: '\u2261' }));
+      row.appendChild(el('span', { class: 'di-geo-pin', text: '\uD83D\uDCCD' }));
+      row.appendChild(el('span', { class: 'di-geo-label', text: g.label }));
+      row.appendChild(el('span', {
+        class: 'di-geo-coords',
+        text: `${g.lat.toFixed(4)}, ${g.lng.toFixed(4)}`,
+      }));
+
+      const delBtn = el('button', { type: 'button', class: 'di-geo-del', html: '\u2715', title: 'Remove location' });
+      delBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        geocodes.splice(i, 1);
+        selectedGeoIdx = -1;
+        updateItemGeocodes(itemId, geocodes);
+      });
+      row.appendChild(delBtn);
+
+      row.addEventListener('click', () => {
+        geoEl.querySelectorAll('.di-geo-row.di-geo-selected').forEach(el => el.classList.remove('di-geo-selected'));
+        if (selectedGeoIdx === i) {
+          selectedGeoIdx = -1;
+        } else {
+          selectedGeoIdx = i;
+          row.classList.add('di-geo-selected');
+        }
+      });
+
+      row.addEventListener('dblclick', (e) => {
+        if (e.target.closest('.di-geo-del')) return;
+        openGeoMapPopup(g, (lat, lng) => {
+          g.lat = lat;
+          g.lng = lng;
+          updateItemGeocodes(itemId, geocodes);
+        });
+      });
+
+      row.addEventListener('dragstart', (e) => {
+        e.dataTransfer.setData('text/plain', String(i));
+        row.classList.add('dragging');
+      });
+      row.addEventListener('dragend', () => {
+        row.classList.remove('dragging');
+        geoEl.querySelectorAll('.drag-over').forEach(el => el.classList.remove('drag-over'));
+      });
+      row.addEventListener('dragover', (e) => { e.preventDefault(); row.classList.add('drag-over'); });
+      row.addEventListener('dragleave', () => row.classList.remove('drag-over'));
+      row.addEventListener('drop', (e) => {
+        e.preventDefault();
+        row.classList.remove('drag-over');
+        const fromIdx = parseInt(e.dataTransfer.getData('text/plain'), 10);
+        if (isNaN(fromIdx) || fromIdx === i) return;
+        const [moved] = geocodes.splice(fromIdx, 1);
+        geocodes.splice(i, 0, moved);
+        updateItemGeocodes(itemId, geocodes);
+      });
+
+      geoEl.appendChild(row);
+    }
+  }
+
+  renderGeoRows();
+  selectedRow.after(geoEl);
+}
+
+function updateItemGeocodes(itemId, geocodes) {
+  const item = allItems.find(it => it.id === itemId);
+  if (!item) return;
+  item.geocodes = geocodes;
+  staging.add(saveItemOp({
+    planId: plan.id,
+    item: {
+      id: item.id,
+      item_type: item.item_type,
+      title: item.title,
+      item_date: item.item_date,
+      end_date: item.end_date,
+      status: item.status,
+      details: item.details,
+      geocodes,
+    },
+    isNew: false,
+    sideEffects: [],
+  }));
+  dayCoords = {};
+  for (let i = 0; i < days.length; i++) {
+    const batch = [];
+    for (const it of dayItemsFor(i)) {
+      for (const g of (it.geocodes || [])) {
+        batch.push({ lat: g.lat, lng: g.lng, label: g.label, item: it });
+      }
+    }
+    dayCoords[i] = batch;
+  }
+  for (const idx in dayLayers) removeDay(Number(idx));
+  dayLayers = {};
+  if (expIndex !== null) {
+    const coords = dayCoords[expIndex] || [];
+    if (coords.length) drawDay(expIndex, coords, pickColor(expIndex));
+  }
+  renderList();
+  if (selectedItemId) showItemGeocodes(selectedItemId);
+  renderPendingBar();
 }
 
 function toggleDay(index) {
