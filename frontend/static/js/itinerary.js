@@ -290,8 +290,12 @@ export async function initItinerary(ctx) {
 
     card.addEventListener('click', (e) => {
       if (e.button != null && e.button !== 0) return;
-      if (e.detail > 1) return; // part of double-click (dblclick event handles it)
+      if (e.detail > 1) return;
       handleCardClick(item, e);
+    });
+    card.addEventListener('dblclick', (e) => {
+      if (e.button != null && e.button !== 0) return;
+      if (ctx.role !== 'viewer' && isSelectable(item)) openEditorFor(item);
     });
     card.addEventListener('contextmenu', (e) => {
       if (ctx.role === 'viewer') return;
@@ -529,9 +533,8 @@ export async function initItinerary(ctx) {
       }
       return;
     }
-    // Plain click: select only this item and open the editor.
+    // Plain click: select only this item.
     if (isSelectable(item)) selectOnly(item.id);
-    if (ctx.role !== 'viewer') openEditorFor(item);
   }
 
   /* Items in the current selection as objects (from the staged view).

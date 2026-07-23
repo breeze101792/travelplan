@@ -1386,9 +1386,13 @@ function wireBarClick({ bar, ctx, getViewItems, onPlainClick, onToggleSelect, on
       if (onRangeSelect) onRangeSelect(itemId);
       return;
     }
-    // Plain click: select + open editor.
+    // Plain click: select only.
     e.stopPropagation();
     if (!isHotel && onPlainClick) onPlainClick(itemId);
+  });
+
+  bar.addEventListener('dblclick', (e) => {
+    if (e.button != null && e.button !== 0) return;
     const it = findItem();
     if (it && onDblClick) onDblClick(it);
   });

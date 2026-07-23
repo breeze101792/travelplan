@@ -25,6 +25,7 @@ const TYPE_LABELS = {
 let ctx, plan, settings, allItems, members, days, staging;
 let selectedDay;
 let statusTimer;
+let selectedItemId = null;
 
 export async function initNavigation(pageCtx) {
   ctx = pageCtx;
@@ -248,7 +249,7 @@ function renderHotelBanners(hotels, dateStr) {
 /* ---------------------------------------------------------------- card */
 
 function renderCard(item, status) {
-  const card = el('div', { class: `nav-card${status ? ' ' + status : ''}` });
+  const card = el('div', { class: `nav-card${status ? ' ' + status : ''}`, dataset: { itemId: item.id } });
 
   card.appendChild(el('div', { class: 'nav-card-indicator', style: `background:${getTypeColor(item.item_type)}` }));
 
@@ -328,7 +329,16 @@ function renderCard(item, status) {
   body.appendChild(actions);
   card.appendChild(body);
 
-  card.addEventListener('click', () => openEditorFor(item));
+  card.addEventListener('click', (e) => {
+    if (e.detail > 1) return;
+    if (item.item_type === 'hotel') return;
+    e.stopPropagation();
+    selectItem(item.id);
+  });
+  card.addEventListener('dblclick', () => {
+    if (item.item_type === 'hotel') return;
+    openEditorFor(item);
+  });
 
   return card;
 }
@@ -386,6 +396,20 @@ function startStatusTimer() {
 }
 
 /* ---------------------------------------------------------------- editor */
+
+function selectItem(id) {
+  selectedItemId = id;
+  document.querySelectorAll('.nav-card.selected').forEach(el => el.classList.remove('selected'));
+  const card = document.querySelector(`.nav-card[data-item-id="${id}"]`);
+  if (card) card.classList.add('selected');
+}
+
+document.addEventListener('click', (e) => {
+  if (!e.target.closest('.nav-card') && !e.target.closest('.nav-hotel-banner')) {
+    selectedItemId = null;
+    document.querySelectorAll('.nav-card.selected').forEach(el => el.classList.remove('selected'));
+  }
+});
 
 function openEditorFor(item) {
   const sessionId = 'sess-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 8);
