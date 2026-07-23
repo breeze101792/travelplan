@@ -22,7 +22,7 @@
   align-items: stretch;
   gap: var(--tl-gutter);
   overflow-x: auto;
-  padding: 12px 4px 28px;
+  padding: 12px 24px 28px;
   position: relative;
 }
 
@@ -277,7 +277,7 @@
 @media (max-width: 720px) {
   :root { --tl-day-min: 200px; }
   .timeline { scroll-snap-type: x mandatory; }
-  .timeline .day { scroll-snap-align: start; scroll-snap-stop: always; flex: 0 0 calc(100vw - 80px); }
+  .timeline .day { scroll-snap-align: start; scroll-snap-stop: always; flex: 0 0 calc(100vw - 92px); }
   .timeline .hour-col { flex-basis: 36px; }
 }
 

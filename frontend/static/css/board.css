@@ -10,7 +10,7 @@
   gap: 12px;
   align-items: flex-start;
   overflow-x: auto;
-  padding: 18px 4px 40px;
+  padding: 18px 24px 40px;
   min-height: 200px;
 }
 .day {
@@ -116,7 +116,7 @@
 /* ---------- responsive ---------- */
 @media (max-width: 640px) {
   .board { scroll-snap-type: x mandatory; }
-  .day { scroll-snap-align: start; scroll-snap-stop: always; flex: 0 0 calc(100vw - 32px); }
+  .day { scroll-snap-align: start; scroll-snap-stop: always; flex: 0 0 calc(100vw - 48px); }
 }
 
 /* ---------- pending-changes bar (Add / Revert / Redo / Save) ---------- */
