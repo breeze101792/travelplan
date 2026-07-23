@@ -22,10 +22,9 @@ import { wirePlanHeaderDirect } from '/static/js/plan-header.js';
 const ctx = window.__CONTEXT__;
 const root = document.getElementById('members-root');
 const isOwner = ctx.role === 'owner';
+const isAdmin = {{ 'true' if current_user.role == 'admin' else 'false' }};
+const canManage = isOwner || isAdmin;
 
-// Same inline title/dates editing as the board + timeline, but saved
-// immediately (this page has no pending bar). Share is owner-only, so
-// the title is editable here too.
 wirePlanHeaderDirect(ctx);
 
 async function loadMembers() {
@@ -42,7 +41,7 @@ async function loadMembers() {
 function render(owner, members, accounts) {
   clear(root);
 
-  if (!isOwner) {
+  if (!canManage) {
     root.append(el('div', { class: 'notice' },
       'You are a ' + ctx.role + ' of this plan. Only the owner can manage sharing.'));
   }
@@ -57,18 +56,47 @@ function render(owner, members, accounts) {
   ])]);
   const tbody = el('tbody');
 
-  // Owner row (read-only)
-  tbody.append(el('tr', {}, [
-    el('td', { text: owner.display_name + ' (' + owner.username + ')' }),
-    el('td', {}, [el('span', { class: 'badge', text: 'owner' })]),
-    el('td', { class: 'muted', text: '—' })
-  ]));
+  // Owner row — shows Transfer button for owner/admins
+  const ownerTd = el('td', { text: owner.display_name + ' (' + owner.username + ')' });
+  const ownerRoleTd = el('td', {}, [el('span', { class: 'badge', text: 'owner' })]);
+  const ownerActionsTd = el('td', { class: 'muted' });
+
+  if (canManage) {
+    // Owner or admin: show transfer button -> opens inline dropdown picker
+    const showTransferForm = () => {
+      clear(ownerActionsTd);
+      const sel = el('select', { style: 'margin-right:4px;' });
+      for (const m of members) {
+        sel.append(el('option', { value: m.id, text: m.display_name + ' (' + m.username + ')' }));
+      }
+      const okBtn = el('button', { class: 'btn btn-sm', type: 'button', text: 'Transfer' });
+      okBtn.addEventListener('click', async () => {
+        const targetUser = members.find(m => m.id === Number(sel.value));
+        if (!targetUser) return;
+        if (!confirm('Transfer ownership of this plan to ' + targetUser.display_name + '?')) return;
+        try {
+          await apiPost(`/api/plans/${ctx.planId}/transfer`, { user_id: targetUser.id });
+          loadMembers();
+        } catch (e) { alert(e.message); loadMembers(); }
+      });
+      const cancelBtn = el('button', { class: 'btn btn-sm', type: 'button', text: 'Cancel' });
+      cancelBtn.addEventListener('click', () => loadMembers());
+      ownerActionsTd.append(sel, okBtn, cancelBtn);
+    };
+    const transferBtn = el('button', { class: 'btn btn-sm', type: 'button', text: 'Transfer ownership…' });
+    transferBtn.addEventListener('click', showTransferForm);
+    ownerActionsTd.appendChild(transferBtn);
+  } else {
+    ownerActionsTd.textContent = '—';
+  }
+
+  tbody.append(el('tr', {}, [ownerTd, ownerRoleTd, ownerActionsTd]));
 
   for (const m of members) {
     const tr = el('tr');
     tr.append(el('td', { text: m.display_name + ' (' + m.username + ')' }));
 
-    if (isOwner) {
+    if (canManage) {
       const sel = el('select', { name: 'role' });
       for (const r of ['editor', 'viewer']) {
         const opt = el('option', { value: r, text: r });
@@ -106,8 +134,8 @@ function render(owner, members, accounts) {
   listCard.append(table);
   root.append(listCard);
 
-  // Add member form (owner only)
-  if (isOwner) {
+  // Add member form (owner or admin)
+  if (canManage) {
     const sharedIds = new Set([owner.id, ...members.map(m => m.id)]);
     const available = accounts.filter(a => !sharedIds.has(a.id));
     const addCard = el('section', { class: 'card', style: 'margin-top:14px;' });

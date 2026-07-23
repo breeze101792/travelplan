@@ -197,6 +197,15 @@ def check_plan_access(plan_id, *, write: bool = False) -> dict:
         abort(404)
     plan = dict(plan)
     uid = session["user_id"]
+    cu = current_user()
+    # Admin can read any plan but cannot write unless they're the owner
+    if cu and cu["role"] == "admin" and plan["owner_id"] != uid:
+        if write:
+            abort(403)
+        g.plan_role = "viewer"
+        g.plan = plan
+        g.current_user = cu
+        return plan
     if plan["owner_id"] == uid:
         role = "owner"
     else:
@@ -211,7 +220,7 @@ def check_plan_access(plan_id, *, write: bool = False) -> dict:
         abort(403)
     g.plan = plan
     g.plan_role = role
-    g.current_user = current_user()
+    g.current_user = cu
     return plan
 
 

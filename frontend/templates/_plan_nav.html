@@ -9,7 +9,7 @@
   <a class="pn-link{% if active == 'map' %} active{% endif %}" href="/plans/{{ pid }}/map"{% if active == 'map' %} aria-current="page"{% endif %}>Map</a>
   <a class="pn-link{% if active == 'navigation' %} active{% endif %}" href="/plans/{{ pid }}/navigation"{% if active == 'navigation' %} aria-current="page"{% endif %}>Navigate</a>
   <a class="pn-link{% if active == 'expenses' %} active{% endif %}" href="/plans/{{ pid }}/expenses"{% if active == 'expenses' %} aria-current="page"{% endif %}>Expenses</a>
-  {%- if plan_role == 'owner' %}
+  {%- if plan_role == 'owner' or (current_user and current_user.role == 'admin') %}
   <a class="pn-link{% if active == 'members' %} active{% endif %}" href="/plans/{{ pid }}/members"{% if active == 'members' %} aria-current="page"{% endif %}>Members</a>
   {%- endif %}
   <a class="pn-link pn-link--muted" href="/">All plans</a>

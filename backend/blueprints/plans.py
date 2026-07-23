@@ -94,12 +94,17 @@ def _row_to_plan(r):
 @login_required
 def api_list_plans():
     uid = g.current_user["id"]
+    role = g.current_user["role"]
     db = get_db()
     status_filter = request.args.get("status")
-    where = "WHERE (p.owner_id = ? OR pm.user_id = ?)"
-    args = [uid, uid, uid, uid]
+    if role == "admin":
+        where = ""
+        args = [uid, uid]
+    else:
+        where = "WHERE (p.owner_id = ? OR pm.user_id = ?)"
+        args = [uid, uid, uid, uid]
     if status_filter in ("planning", "ongoing", "archived"):
-        where += " AND p.status = ?"
+        where += " AND p.status = ?" if where else "WHERE p.status = ?"
         args.append(status_filter)
     rows = db.execute(
         f"""SELECT p.*, (p.owner_id = ?) AS is_owner,
@@ -122,7 +127,12 @@ def api_list_plans():
     plans = []
     for r in rows:
         p = dict(r)
-        p["role"] = "owner" if p["is_owner"] else p["share_role"]
+        if p["is_owner"]:
+            p["role"] = "owner"
+        elif p["share_role"]:
+            p["role"] = p["share_role"]
+        else:
+            p["role"] = "viewer"  # admin reading a plan they don't own
         p["buffer_days"] = buf_map.get(p["id"], [])
         plans.append(p)
     return jsonify({"plans": plans})
@@ -249,6 +259,12 @@ def api_delete_plan(plan_id):
 
 # ------------------------------------------------------------------ sharing
 
+def _can_manage_members():
+    """Return True if the current user can manage this plan's members
+    (owner or admin)."""
+    return g.plan_role == "owner" or (g.current_user and g.current_user["role"] == "admin")
+
+
 @plans_bp.route("/api/plans/<int:plan_id>/members")
 @plan_access()
 def api_list_members(plan_id):
@@ -257,10 +273,13 @@ def api_list_members(plan_id):
         "SELECT id, username, display_name FROM users WHERE id = ?",
         (g.plan["owner_id"],)).fetchone())
     owner["role"] = "owner"
+    # Exclude admin users from the shared member list — admins are never
+    # plan participants (they see every plan via a separate privilege).
     shared = [dict(r) for r in db.execute(
         """SELECT u.id, u.username, u.display_name, pm.role
            FROM plan_members pm JOIN users u ON u.id = pm.user_id
-           WHERE pm.plan_id = ? ORDER BY u.username""",
+           WHERE pm.plan_id = ? AND u.role = 'member'
+           ORDER BY u.username""",
         (plan_id,)).fetchall()]
     return jsonify({"owner": owner, "members": shared})
 
@@ -268,7 +287,7 @@ def api_list_members(plan_id):
 @plans_bp.route("/api/plans/<int:plan_id>/members", methods=["POST"])
 @plan_access()
 def api_add_member(plan_id):
-    if g.plan_role != "owner":
+    if not _can_manage_members():
         abort(403)
     data = request.get_json(force=True, silent=True) or {}
     user_id = data.get("user_id")
@@ -291,7 +310,7 @@ def api_add_member(plan_id):
 @plans_bp.route("/api/plans/<int:plan_id>/members/<int:user_id>", methods=["PATCH"])
 @plan_access()
 def api_update_member_role(plan_id, user_id):
-    if g.plan_role != "owner":
+    if not _can_manage_members():
         abort(403)
     data = request.get_json(force=True, silent=True) or {}
     role = data.get("role")
@@ -307,10 +326,42 @@ def api_update_member_role(plan_id, user_id):
 @plans_bp.route("/api/plans/<int:plan_id>/members/<int:user_id>", methods=["DELETE"])
 @plan_access()
 def api_remove_member(plan_id, user_id):
-    if g.plan_role != "owner":
+    if not _can_manage_members():
         abort(403)
     db = get_db()
     db.execute("DELETE FROM plan_members WHERE plan_id = ? AND user_id = ?", (plan_id, user_id))
+    db.commit()
+    return jsonify({"ok": True})
+
+
+@plans_bp.route("/api/plans/<int:plan_id>/transfer", methods=["POST"])
+@plan_access()
+def api_transfer_ownership(plan_id):
+    if g.plan_role != "owner" and (not g.current_user or g.current_user["role"] != "admin"):
+        abort(403)
+    data = request.get_json(force=True, silent=True) or {}
+    new_owner_id = data.get("user_id")
+    if not new_owner_id:
+        return err("user_id required", 400)
+    if new_owner_id == g.plan["owner_id"]:
+        return err("user is already the owner", 400)
+    db = get_db()
+    target = db.execute("SELECT id FROM users WHERE id = ?", (new_owner_id,)).fetchone()
+    if not target:
+        return err("user not found", 404)
+    member = db.execute(
+        "SELECT 1 FROM plan_members WHERE plan_id = ? AND user_id = ?",
+        (plan_id, new_owner_id),
+    ).fetchone()
+    if not member:
+        return err("user is not a member of this plan", 400)
+    old_owner_id = g.plan["owner_id"]
+    db.execute("UPDATE plans SET owner_id = ? WHERE id = ?", (new_owner_id, plan_id))
+    db.execute(
+        "INSERT OR IGNORE INTO plan_members (plan_id, user_id, role) VALUES (?, ?, 'editor')",
+        (plan_id, old_owner_id),
+    )
+    db.execute("DELETE FROM plan_members WHERE plan_id = ? AND user_id = ?", (plan_id, new_owner_id))
     db.commit()
     return jsonify({"ok": True})
 
