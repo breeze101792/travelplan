@@ -582,6 +582,29 @@ export function addLinkOp({ itemId, url, caption, sessionId }) {
   };
 }
 
+export function updateAttachmentOp({ itemId, attachmentId, value, caption, sessionId }) {
+  return {
+    id: null, kind: 'UPDATE_ATTACHMENT', label: 'Edit link', sessionId,
+    apply(items) {
+      const it = items.find(x => String(x.id) === String(itemId));
+      if (!it) return items;
+      const next = (it.attachments || []).map(a =>
+        String(a.id) === String(attachmentId)
+          ? Object.assign({}, a, { value: value || a.value, caption: caption !== undefined ? caption : a.caption })
+          : a
+      );
+      return patchItem(items, itemId, { attachments: next });
+    },
+    planApply() { return null; },
+    async execute(api) {
+      const body = { value, caption };
+      if (caption === undefined) delete body.caption;
+      const res = await api.patch(`/api/attachments/${attachmentId}`, body);
+      return { itemId, updatedAttachments: [{ localAttachmentId: null, attachment: res.attachment }] };
+    },
+  };
+}
+
 export function deleteAttachmentOp({ itemId, attachmentId, sessionId }) {
   return {
     id: null, kind: 'DELETE_ATTACHMENT', label: 'Delete attachment', sessionId,

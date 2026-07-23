@@ -19,7 +19,7 @@
  */
 import { el, clear } from '/static/js/util.js';
 import {
-  saveItemOp, uploadImageOp, addLinkOp, deleteAttachmentOp, addExpenseOp,
+  saveItemOp, uploadImageOp, addLinkOp, deleteAttachmentOp, addExpenseOp, updateAttachmentOp,
 } from '/static/js/staging.js';
 
 export function openItemEditor(ctx, { plan, item, settings, members, staging, sessionId, onApplied, onClose }) {
@@ -503,6 +503,17 @@ export function openItemEditor(ctx, { plan, item, settings, members, staging, se
     };
     // For non-new items, also propagate the type (the backend may need it
     // for some fields, but PATCH currently doesn't accept it; safe to omit).
+    // Detect edited existing attachments (mutated in-place by openLinkEditModal).
+    for (const att of attachments) {
+      if (att.id && !att.isLocal) {
+        const orig = (item.attachments || []).find(a => String(a.id) === String(att.id));
+        if (orig && (orig.value !== att.value || orig.caption !== att.caption)) {
+          pendingSubEffects.push(updateAttachmentOp({
+            itemId: item.id, attachmentId: att.id, value: att.value, caption: att.caption, sessionId,
+          }));
+        }
+      }
+    }
     // Build the bundled sub-effects: new links, new image uploads, new expense.
     // DELETE_ATTACHMENT ops are staged directly when the user clicks Delete,
     // not bundled here.
@@ -641,6 +652,10 @@ function openLinkEditModal(attachment, onSaved) {
         if (!v) return;
         attachment.value = v;
         attachment.caption = nameInput.value.trim();
+        if (attachment.isLocal) {
+          attachment._pendingUrl = v;
+          attachment._pendingCaption = nameInput.value.trim();
+        }
         backdrop.remove();
         if (onSaved) onSaved();
       }}),

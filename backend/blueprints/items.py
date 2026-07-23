@@ -203,6 +203,29 @@ def add_link_attachment(item_id):
         "SELECT * FROM attachments WHERE id = ?", (cur.lastrowid,)).fetchone())})
 
 
+@items_bp.route("/api/attachments/<int:att_id>", methods=["PATCH"])
+@login_required
+def update_attachment(att_id):
+    check_attachment_access(att_id, write=True)
+    data = request.get_json(force=True, silent=True) or {}
+    sets, args = [], []
+    if "value" in data:
+        v = (data["value"] or "").strip()
+        if not (v.startswith("http://") or v.startswith("https://")):
+            return jsonify({"error": "link must be http(s)"}), 400
+        sets.append("value = ?"); args.append(v)
+    if "caption" in data:
+        sets.append("caption = ?"); args.append(data["caption"])
+    if not sets:
+        return jsonify({"error": "no fields to update"}), 400
+    args.append(att_id)
+    db = get_db()
+    db.execute(f"UPDATE attachments SET {', '.join(sets)} WHERE id = ?", args)
+    db.commit()
+    return jsonify({"attachment": dict(db.execute(
+        "SELECT * FROM attachments WHERE id = ?", (att_id,)).fetchone())})
+
+
 @items_bp.route("/api/attachments/<int:att_id>", methods=["DELETE"])
 @login_required
 def delete_attachment(att_id):
