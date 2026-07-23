@@ -26,7 +26,7 @@
       "icon": "plane",
       "spans_days": false,
       "fields": [
-        {"key": "mode", "label": "Mode", "type": "select", "options": ["Flight", "Train", "Bus", "Ferry", "Taxi", "Rental car"]},
+        {"key": "mode", "label": "Type", "type": "select", "options": ["Flight", "Train", "Bus", "Ferry", "Taxi", "Rental car"]},
         {"key": "provider", "label": "Provider / airline", "type": "text"},
         {"key": "ref_no", "label": "Ref / flight no.", "type": "text"},
         {"key": "from", "label": "From", "type": "text"},
