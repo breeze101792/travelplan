@@ -578,15 +578,7 @@ export function openItemEditor(ctx, { plan, item, settings, members, staging, se
         if (a.kind !== 'image') {
           const editBtn = document.createElement('button');
           editBtn.type = 'button'; editBtn.className = 'btn btn-ghost att-del'; editBtn.textContent = 'Edit';
-          editBtn.addEventListener('click', () => {
-            const newUrl = prompt('Edit URL:', a.value);
-            if (newUrl && newUrl.trim()) {
-              a.value = newUrl.trim();
-              const newCaption = prompt('Edit label:', a.caption || '');
-              if (newCaption !== null) a.caption = newCaption.trim();
-              renderAttachments();
-            }
-          });
+          editBtn.addEventListener('click', () => openLinkEditModal(a, () => renderAttachments()));
           row.appendChild(editBtn);
         }
         const del = document.createElement('button');
@@ -614,6 +606,49 @@ export function openItemEditor(ctx, { plan, item, settings, members, staging, se
   // Cancel). Multiple expenses can be queued; each is bundled into the
   // SAVE_ITEM op as a separate sub-effect.
   let pendingExpenses = [];
+}
+
+/* Open a small modal to edit the name and URL of a link attachment. */
+function openLinkEditModal(attachment, onSaved) {
+  const backdrop = el('div', { class: 'modal-backdrop editor-backdrop' });
+  const modal = el('div', { class: 'modal expense-modal' });
+  backdrop.appendChild(modal);
+
+  modal.appendChild(el('div', { class: 'modal-header' }, [
+    el('h3', { text: 'Edit link' }),
+    el('button', { type: 'button', class: 'modal-close', text: '\u00d7',
+      onclick: () => backdrop.remove() }),
+  ]));
+
+  const body = el('div', { class: 'modal-body' });
+  const nameInput = document.createElement('input');
+  nameInput.type = 'text'; nameInput.className = 'input'; nameInput.value = attachment.caption || '';
+  const urlInput = document.createElement('input');
+  urlInput.type = 'url'; urlInput.className = 'input'; urlInput.value = attachment.value || '';
+
+  body.appendChild(el('label', { class: 'field', text: 'Name' }));
+  body.appendChild(nameInput);
+  body.appendChild(el('label', { class: 'field', text: 'Link' }));
+  body.appendChild(urlInput);
+  modal.appendChild(body);
+
+  const footer = el('div', { class: 'modal-footer' }, [
+    el('button', { type: 'button', class: 'btn btn-ghost', text: 'Cancel',
+      onclick: () => backdrop.remove() }),
+    el('button', { type: 'button', class: 'btn btn-primary', text: 'Save',
+      onclick: () => {
+        const v = urlInput.value.trim();
+        if (!v) return;
+        attachment.value = v;
+        attachment.caption = nameInput.value.trim();
+        backdrop.remove();
+        if (onSaved) onSaved();
+      }}),
+  ]);
+  modal.appendChild(footer);
+
+  document.body.appendChild(backdrop);
+  backdrop.addEventListener('click', (e) => { if (e.target === backdrop) backdrop.remove(); });
 }
 
 /* Open a modal for adding an attachment — either a URL link or an image upload. */
