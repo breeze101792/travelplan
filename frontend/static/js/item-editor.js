@@ -326,24 +326,53 @@ export function openItemEditor(ctx, { plan, item, settings, members, staging, se
       clear(geoListEl);
       for (let i = 0; i < selectedGeocodes.length; i++) {
         const g = selectedGeocodes[i];
-        const row = el('div', { class: 'geo-list-row' });
-        row.style.cursor = 'pointer';
-        row.title = 'Double-click to view on map';
+        const row = el('div', { class: 'geo-list-row', draggable: true });
+        row.dataset.geoIndex = i;
+        row.title = 'Drag to reorder \u00B7 Double-click to view on map';
+
+        const dragHandle = el('span', { class: 'geo-drag', text: '\u2630\uFE0E' });
+        row.appendChild(dragHandle);
         row.appendChild(el('span', { class: 'geo-pin', text: '\uD83D\uDCCD' }));
         row.appendChild(el('span', { class: 'geo-label', text: g.label }));
         row.appendChild(el('span', {
           class: 'geo-coords',
           text: `(${g.lat.toFixed(4)}, ${g.lng.toFixed(4)})`,
         }));
-        row.addEventListener('dblclick', () => openGeoMapPopup(g));
-        const removeBtn = document.createElement('button');
-        removeBtn.type = 'button'; removeBtn.className = 'btn btn-ghost geo-remove';
-        removeBtn.textContent = '\u2715';
+
+        row.addEventListener('dblclick', () => openGeoMapPopup(g, (lat, lng) => {
+          g.lat = lat;
+          g.lng = lng;
+          renderGeoList();
+        }));
+
+        const removeBtn = el('button', { type: 'button', class: 'btn btn-ghost geo-remove', text: '\u2715', title: 'Remove' });
         removeBtn.addEventListener('click', () => {
           selectedGeocodes.splice(i, 1);
           renderGeoList();
         });
         row.appendChild(removeBtn);
+
+        // Drag reorder
+        row.addEventListener('dragstart', (e) => {
+          e.dataTransfer.setData('text/plain', String(i));
+          row.classList.add('dragging');
+        });
+        row.addEventListener('dragend', () => {
+          row.classList.remove('dragging');
+          geoListEl.querySelectorAll('.drag-over').forEach(el => el.classList.remove('drag-over'));
+        });
+        row.addEventListener('dragover', (e) => { e.preventDefault(); row.classList.add('drag-over'); });
+        row.addEventListener('dragleave', () => row.classList.remove('drag-over'));
+        row.addEventListener('drop', (e) => {
+          e.preventDefault();
+          row.classList.remove('drag-over');
+          const fromIdx = parseInt(e.dataTransfer.getData('text/plain'), 10);
+          if (isNaN(fromIdx) || fromIdx === i) return;
+          const [moved] = selectedGeocodes.splice(fromIdx, 1);
+          selectedGeocodes.splice(i, 0, moved);
+          renderGeoList();
+        });
+
         geoListEl.appendChild(row);
       }
     }
@@ -941,8 +970,10 @@ function loadLeaflet(callback) {
   document.body.appendChild(script);
 }
 
-/* Open a popup with a Leaflet map showing a pin at the given coordinates. */
-function openGeoMapPopup(geocode) {
+/* Open a popup with a Leaflet map showing a pin at the given coordinates.
+   Marker is draggable. Footer has map links + an update button to save
+   the new marker position back to the geocode. */
+function openGeoMapPopup(geocode, onUpdate) {
   const backdrop = el('div', { class: 'modal-backdrop editor-backdrop' });
   const modal = el('div', { class: 'geo-map-popup' });
   backdrop.appendChild(modal);
@@ -957,6 +988,19 @@ function openGeoMapPopup(geocode) {
   const mapContainer = el('div', { class: 'geo-map-container' });
   modal.appendChild(mapContainer);
 
+  const footer = el('div', { class: 'geo-map-footer' });
+  const label = encodeURIComponent(geocode.label || '');
+
+  const gLink = el('a', { class: 'geo-map-footer-link gl', href: `https://www.google.com/maps?q=${geocode.lat},${geocode.lng}`, target: '_blank', rel: 'noopener', text: 'Google Maps' });
+  const aLink = el('a', { class: 'geo-map-footer-link al', href: `https://maps.apple.com/?ll=${geocode.lat},${geocode.lng}&q=${label}`, target: '_blank', rel: 'noopener', text: 'Apple Maps' });
+  const oLink = el('a', { class: 'geo-map-footer-link ol', href: `https://www.openstreetmap.org/?mlat=${geocode.lat}&mlon=${geocode.lng}&zoom=15`, target: '_blank', rel: 'noopener', text: 'OSM' });
+
+  const updateBtn = el('button', { type: 'button', class: 'btn btn-primary', text: '\u2714 Update position' });
+  updateBtn.disabled = true;
+
+  footer.append(gLink, aLink, oLink, updateBtn);
+  modal.appendChild(footer);
+
   document.body.appendChild(backdrop);
   backdrop.addEventListener('click', (e) => { if (e.target === backdrop) backdrop.remove(); });
 
@@ -965,9 +1009,24 @@ function openGeoMapPopup(geocode) {
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
       attribution: '&copy; <a href="https://openstreetmap.org/copyright">OpenStreetMap</a>',
     }).addTo(map);
-    L.marker([geocode.lat, geocode.lng]).addTo(map)
+
+    const marker = L.marker([geocode.lat, geocode.lng], { draggable: true }).addTo(map)
       .bindPopup(geocode.label)
       .openPopup();
+
+    let moved = false;
+    marker.on('dragend', () => {
+      moved = true;
+      updateBtn.disabled = false;
+    });
+
+    updateBtn.addEventListener('click', () => {
+      if (!moved) return;
+      const pos = marker.getLatLng();
+      if (onUpdate) onUpdate(pos.lat, pos.lng);
+      backdrop.remove();
+    });
+
     setTimeout(() => map.invalidateSize(), 100);
   });
 }
