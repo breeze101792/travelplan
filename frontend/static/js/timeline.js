@@ -636,7 +636,7 @@ function wireBarDrag({ bar, staging, getViewItems, getSelection, onMultiDrag, ct
       if (fields.end) newDetails[fields.end] = combineDateHour(hoverDayIso, newEndH);
       // Clear the legacy `time` field once the new shape is in place,
       // so the item doesn't carry two ways of saying the same thing.
-      if (newDetails.time && it.item_type === 'restaurant') {
+      if (newDetails.time && (it.item_type === 'restaurant' || it.item_type === 'transport' || it.item_type === 'transit')) {
         delete newDetails.time;
       }
 

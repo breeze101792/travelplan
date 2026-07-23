@@ -358,7 +358,7 @@ export function openItemEditor(ctx, { plan, item, settings, members, staging, se
     // Clean up the legacy `time` field for restaurant/transport once the
     // new start_time + end_time shape is in place — otherwise the item
     // would carry two ways of saying the same thing.
-    if (details.start_time && (item.item_type === 'restaurant' || item.item_type === 'transport')) {
+    if (details.start_time && (item.item_type === 'restaurant' || item.item_type === 'transport' || item.item_type === 'transit')) {
       delete details.time;
     }
     const snapshot = {

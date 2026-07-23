@@ -15,8 +15,10 @@ request that died mid-write can't leak an open transaction onto the next one
 """
 from __future__ import annotations
 
+import json
 import sqlite3
 import threading
+from datetime import datetime, timedelta
 from pathlib import Path
 
 from flask import g, current_app
@@ -108,6 +110,41 @@ def init_db() -> None:
         except Exception:
             pass
         conn.commit()
+        # Migration: migrate flight/train/transport to transit
+        try:
+            c = conn.execute("SELECT id, item_type, details FROM items WHERE item_type IN ('flight','train','transport')")
+            rows = c.fetchall()
+            for row in rows:
+                item_id, old_type, raw_details = row
+                details = json.loads(raw_details) if raw_details else {}
+                if old_type == 'flight':
+                    if details.get('airline'):
+                        details['provider'] = details.pop('airline')
+                    if details.get('flight_no'):
+                        details['ref_no'] = details.pop('flight_no')
+                    details.pop('airline', None)
+                    details.pop('flight_no', None)
+                elif old_type == 'train':
+                    if details.get('train_no'):
+                        details['ref_no'] = details.pop('train_no')
+                    details.pop('train_no', None)
+                elif old_type == 'transport':
+                    if details.get('time') and not details.get('depart_time'):
+                        details['depart_time'] = details.pop('time')
+                    if details.get('depart_time') and not details.get('arrive_time'):
+                        from datetime import datetime, timedelta
+                        try:
+                            dt = datetime.fromisoformat(details['depart_time'])
+                            details['arrive_time'] = (dt + timedelta(hours=1)).isoformat()
+                        except Exception:
+                            pass
+                conn.execute(
+                    "UPDATE items SET item_type = 'transit', details = ? WHERE id = ?",
+                    (json.dumps(details), item_id),
+                )
+            conn.commit()
+        except Exception:
+            pass
     finally:
         conn.close()
 
