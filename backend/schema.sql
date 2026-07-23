@@ -36,7 +36,7 @@ CREATE TABLE IF NOT EXISTS plan_members (
 CREATE TABLE IF NOT EXISTS items (
   id         INTEGER PRIMARY KEY AUTOINCREMENT,
   plan_id    INTEGER NOT NULL REFERENCES plans(id) ON DELETE CASCADE,
-  item_type  TEXT NOT NULL,            -- hotel|transit|ticket|restaurant|activity|note
+  item_type  TEXT NOT NULL,            -- hotel|transit|restaurant|activity|note
   title      TEXT NOT NULL,
   item_date  TEXT,                     -- start date (the day this item belongs to)
   end_date   TEXT,                     -- nullable; hotel = check-out; rendered on every day in [start,end)

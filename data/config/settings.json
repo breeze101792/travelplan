@@ -46,49 +46,13 @@
         ["note"]
       ]
     },
-    "ticket": {
-      "label": "Ticket",
-      "icon": "ticket",
-      "spans_days": false,
-      "fields": [
-        {"key": "name", "label": "Name", "type": "text"},
-        {"key": "venue", "label": "Venue", "type": "text"},
-        {"key": "start_time", "label": "Start", "type": "datetime-local"},
-        {"key": "end_time", "label": "End", "type": "datetime-local"},
-        {"key": "note", "label": "Note", "type": "textarea"}
-      ],
-      "rows": [
-        ["name", "venue"],
-        ["start_time", "end_time"],
-        ["note"]
-      ]
-    },
-    "restaurant": {
-      "label": "Restaurant",
-      "icon": "utensils",
-      "spans_days": false,
-      "fields": [
-        {"key": "name", "label": "Name", "type": "text"},
-        {"key": "address", "label": "Address", "type": "text"},
-        {"key": "start_time", "label": "Start", "type": "datetime-local"},
-        {"key": "end_time", "label": "End", "type": "datetime-local"},
-        {"key": "party_size", "label": "Party size", "type": "number"},
-        {"key": "note", "label": "Note", "type": "textarea"}
-      ],
-      "rows": [
-        ["name", "party_size"],
-        ["start_time", "end_time"],
-        ["address"],
-        ["note"]
-      ]
-    },
     "activity": {
       "label": "Activity",
       "icon": "compass",
       "spans_days": false,
       "fields": [
         {"key": "name", "label": "Name", "type": "text"},
-        {"key": "location", "label": "Location", "type": "text"},
+        {"key": "location", "label": "Location / Venue", "type": "text"},
         {"key": "start_time", "label": "Start", "type": "datetime-local"},
         {"key": "end_time", "label": "End", "type": "datetime-local"},
         {"key": "note", "label": "Note", "type": "textarea"}

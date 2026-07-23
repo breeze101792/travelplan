@@ -22,7 +22,7 @@ from ..db import get_db
 
 items_bp = Blueprint("items", __name__)
 
-ITEM_TYPES = {"hotel", "transit", "ticket", "restaurant",
+ITEM_TYPES = {"hotel", "transit", "restaurant",
               "activity", "note"}
 STATUSES = {"planned", "confirmed", "done"}
 

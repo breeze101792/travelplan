@@ -153,7 +153,7 @@ def seed() -> None:
                               "link": "https://example.com/ichiran"})
         add_image(rest1, "ramen", "tonkotsu")
 
-        tk1 = item(p1, "ticket", "TeamLab Planets", "2026-07-03", status="confirmed",
+        tk1 = item(p1, "activity", "TeamLab Planets", "2026-07-03", status="confirmed",
                    details={"name": "TeamLab Planets", "venue": "Toyosu, Tokyo",
                             "start_time": "2026-07-03T10:00", "end_time": "2026-07-03T12:30",
                             "qty": 2, "price": "3200", "currency": "JPY",
@@ -214,7 +214,7 @@ def seed() -> None:
                   details={"mode": "Rental car", "from": "KEF", "to": "Ring Road",
                            "depart_time": "2026-08-11T09:00", "arrive_time": "2026-08-11T09:30",
                            "price": "420", "currency": "EUR"})
-        tk2 = item(p2, "ticket", "Glacier hike Vatnajokull", "2026-08-13", status="planned",
+        tk2 = item(p2, "activity", "Glacier hike Vatnajokull", "2026-08-13", status="planned",
                    details={"name": "Glacier hike", "venue": "Skaftafell",
                             "start_time": "2026-08-13T10:00", "end_time": "2026-08-13T14:00",
                             "qty": 3, "price": "150", "currency": "EUR"})
@@ -281,7 +281,7 @@ def seed() -> None:
                              "price": "180", "currency": "CNY",
                              "link": "https://example.com/mutianyu"})
 
-        tk3 = item(p3, "ticket", "天坛 Temple of Heaven", "2026-09-13",
+        tk3 = item(p3, "activity", "天坛 Temple of Heaven", "2026-09-13",
                    details={"name": "Temple of Heaven", "venue": "Tiantan, Dongcheng",
                             "start_time": "2026-09-13T09:00", "end_time": "2026-09-13T11:00",
                             "qty": 2, "price": "70", "currency": "CNY",
