@@ -423,6 +423,22 @@ export async function initMap(c) {
     maxZoom: 18,
   }).addTo(map);
 
+  // Fullscreen button
+  const fsBtn = el('button', { class: 'map-fullscreen-btn', html: '&#x26F6;', title: 'Toggle fullscreen' });
+  container.appendChild(fsBtn);
+  fsBtn.addEventListener('click', () => {
+    if (!document.fullscreenElement) {
+      document.documentElement.requestFullscreen();
+    } else {
+      document.exitFullscreen();
+    }
+  });
+  document.addEventListener('fullscreenchange', () => {
+    const fs = !!document.fullscreenElement;
+    document.documentElement.classList.toggle('is-map-fullscreen', fs);
+    setTimeout(() => map.invalidateSize(), 150);
+  });
+
   days = buildDays(plan);
 
   // Load items with their persisted geocodes (set via the item editor)

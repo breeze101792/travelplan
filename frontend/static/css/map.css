@@ -241,3 +241,72 @@
   color: var(--muted, #64748b);
   font-size: .95rem;
 }
+
+/* ---------- fullscreen button overlay on map ---------- */
+
+.map-fullscreen-btn {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  z-index: 1000;
+  width: 36px; height: 36px;
+  border: 2px solid rgba(0,0,0,.2);
+  border-radius: 6px;
+  background: #fff;
+  color: #333;
+  font-size: 17px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+  transition: background .12s;
+}
+.map-fullscreen-btn:hover { background: #f0f0f0; }
+
+/* ---------- fullscreen mode ---------- */
+
+.is-map-fullscreen .plan-header,
+.is-map-fullscreen .pending-bar,
+.is-map-fullscreen .map-sidebar {
+  display: none !important;
+}
+.is-map-fullscreen .map-page {
+  position: fixed;
+  inset: 0;
+  z-index: 10000;
+  margin: 0;
+  height: 100vh;
+}
+.is-map-fullscreen .map-container {
+  width: 100%;
+  height: 100vh;
+  min-height: 100vh;
+  border-radius: 0;
+  border: none;
+}
+
+/* ---------- mobile: stack map above sidebar ---------- */
+
+@media (max-width: 720px) {
+  .map-page {
+    flex-direction: column;
+    height: auto;
+    margin-top: 8px;
+  }
+  .map-container {
+    height: 45vh;
+    min-height: 220px;
+    flex: none;
+    width: 100%;
+  }
+  .map-sidebar {
+    flex: none;
+    width: 100%;
+    min-width: 0;
+    max-height: 45vh;
+  }
+  .day-list {
+    max-height: calc(45vh - 30px);
+  }
+}
