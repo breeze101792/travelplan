@@ -115,9 +115,8 @@
 
 /* ---------- responsive ---------- */
 @media (max-width: 640px) {
-  .plan-header { padding: 16px 14px 10px; }
-  .add-toolbar, .board { padding-left: 14px; padding-right: 14px; }
-  .day { flex-basis: 84vw; }
+  .board { scroll-snap-type: x proximity; }
+  .day { scroll-snap-align: start; flex: 0 0 calc(100vw - 32px); }
 }
 
 /* ---------- pending-changes bar (Add / Revert / Redo / Save) ---------- */

@@ -276,6 +276,8 @@
 /* On narrow screens, shrink the day min-width a bit so 3-4 days still fit. */
 @media (max-width: 720px) {
   :root { --tl-day-min: 200px; }
+  .timeline { scroll-snap-type: x proximity; }
+  .timeline .day { scroll-snap-align: start; flex: 0 0 calc(100vw - 80px); }
   .timeline .hour-col { flex-basis: 36px; }
 }
 
