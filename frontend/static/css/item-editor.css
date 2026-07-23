@@ -131,12 +131,29 @@
 .todo-item {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   padding: 6px 8px;
   border-radius: 8px;
   background: var(--surface-2, #f8fafc);
   font-size: .9rem;
   cursor: default;
+}
+.todo-item .todo-drag {
+  cursor: grab;
+  color: var(--muted, #94a3b8);
+  font-size: 1rem;
+  padding: 0 2px;
+  user-select: none;
+  flex-shrink: 0;
+}
+.todo-item .todo-drag:active {
+  cursor: grabbing;
+}
+.todo-item .todo-actions {
+  margin-left: auto;
+  display: flex;
+  gap: 2px;
+  flex-shrink: 0;
 }
 .todo-item[draggable="true"] {
   cursor: grab;

@@ -193,7 +193,38 @@ export function openItemEditor(ctx, { plan, item, settings, members, staging, se
     });
     for (let i = 0; i < sorted.length; i++) {
       const t = sorted[i];
-      const li = el('li', { class: 'todo-item', draggable: !readOnly });
+      const li = el('li', { class: 'todo-item' });
+      const dragHandle = el('span', { class: 'todo-drag', text: '\u2630\uFE0E' });
+      dragHandle.title = 'Drag to reorder';
+      dragHandle.draggable = true;
+      dragHandle.addEventListener('dragstart', (e) => {
+        e.dataTransfer.setData('text/plain', i);
+        li.classList.add('dragging');
+      });
+      dragHandle.addEventListener('dragend', () => {
+        li.classList.remove('dragging');
+      });
+      li.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        li.classList.add('drag-over');
+      });
+      li.addEventListener('dragleave', () => {
+        li.classList.remove('drag-over');
+      });
+      li.addEventListener('drop', (e) => {
+        e.preventDefault();
+        li.classList.remove('drag-over');
+        const fromIdx = parseInt(e.dataTransfer.getData('text/plain'), 10);
+        if (isNaN(fromIdx) || fromIdx === i) return;
+        const item = sorted[fromIdx];
+        const realFrom = todos.indexOf(item);
+        const realTo = todos.indexOf(t);
+        if (realFrom === -1 || realTo === -1) return;
+        todos.splice(realFrom, 1);
+        todos.splice(realTo, 0, item);
+        renderTodos();
+      });
+      li.appendChild(dragHandle);
       const cb = document.createElement('input');
       cb.type = 'checkbox'; cb.checked = !!t.done;
       cb.addEventListener('change', () => {
@@ -205,41 +236,26 @@ export function openItemEditor(ctx, { plan, item, settings, members, staging, se
       span.className = t.done ? 'todo-done' : '';
       li.append(cb, span);
       if (!readOnly) {
+        const actions = el('span', { class: 'todo-actions' });
+        const editBtn = el('button', { type: 'button', class: 'btn btn-ghost att-del', text: '\u270E' });
+        editBtn.title = 'Edit';
+        editBtn.addEventListener('click', () => {
+          const newText = prompt('Edit to-do:', t.text);
+          if (newText && newText.trim()) {
+            t.text = newText.trim();
+            renderTodos();
+          }
+        });
+        actions.appendChild(editBtn);
         const delBtn = el('button', { type: 'button', class: 'btn btn-ghost att-del', text: '\u2715' });
+        delBtn.title = 'Delete';
         delBtn.addEventListener('click', () => {
           const idx = todos.indexOf(t);
           if (idx !== -1) todos.splice(idx, 1);
           renderTodos();
         });
-        li.appendChild(delBtn);
-        // drag-and-drop
-        li.addEventListener('dragstart', (e) => {
-          e.dataTransfer.setData('text/plain', i);
-          li.classList.add('dragging');
-        });
-        li.addEventListener('dragend', () => {
-          li.classList.remove('dragging');
-        });
-        li.addEventListener('dragover', (e) => {
-          e.preventDefault();
-          li.classList.add('drag-over');
-        });
-        li.addEventListener('dragleave', () => {
-          li.classList.remove('drag-over');
-        });
-        li.addEventListener('drop', (e) => {
-          e.preventDefault();
-          li.classList.remove('drag-over');
-          const fromIdx = parseInt(e.dataTransfer.getData('text/plain'), 10);
-          if (isNaN(fromIdx) || fromIdx === i) return;
-          const item = sorted[fromIdx];
-          const realFrom = todos.indexOf(item);
-          const realTo = todos.indexOf(t);
-          if (realFrom === -1 || realTo === -1) return;
-          todos.splice(realFrom, 1);
-          todos.splice(realTo, 0, item);
-          renderTodos();
-        });
+        actions.appendChild(delBtn);
+        li.appendChild(actions);
       }
       todoList.appendChild(li);
     }
