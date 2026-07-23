@@ -44,6 +44,23 @@ def _load_geocodes(item_id) -> list[dict]:
         (item_id,)).fetchall()]
 
 
+def _save_geocodes(item_id, geocodes):
+    if not geocodes:
+        return
+    db = get_db()
+    db.execute("DELETE FROM item_geocodes WHERE item_id = ?", (item_id,))
+    for sort_order, g in enumerate(geocodes):
+        lat = g.get("lat")
+        lng = g.get("lng")
+        if lat is None or lng is None:
+            continue
+        db.execute(
+            "INSERT INTO item_geocodes (item_id, label, lat, lng, sort_order) VALUES (?, ?, ?, ?, ?)",
+            (item_id, g.get("label", ""), lat, lng, sort_order),
+        )
+    db.commit()
+
+
 def _attach(item: dict) -> dict:
     try:
         item["details"] = json.loads(item["details"]) if item.get("details") else {}
@@ -88,6 +105,7 @@ def create_item(plan_id):
          json.dumps(details), g.current_user["id"]),
     )
     db.commit()
+    _save_geocodes(cur.lastrowid, data.get("geocodes"))
     return jsonify({"item": _attach(_load_item(cur.lastrowid))})
 
 
@@ -118,6 +136,8 @@ def mutate_item(item_id):
         args.append(item_id)
         db.execute(f"UPDATE items SET {', '.join(sets)} WHERE id = ?", args)
         db.commit()
+    if "geocodes" in data:
+        _save_geocodes(item_id, data["geocodes"] or [])
     return jsonify({"item": _attach(_load_item(item_id))})
 
 

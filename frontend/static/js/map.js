@@ -1,4 +1,5 @@
-import { apiGet } from '/static/js/api.js';
+import { apiGet, apiPost, apiPatch, apiDel, apiUpload } from '/static/js/api.js';
+const api = { get: apiGet, post: apiPost, patch: apiPatch, del: apiDel, upload: apiUpload };
 import { buildDays, wirePlanHeader } from '/static/js/plan-header.js';
 import { Staging, moveItemOp, deleteItemOp } from '/static/js/staging.js';
 import { el, clear } from '/static/js/util.js';
@@ -424,9 +425,9 @@ export async function initMap(c) {
 
   days = buildDays(plan);
 
-  // Geocode all items server-side and load with persisted coords
-  const geoRes = await apiGet(`/api/plans/${ctx.planId}/geocode-items`);
-  allItems = geoRes.items || [];
+  // Load items with their persisted geocodes (set via the item editor)
+  const itemsRes = await apiGet(`/api/plans/${ctx.planId}/items`);
+  allItems = itemsRes.items || [];
 
   dayCoords = {};
   for (let i = 0; i < days.length; i++) {
@@ -464,7 +465,7 @@ function renderPendingBar() {
   bar.append(
     el('button', { type:'button', class:'pb-btn', text:'↶ Revert', disabled:!canUndo, onclick:()=>{ staging.undo(); renderPendingBar(); reloadAll(); }}),
     el('button', { type:'button', class:'pb-btn', text:'↷ Redo', disabled:!canRedo, onclick:()=>{ staging.redo(); renderPendingBar(); }}),
-    el('button', { type:'button', class:'pb-btn pb-save', text:staging.saving?'Saving…':'Save', disabled:!canSave, onclick:async()=>{ await staging.save(); renderPendingBar(); reloadAll(); }}),
+    el('button', { type:'button', class:'pb-btn pb-save', text:staging.saving?'Saving…':'Save', disabled:!canSave, onclick:async()=>{ await staging.saveAll(api); renderPendingBar(); reloadAll(); }}),
     el('span', { class:'pb-status'+(failed?' pb-failed':''), text:staging.saving?'Saving changes…':failed?`Save failed: ${staging.failedError}`:hasPending?`${staging.pendingCount} pending — last: ${lastLabel}`:'All changes saved' }),
   );
   bar.hidden = false;

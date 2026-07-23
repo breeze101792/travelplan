@@ -161,6 +161,7 @@ export function saveItemOp({ planId, item, isNew, sideEffects, sessionId }) {
           end_date: item.end_date || null,
           status: item.status || 'planned',
           details: item.details || {},
+          geocodes: item.geocodes || [],
         };
         const res = await api.post(`/api/plans/${planId}/items`, body);
         realId = res.item.id;
@@ -171,6 +172,7 @@ export function saveItemOp({ planId, item, isNew, sideEffects, sessionId }) {
           end_date: item.end_date || null,
           status: item.status || 'planned',
           details: item.details || {},
+          geocodes: item.geocodes || [],
         };
         const res = await api.patch(`/api/items/${localId}`, body);
         realId = res.item.id;

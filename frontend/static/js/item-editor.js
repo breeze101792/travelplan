@@ -36,6 +36,10 @@ export function openItemEditor(ctx, { plan, item, settings, members, staging, se
   let attachments = (item.attachments || []).slice().map(a => Object.assign({}, a));
   // Files queued for upload (kept in editor until Apply so a Cancel discards them).
   let pendingFiles = [];           // { file, previewUrl, caption, kind: 'image' }
+  let selectedGeocodes = [];
+  if (item.geocodes && item.geocodes.length > 0) {
+    selectedGeocodes = item.geocodes.slice();
+  }
 
   /* ----- structure ----- */
   const backdrop = el('div', { class: 'modal-backdrop editor-backdrop' });
@@ -105,6 +109,67 @@ export function openItemEditor(ctx, { plan, item, settings, members, staging, se
       rowEl.appendChild(grp);
     }
     colMain.appendChild(rowEl);
+  }
+
+  // geolocation picker (for all types except note)
+  if (item.item_type !== 'note') {
+    const locSection = el('div', { class: 'geo-section' });
+    colMain.appendChild(el('hr', { class: 'geo-sep' }));
+
+    if (!readOnly) {
+      colMain.appendChild(el('label', { class: 'field', text: 'Map locations' }));
+
+      const geoListEl = el('div', { class: 'geo-list' });
+      const addBtn = el('button', { type: 'button', class: 'btn geo-add-btn', text: '+ Add location' });
+
+      function renderGeoList() {
+        clear(geoListEl);
+        for (let i = 0; i < selectedGeocodes.length; i++) {
+          const g = selectedGeocodes[i];
+          const row = el('div', { class: 'geo-list-row' });
+          row.appendChild(el('span', { class: 'geo-pin', text: '\uD83D\uDCCD' }));
+          row.appendChild(el('span', { class: 'geo-label', text: g.label }));
+          row.appendChild(el('span', {
+            class: 'geo-coords',
+            text: `(${g.lat.toFixed(4)}, ${g.lng.toFixed(4)})`,
+          }));
+          const removeBtn = document.createElement('button');
+          removeBtn.type = 'button'; removeBtn.className = 'btn btn-ghost geo-remove';
+          removeBtn.textContent = '\u2715';
+          removeBtn.addEventListener('click', () => {
+            selectedGeocodes.splice(i, 1);
+            renderGeoList();
+          });
+          row.appendChild(removeBtn);
+          geoListEl.appendChild(row);
+        }
+      }
+
+      addBtn.addEventListener('click', () => {
+        openGeoSearchPopup((result) => {
+          selectedGeocodes.push(result);
+          renderGeoList();
+        });
+      });
+
+      locSection.appendChild(geoListEl);
+      locSection.appendChild(addBtn);
+      renderGeoList();
+    } else {
+      // read-only: show all existing locations
+      if (selectedGeocodes.length > 0) {
+        for (const g of selectedGeocodes) {
+          const info = el('div', { class: 'geo-readonly' });
+          info.appendChild(el('span', { text: '\uD83D\uDCCD ' + g.label }));
+          info.appendChild(el('span', {
+            class: 'geo-coords',
+            text: `(${g.lat.toFixed(4)}, ${g.lng.toFixed(4)})`,
+          }));
+          locSection.appendChild(info);
+        }
+      }
+    }
+    colMain.appendChild(locSection);
   }
 
   // status + dates (right col)
@@ -304,6 +369,7 @@ export function openItemEditor(ctx, { plan, item, settings, members, staging, se
       end_date: endInput ? (endInput.value || null) : (item.end_date || null),
       status: statusSel.value,
       details,
+      geocodes: selectedGeocodes,
       // Include the up-to-date attachment list so the staged view shows the
       // editor's additions and the SAVE_ITEM.apply re-derives correctly.
       attachments: attachments.slice(),
@@ -475,6 +541,80 @@ export function openItemEditor(ctx, { plan, item, settings, members, staging, se
     wrap.appendChild(queuedList);
     return wrap;
   }
+}
+
+/* Open a popup modal for searching a location via Photon geocoding API.
+ * Calls onSelect({ label, lat, lng }) when the user picks a result. */
+function openGeoSearchPopup(onSelect) {
+  const backdrop = el('div', { class: 'modal-backdrop editor-backdrop' });
+  const modal = el('div', { class: 'geo-popup' });
+  backdrop.appendChild(modal);
+
+  const header = el('div', { class: 'geo-popup-header' });
+  header.appendChild(el('h3', { text: 'Search location' }));
+  const closeBtn = el('button', { type: 'button', class: 'modal-close', text: '\u00d7' });
+  closeBtn.addEventListener('click', () => backdrop.remove());
+  header.appendChild(closeBtn);
+  modal.appendChild(header);
+
+  const body = el('div', { class: 'geo-popup-body' });
+  const searchRow = el('div', { class: 'geo-search-row' });
+  const searchInput = document.createElement('input');
+  searchInput.type = 'text'; searchInput.className = 'input';
+  searchInput.placeholder = 'Search for a location\u2026';
+  const searchBtn = document.createElement('button');
+  searchBtn.type = 'button'; searchBtn.className = 'btn';
+  searchBtn.textContent = 'Search';
+  searchRow.append(searchInput, searchBtn);
+  body.appendChild(searchRow);
+
+  const resultsEl = el('div', { class: 'geo-results' });
+  body.appendChild(resultsEl);
+  modal.appendChild(body);
+
+  async function doSearch() {
+    const q = searchInput.value.trim();
+    if (!q) return;
+    clear(resultsEl);
+    resultsEl.textContent = 'Searching\u2026';
+    try {
+      const res = await fetch(
+        `https://photon.komoot.io/api/?limit=5&q=${encodeURIComponent(q)}`
+      );
+      const data = await res.json();
+      clear(resultsEl);
+      for (const feat of (data.features || [])) {
+        const coords = feat.geometry && feat.geometry.coordinates;
+        if (!coords || coords.length < 2) continue;
+        const parts = [];
+        if (feat.properties.name) parts.push(feat.properties.name);
+        if (feat.properties.city) parts.push(feat.properties.city);
+        if (feat.properties.country) parts.push(feat.properties.country);
+        const label = parts.join(', ');
+        const item = el('div', { class: 'geo-result' });
+        item.textContent = label;
+        item.addEventListener('click', () => {
+          onSelect({ label, lat: coords[1], lng: coords[0] });
+          backdrop.remove();
+        });
+        resultsEl.appendChild(item);
+      }
+      if (!resultsEl.children.length) {
+        resultsEl.textContent = 'No results found.';
+      }
+    } catch (e) {
+      resultsEl.textContent = 'Search failed.';
+    }
+  }
+
+  searchBtn.addEventListener('click', doSearch);
+  searchInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') doSearch();
+  });
+
+  document.body.appendChild(backdrop);
+  backdrop.addEventListener('click', (e) => { if (e.target === backdrop) backdrop.remove(); });
+  searchInput.focus();
 }
 
 /* Build the right <input>/<select>/<textarea> for a type-specific field.

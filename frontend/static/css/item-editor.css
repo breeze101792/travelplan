@@ -150,3 +150,39 @@
 .btn-primary:hover { filter: brightness(1.05); background: var(--accent, #6366f1); }
 .btn-ghost { background: transparent; border-color: transparent; }
 .btn-ghost:hover { background: var(--surface-2, #f1f5f9); }
+
+/* ---------- geolocation picker ---------- */
+.geo-sep { border: none; border-top: 1px solid var(--border, #eef2f7); margin: 20px 0 12px; }
+.geo-list { display: flex; flex-direction: column; gap: 4px; margin-bottom: 8px; }
+.geo-list-row { display: flex; align-items: center; gap: 8px; padding: 6px 10px; background: var(--surface-2, #f8fafc); border-radius: 8px; font-size: .9rem; }
+.geo-list-row .geo-pin { flex-shrink: 0; }
+.geo-list-row .geo-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text, #1f2937); }
+.geo-list-row .geo-coords { color: var(--muted, #64748b); font-size: .8rem; font-family: monospace; flex-shrink: 0; }
+.geo-list-row .geo-remove { font-size: 1rem; padding: 2px 8px; flex-shrink: 0; color: var(--muted, #94a3b8); }
+.geo-list-row .geo-remove:hover { color: var(--danger, #ef4444); }
+.geo-add-btn { font-size: .9rem; }
+.geo-search-row { display: flex; gap: 8px; align-items: stretch; }
+.geo-search-row .input { flex: 1; }
+.geo-search-row .btn { flex-shrink: 0; }
+.geo-results { margin-top: 6px; display: flex; flex-direction: column; gap: 2px; font-size: .9rem; color: var(--text, #1f2937); }
+.geo-result { padding: 8px 10px; border-radius: 6px; cursor: pointer; background: var(--surface, #fff); }
+.geo-result:hover { background: var(--surface-2, #f1f5f9); }
+.geo-readonly { display: flex; align-items: center; gap: 8px; padding: 8px 0; font-size: .9rem; color: var(--text, #1f2937); }
+
+/* ---------- geolocation search popup ---------- */
+.geo-popup {
+  background: var(--surface, #fff); border-radius: 14px;
+  box-shadow: 0 20px 60px rgba(15,23,42,.3);
+  width: min(90vw, 480px);
+  max-width: min(90vw, 480px);
+  display: flex; flex-direction: column;
+  max-height: 80vh;
+  padding: 0;
+  margin: 0;
+}
+.geo-popup .geo-popup-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 16px 22px; border-bottom: 1px solid var(--border, #eef2f7);
+}
+.geo-popup .geo-popup-header h3 { margin: 0; font-size: 1.1rem; }
+.geo-popup .geo-popup-body { padding: 16px 22px; overflow-y: auto; }
