@@ -77,6 +77,12 @@ def map_page(plan_id):
     return render_template("plan-map.html", plan=g.plan, plan_role=g.plan_role)
 
 
+@plans_bp.route("/plans/<int:plan_id>/navigation")
+@plan_access()
+def plan_navigation(plan_id):
+    return render_template("navigation.html", plan=g.plan, plan_role=g.plan_role)
+
+
 # ------------------------------------------------------------------ API
 
 def _row_to_plan(r):

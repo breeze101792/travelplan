@@ -1,0 +1,24 @@
+{% extends "layout.html" %}
+{% block title %}{{ plan.title }} — Navigation{% endblock %}
+{% block page %}navigation{% endblock %}
+
+{% block styles %}
+<link rel="stylesheet" href="/static/css/navigation.css">
+<link rel="stylesheet" href="/static/css/item-editor.css">
+<script>window.__CONTEXT__ = { planId: {{ plan.id }}, role: {{ plan_role|tojson|safe }} };</script>
+{% endblock %}
+
+{% block content %}
+{% set plan_active_page = 'navigation' %}
+{% include "_plan_header.html" %}
+
+<div id="pending-bar" class="pending-bar" hidden></div>
+<div id="nav-page"></div>
+{% endblock %}
+
+{% block scripts %}
+<script type="module">
+import { initNavigation } from '/static/js/navigation.js';
+initNavigation(window.__CONTEXT__);
+</script>
+{% endblock %}
