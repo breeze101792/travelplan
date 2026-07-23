@@ -279,7 +279,7 @@ function renderDay(day, items, settings, nowFraction, ctx, staging, setBlockErro
 
     // "Now" line if this day is today.
     if (nowFraction != null) {
-      grid.appendChild(el('div', { class: 'now-line', style: `top: ${nowFraction * 24 * HOUR_PX}px;` }));
+      grid.appendChild(el('div', { class: 'now-line', style: `top: ${nowFraction * HOUR_PX}px;` }));
     }
 
     // Hotel stays: every night the trip is in the hotel, draw ONE compact bar
