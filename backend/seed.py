@@ -130,40 +130,37 @@ def seed() -> None:
         h1 = item(p1, "hotel", "Shinjuku Granvia Hotel", "2026-07-01", end="2026-07-05", status="confirmed",
                   details={"hotel_name": "Shinjuku Granvia", "address": "3-1 Nishishinjuku, Tokyo",
                            "check_in_time": "15:00", "check_out_time": "11:00",
-                           "booking_ref": "BK-88210", "price": "72000", "currency": "JPY",
-                           "link": "https://example.com/granvia", "note": "4 nights, breakfast included"})
+                           "booking_ref": "BK-88210", "note": "4 nights, breakfast included"})
         add_image(h1, "hotel", "hotel lobby")
         add_link(h1, "https://example.com/granvia", "booking")
 
         f1 = item(p1, "transit", "JL 005 LAX -> NRT", "2026-07-01", status="confirmed",
                   details={"mode": "Flight", "provider": "JAL", "ref_no": "JL005", "from": "LAX", "to": "NRT",
                            "depart_time": "2026-07-01T11:30", "arrive_time": "2026-07-02T15:45",
-                           "confirmation": "JAL-7H9XQ", "price": "820", "currency": "USD",
-                           "link": "https://example.com/jal005"})
+                           "confirmation": "JAL-7H9XQ"})
         add_image(f1, "flight", "boarding pass")
+        add_link(f1, "https://example.com/jal005", "booking")
 
         t1 = item(p1, "transit", "Airport limo bus to Shinjuku", "2026-07-02",
                   details={"mode": "Bus", "from": "NRT", "to": "Shinjuku",
-                           "depart_time": "2026-07-02T16:30", "arrive_time": "2026-07-02T17:30",
-                           "price": "1300", "currency": "JPY"})
+                           "depart_time": "2026-07-02T16:30", "arrive_time": "2026-07-02T17:30"})
 
         rest1 = item(p1, "restaurant", "Ichiran Ramen Shibuya", "2026-07-02",
                      details={"name": "Ichiran", "address": "Shibuya, Tokyo",
-                              "time": "2026-07-02T19:00", "party_size": 3,
-                              "link": "https://example.com/ichiran"})
+                              "start_time": "2026-07-02T19:00", "party_size": 3})
         add_image(rest1, "ramen", "tonkotsu")
+        add_link(rest1, "https://example.com/ichiran", "menu")
 
         tk1 = item(p1, "activity", "TeamLab Planets", "2026-07-03", status="confirmed",
-                   details={"name": "TeamLab Planets", "venue": "Toyosu, Tokyo",
-                            "start_time": "2026-07-03T10:00", "end_time": "2026-07-03T12:30",
-                            "qty": 2, "price": "3200", "currency": "JPY",
-                            "link": "https://example.com/teamlab"})
+                   details={"name": "TeamLab Planets", "location": "Toyosu, Tokyo",
+                            "start_time": "2026-07-03T10:00", "end_time": "2026-07-03T12:30"})
+        add_link(tk1, "https://example.com/teamlab", "tickets")
 
         tr1 = item(p1, "transit", "Shinkansen Tokyo -> Kyoto", "2026-07-04", status="confirmed",
                    details={"mode": "Train", "provider": "JR Central", "ref_no": "Nozomi 7",
                             "from": "Tokyo", "to": "Kyoto",
                             "depart_time": "2026-07-04T08:00", "arrive_time": "2026-07-04T10:15",
-                            "seat": "12-A/B/C", "price": "14000", "currency": "JPY"})
+                            "seat": "12-A/B/C"})
 
         act1 = item(p1, "activity", "Fushimi Inari shrine hike", "2026-07-05",
                     details={"name": "Fushimi Inari Taisha", "location": "Kyoto",
@@ -202,24 +199,22 @@ def seed() -> None:
         h2 = item(p2, "hotel", "Kex Hostel Reykjavik", "2026-08-10", end="2026-08-13", status="confirmed",
                   details={"hotel_name": "Kex Hostel", "address": "Skubar 28, Reykjavik",
                            "check_in_time": "14:00", "check_out_time": "10:00",
-                           "booking_ref": "HX-44012", "price": "540", "currency": "EUR",
-                           "link": "https://example.com/kex"})
+                           "booking_ref": "HX-44012"})
         add_image(h2, "hotel", "hostel")
+        add_link(h2, "https://example.com/kex", "booking")
         act2 = item(p2, "activity", "Blue Lagoon", "2026-08-10", status="confirmed",
                     details={"name": "Blue Lagoon", "location": "Grindavik",
-                             "start_time": "2026-08-10T16:00", "end_time": "2026-08-10T19:00",
-                             "price": "90", "currency": "EUR", "link": "https://example.com/bluelagoon"})
+                             "start_time": "2026-08-10T16:00", "end_time": "2026-08-10T19:00"})
         add_image(act2, "lagoon", "geothermal pool")
+        add_link(act2, "https://example.com/bluelagoon", "tickets")
         t2 = item(p2, "transit", "Rental car (Dacia Duster)", "2026-08-11",
                   details={"mode": "Rental car", "from": "KEF", "to": "Ring Road",
-                           "depart_time": "2026-08-11T09:00", "arrive_time": "2026-08-11T09:30",
-                           "price": "420", "currency": "EUR"})
+                           "depart_time": "2026-08-11T09:00", "arrive_time": "2026-08-11T09:30"})
         tk2 = item(p2, "activity", "Glacier hike Vatnajokull", "2026-08-13", status="planned",
-                   details={"name": "Glacier hike", "venue": "Skaftafell",
-                            "start_time": "2026-08-13T10:00", "end_time": "2026-08-13T14:00",
-                            "qty": 3, "price": "150", "currency": "EUR"})
+                   details={"name": "Glacier hike", "location": "Skaftafell",
+                            "start_time": "2026-08-13T10:00", "end_time": "2026-08-13T14:00"})
         rest2 = item(p2, "restaurant", "Dillon whiskey bar", "2026-08-12",
-                     details={"name": "Dillon", "address": "Reykjavik", "time": "2026-08-12T21:00", "party_size": 3})
+                     details={"name": "Dillon", "address": "Reykjavik", "start_time": "2026-08-12T21:00", "party_size": 3})
         note2 = item(p2, "note", "Fuel up before the highland detour", "2026-08-14",
                      details={"text": "Gas stations get sparse east of Egilsstadir."})
 
@@ -249,27 +244,26 @@ def seed() -> None:
         h3 = item(p3, "hotel", "王府井饭店 Wangfujing Hotel", "2026-09-10", end="2026-09-15", status="confirmed",
                   details={"hotel_name": "Wangfujing Hotel", "address": "88 Wangfujing Dajie, Dongcheng, Beijing",
                            "check_in_time": "14:00", "check_out_time": "12:00",
-                           "booking_ref": "WH-30187", "price": "4500", "currency": "CNY",
-                           "link": "https://example.com/wangfujing", "note": "5 nights, breakfast included"})
+                           "booking_ref": "WH-30187", "note": "5 nights, breakfast included"})
         add_image(h3, "hotel", "hotel lobby")
+        add_link(h3, "https://example.com/wangfujing", "booking")
 
         f3 = item(p3, "transit", "CA 985 SFO -> PEK", "2026-09-10", status="confirmed",
                   details={"mode": "Flight", "provider": "Air China", "ref_no": "CA985",
                            "from": "SFO", "to": "PEK",
                            "depart_time": "2026-09-10T13:00", "arrive_time": "2026-09-11T17:00",
-                           "confirmation": "CA-9F4K2", "price": "700", "currency": "USD",
-                           "link": "https://example.com/ca985"})
+                           "confirmation": "CA-9F4K2"})
         add_image(f3, "flight", "boarding pass")
+        add_link(f3, "https://example.com/ca985", "booking")
 
         t3 = item(p3, "transit", "DiDi from PEK to hotel", "2026-09-11",
                   details={"mode": "Taxi", "from": "PEK", "to": "Wangfujing",
-                           "depart_time": "2026-09-11T17:30", "arrive_time": "2026-09-11T18:00",
-                           "price": "200", "currency": "CNY"})
+                           "depart_time": "2026-09-11T17:30", "arrive_time": "2026-09-11T18:00"})
 
         rest3 = item(p3, "restaurant", "全聚德烤鸭 Quanjude (Wangfujing)", "2026-09-11",
                      details={"name": "Quanjude", "address": "9 Wangfujing Dajie, Beijing",
-                              "time": "2026-09-11T19:00", "party_size": 2,
-                              "link": "https://example.com/quanjude"})
+                              "start_time": "2026-09-11T19:00", "party_size": 2})
+        add_link(rest3, "https://example.com/quanjude", "menu")
 
         act3 = item(p3, "activity", "故宫 Forbidden City", "2026-09-11",
                     details={"name": "Forbidden City", "location": "Dongcheng, Beijing",
@@ -277,15 +271,13 @@ def seed() -> None:
 
         act4 = item(p3, "activity", "慕田峪长城 Great Wall (Mutianyu)", "2026-09-12", status="confirmed",
                     details={"name": "Mutianyu Great Wall", "location": "Huairou, Beijing",
-                             "start_time": "2026-09-12T08:00", "end_time": "2026-09-12T16:00",
-                             "price": "180", "currency": "CNY",
-                             "link": "https://example.com/mutianyu"})
+                             "start_time": "2026-09-12T08:00", "end_time": "2026-09-12T16:00"})
+        add_link(act4, "https://example.com/mutianyu", "tickets")
 
         tk3 = item(p3, "activity", "天坛 Temple of Heaven", "2026-09-13",
-                   details={"name": "Temple of Heaven", "venue": "Tiantan, Dongcheng",
-                            "start_time": "2026-09-13T09:00", "end_time": "2026-09-13T11:00",
-                            "qty": 2, "price": "70", "currency": "CNY",
-                            "link": "https://example.com/tiantan"})
+                   details={"name": "Temple of Heaven", "location": "Tiantan, Dongcheng",
+                            "start_time": "2026-09-13T09:00", "end_time": "2026-09-13T11:00"})
+        add_link(tk3, "https://example.com/tiantan", "tickets")
 
         note3 = item(p3, "note", "24小时内到酒店登记 Register at hotel within 24h", "2026-09-10",
                      details={"text": "Foreign visitors must register their passport at the hotel within 24 hours of arrival."})

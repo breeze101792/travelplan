@@ -145,6 +145,48 @@ def init_db() -> None:
             conn.commit()
         except Exception:
             pass
+        # Migration: move link from details to attachments, rename venue→location,
+        # convert legacy time→start_time/end_time, remove qty/price/currency from details
+        try:
+            c = conn.execute("SELECT id, item_type, details FROM items")
+            rows = c.fetchall()
+            for row in rows:
+                item_id, item_type, raw_details = row
+                details = json.loads(raw_details) if raw_details else {}
+                changed = False
+                # Move link to attachments
+                link = details.pop('link', None)
+                if link:
+                    existing = conn.execute(
+                        "SELECT id FROM attachments WHERE item_id = ? AND kind = 'link' AND value = ?",
+                        (item_id, link)
+                    ).fetchone()
+                    if not existing:
+                        conn.execute(
+                            "INSERT INTO attachments (item_id, kind, value, caption) VALUES (?, 'link', ?, ?)",
+                            (item_id, link, details.get('name') or details.get('hotel_name') or '')
+                        )
+                # Rename venue to location for activity items
+                if item_type == 'activity' and 'venue' in details:
+                    details['location'] = details.pop('venue')
+                    changed = True
+                # Convert legacy time to start_time/end_time for restaurant
+                if item_type == 'restaurant' and 'time' in details and not details.get('start_time'):
+                    details['start_time'] = details.pop('time')
+                    changed = True
+                # Remove fields that no longer belong in details
+                for legacy_field in ('qty', 'price', 'currency'):
+                    if legacy_field in details:
+                        del details[legacy_field]
+                        changed = True
+                if changed:
+                    conn.execute(
+                        "UPDATE items SET details = ? WHERE id = ?",
+                        (json.dumps(details) if details else None, item_id),
+                    )
+            conn.commit()
+        except Exception:
+            pass
     finally:
         conn.close()
 
