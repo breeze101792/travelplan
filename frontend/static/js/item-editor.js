@@ -327,12 +327,15 @@ export function openItemEditor(ctx, { plan, item, settings, members, staging, se
       for (let i = 0; i < selectedGeocodes.length; i++) {
         const g = selectedGeocodes[i];
         const row = el('div', { class: 'geo-list-row' });
+        row.style.cursor = 'pointer';
+        row.title = 'Double-click to view on map';
         row.appendChild(el('span', { class: 'geo-pin', text: '\uD83D\uDCCD' }));
         row.appendChild(el('span', { class: 'geo-label', text: g.label }));
         row.appendChild(el('span', {
           class: 'geo-coords',
           text: `(${g.lat.toFixed(4)}, ${g.lng.toFixed(4)})`,
         }));
+        row.addEventListener('dblclick', () => openGeoMapPopup(g));
         const removeBtn = document.createElement('button');
         removeBtn.type = 'button'; removeBtn.className = 'btn btn-ghost geo-remove';
         removeBtn.textContent = '\u2715';
@@ -807,7 +810,7 @@ function openExpenseModal({ plan, members, settings, item, pendingExpenses, onRe
  * Calls onSelect({ label, lat, lng }) when the user picks a result. */
 function openGeoSearchPopup(onSelect) {
   const backdrop = el('div', { class: 'modal-backdrop editor-backdrop' });
-  const modal = el('div', { class: 'geo-popup' });
+  const modal = el('div', { class: 'geo-popup geo-popup-wide' });
   backdrop.appendChild(modal);
 
   const header = el('div', { class: 'geo-popup-header' });
@@ -830,7 +833,42 @@ function openGeoSearchPopup(onSelect) {
 
   const resultsEl = el('div', { class: 'geo-results' });
   body.appendChild(resultsEl);
+
+  const mapContainer = el('div', { class: 'geo-search-map' });
+  body.appendChild(mapContainer);
   modal.appendChild(body);
+
+  let map = null;
+  let marker = null;
+
+  function ensureMap() {
+    if (map) return;
+    loadLeaflet(() => {
+      map = L.map(mapContainer).setView([35.6762, 139.6503], 3);
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        attribution: '&copy; <a href="https://openstreetmap.org/copyright">OpenStreetMap</a>',
+      }).addTo(map);
+      map.on('click', (e) => {
+        const { lat, lng } = e.latlng;
+        if (marker) map.removeLayer(marker);
+        marker = L.marker([lat, lng]).addTo(map);
+        // Reverse geocode
+        fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}`)
+          .then(r => r.json())
+          .then(data => {
+            const label = data.display_name || `${lat.toFixed(4)}, ${lng.toFixed(4)}`;
+            marker.bindPopup(label).openPopup();
+            marker._label = label;
+            marker._lat = lat;
+            marker._lng = lng;
+          })
+          .catch(() => {
+            marker._label = `${lat.toFixed(4)}, ${lng.toFixed(4)}`;
+          });
+      });
+      setTimeout(() => map.invalidateSize(), 100);
+    });
+  }
 
   async function doSearch() {
     const q = searchInput.value.trim();
@@ -867,6 +905,20 @@ function openGeoSearchPopup(onSelect) {
     }
   }
 
+  // Confirm button for map selection
+  const confirmRow = el('div', { class: 'geo-confirm-row' });
+  const confirmBtn = document.createElement('button');
+  confirmBtn.type = 'button'; confirmBtn.className = 'btn btn-primary';
+  confirmBtn.textContent = 'Select map location';
+  confirmBtn.addEventListener('click', () => {
+    if (marker && marker._label) {
+      onSelect({ label: marker._label, lat: marker._lat, lng: marker._lng });
+      backdrop.remove();
+    }
+  });
+  confirmRow.appendChild(confirmBtn);
+  body.appendChild(confirmRow);
+
   searchBtn.addEventListener('click', doSearch);
   searchInput.addEventListener('keydown', (e) => {
     if (e.key === 'Enter') doSearch();
@@ -875,6 +927,49 @@ function openGeoSearchPopup(onSelect) {
   document.body.appendChild(backdrop);
   backdrop.addEventListener('click', (e) => { if (e.target === backdrop) backdrop.remove(); });
   searchInput.focus();
+  ensureMap();
+}
+
+function loadLeaflet(callback) {
+  if (typeof L !== 'undefined') { callback(); return; }
+  const link = document.createElement('link');
+  link.rel = 'stylesheet'; link.href = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css';
+  document.head.appendChild(link);
+  const script = document.createElement('script');
+  script.src = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js';
+  script.onload = callback;
+  document.body.appendChild(script);
+}
+
+/* Open a popup with a Leaflet map showing a pin at the given coordinates. */
+function openGeoMapPopup(geocode) {
+  const backdrop = el('div', { class: 'modal-backdrop editor-backdrop' });
+  const modal = el('div', { class: 'geo-map-popup' });
+  backdrop.appendChild(modal);
+
+  const header = el('div', { class: 'geo-popup-header' });
+  header.appendChild(el('h3', { text: geocode.label }));
+  const closeBtn = el('button', { type: 'button', class: 'modal-close', text: '\u00d7' });
+  closeBtn.addEventListener('click', () => backdrop.remove());
+  header.appendChild(closeBtn);
+  modal.appendChild(header);
+
+  const mapContainer = el('div', { class: 'geo-map-container' });
+  modal.appendChild(mapContainer);
+
+  document.body.appendChild(backdrop);
+  backdrop.addEventListener('click', (e) => { if (e.target === backdrop) backdrop.remove(); });
+
+  loadLeaflet(() => {
+    const map = L.map(mapContainer).setView([geocode.lat, geocode.lng], 15);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: '&copy; <a href="https://openstreetmap.org/copyright">OpenStreetMap</a>',
+    }).addTo(map);
+    L.marker([geocode.lat, geocode.lng]).addTo(map)
+      .bindPopup(geocode.label)
+      .openPopup();
+    setTimeout(() => map.invalidateSize(), 100);
+  });
 }
 
 /* Build the right <input>/<select>/<textarea> for a type-specific field.

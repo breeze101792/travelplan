@@ -220,10 +220,12 @@ function makeBar({ kind, top, end, totalCols, col, title, time, titleText, extra
       onclick: (e) => e.stopPropagation(),
     }) : null,
   ]);
+  if (item) {
+    node.dataset.itemId = String(item.id);
+  }
   if (draggable && kind !== 'hotel' && item) {
     const f = TIME_FIELDS[item.item_type] || {};
     const timeFields = { start: f.start || 'start_time', end: f.end || 'end_time' };
-    node.dataset.itemId = String(item.id);
     node.dataset.timeField = JSON.stringify(timeFields);
     if (day) node.dataset.day = day;
     node.dataset.start = String(top);
@@ -317,6 +319,7 @@ function renderDay(day, items, settings, nowFraction, ctx, staging, setBlockErro
         titleText,
         draggable: false,
         linkUrl: d.link,
+        item: h,
       }));
     }
   }
@@ -1369,9 +1372,7 @@ function wireBarClick({ bar, ctx, getViewItems, onPlainClick, onToggleSelect, on
         showToast("Spanning items (e.g. hotels) can't be multi-selected. Drag or open the editor to change dates.", 'warn');
         return;
       }
-      // Plain click on a hotel: open the editor.
-      const it = findItem();
-      if (it && onPlainClick) onPlainClick(it);
+      // Plain click on a hotel: no-op (use double-click to open editor).
       return;
     }
     if (e.metaKey || e.ctrlKey) {
@@ -1389,7 +1390,6 @@ function wireBarClick({ bar, ctx, getViewItems, onPlainClick, onToggleSelect, on
     if (onPlainClick) onPlainClick(itemId);
   });
   bar.addEventListener('dblclick', (e) => {
-    if (isHotel) return;
     e.preventDefault();
     const it = findItem();
     if (it && onDblClick) onDblClick(it);

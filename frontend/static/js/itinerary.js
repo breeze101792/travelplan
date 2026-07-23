@@ -295,7 +295,6 @@ export async function initItinerary(ctx) {
     });
     card.addEventListener('dblclick', (e) => {
       if (ctx.role === 'viewer') return;
-      if (!isSelectable(item)) return;
       e.preventDefault();
       openEditorFor(item);
     });
@@ -519,8 +518,7 @@ export async function initItinerary(ctx) {
         showToast('Spanning items (e.g. hotels) can\'t be multi-selected. Drag or open the editor to change dates.', 'warn');
         return;
       }
-      // Plain click on a hotel: open the editor.
-      openEditorFor(item);
+      // Plain click on a hotel: no-op (use double-click to open editor).
       return;
     }
     if (ev.metaKey || ev.ctrlKey) {
