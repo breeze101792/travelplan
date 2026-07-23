@@ -94,7 +94,19 @@
   flex-direction: column;
 }
 @media (max-width: 640px) {
-  .modal.item-editor .field-row .field-group { min-width: 100%; }
+  .modal.item-editor .field-row { flex-direction: column; gap: 6px; margin-top: 6px; }
+  .modal.item-editor .field-row:first-child { margin-top: 0; }
+  .modal.item-editor .field-row .field-group { min-width: 0; flex: 1 1 auto; overflow: hidden; }
+  .modal.item-editor .field-row .field-group .input,
+  .modal.item-editor .input { max-width: 100%; min-width: 0; width: 100%; }
+  .modal.item-editor .ie-col { min-width: 0; overflow: hidden; }
+  .modal.item-editor .modal-body { padding: 10px 12px; }
+  .modal.item-editor .field { margin: 5px 0 2px; }
+  .modal.item-editor .section-title { margin: 6px 0 3px; padding-top: 4px; }
+  .modal.item-editor .todo-section { margin-top: 4px; padding-top: 4px; }
+  .modal.item-editor .geo-sep { margin: 8px 0 4px; }
+  .modal.item-editor .link-row { margin-top: 6px; }
+  .modal.item-editor .att-list { gap: 6px; }
 }
 .modal.item-editor .field-row .field-group .field { margin-top: 0; }
 .modal.item-editor .field-row .field-group .input { width: 100%; min-width: 0; }
