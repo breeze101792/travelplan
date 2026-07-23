@@ -717,13 +717,14 @@ export async function initItinerary(ctx) {
     if (ctx.role === 'viewer') { bar.hidden = true; return; }
 
     const hasPending = staging.hasPending;
+    const failed = staging.failedOpIndex >= 0;
+    if (!hasPending && !failed && !blockError) { bar.hidden = true; return; }
     const lastLabel = hasPending
       ? staging.ops[staging.pointer - 1].label
       : 'All changes saved';
     const canUndo = staging.canUndo;
     const canRedo = staging.canRedo;
     const canSave = hasPending && !staging.saving;
-    const failed = staging.failedOpIndex >= 0;
     const failedOp = failed ? staging.ops[staging.failedOpIndex] : null;
     const failedLabel = failedOp ? ` (failed: ${failedOp.label})` : '';
 

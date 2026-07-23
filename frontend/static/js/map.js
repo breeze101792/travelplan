@@ -468,5 +468,5 @@ function renderPendingBar() {
     el('button', { type:'button', class:'pb-btn pb-save', text:staging.saving?'Saving…':'Save', disabled:!canSave, onclick:async()=>{ await staging.saveAll(api); renderPendingBar(); reloadAll(); }}),
     el('span', { class:'pb-status'+(failed?' pb-failed':''), text:staging.saving?'Saving changes…':failed?`Save failed: ${staging.failedError}`:hasPending?`${staging.pendingCount} pending — last: ${lastLabel}`:'All changes saved' }),
   );
-  bar.hidden = false;
+  bar.hidden = !hasPending && !failed;
 }
