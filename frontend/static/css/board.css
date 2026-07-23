@@ -266,3 +266,20 @@
   from { opacity: 0; transform: translateY(-6px); }
   to   { opacity: 1; transform: translateY(0); }
 }
+
+/* Card link button --------------------------------------------------- */
+
+.card-link-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  text-decoration: none;
+  font-size: 1rem;
+  padding: 0.15rem 0.4rem;
+  border-radius: 0.4rem;
+  color: var(--accent, #2563eb);
+  transition: background 0.12s;
+}
+.card-link-btn:hover {
+  background: var(--accent-bg, #eff6ff);
+}

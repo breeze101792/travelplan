@@ -197,7 +197,7 @@ function updateScale(root) {
 // field names, source day, start/end hours) that the drag handler reads
 // without re-looking-up the item. Hotels don't need any of this so the
 // call site can omit `item`.
-function makeBar({ kind, top, end, totalCols, col, title, time, titleText, extraClass = '', draggable = true, item, day }) {
+function makeBar({ kind, top, end, totalCols, col, title, time, titleText, extraClass = '', draggable = true, item, day, linkUrl }) {
   const w = totalCols || 1;
   const left = 22 + (col / w) * (100 - 22 - 4) + '%';
   const width = (1 / w) * (100 - 22 - 4) + '%';
@@ -213,6 +213,11 @@ function makeBar({ kind, top, end, totalCols, col, title, time, titleText, extra
   }, [
     el('div', { class: 'tl-item-title', text: title || kind }),
     time ? el('div', { class: 'tl-item-time', text: time }) : null,
+    linkUrl ? el('a', {
+      class: 'tl-item-link', href: linkUrl, target: '_blank', rel: 'noopener',
+      html: '🔗', title: 'Open link',
+      onclick: (e) => e.stopPropagation(),
+    }) : null,
   ]);
   if (draggable && kind !== 'hotel' && item) {
     const f = TIME_FIELDS[item.item_type] || {};
@@ -310,6 +315,7 @@ function renderDay(day, items, settings, nowFraction, ctx, staging, setBlockErro
         time,
         titleText,
         draggable: false,
+        linkUrl: d.link,
       }));
     }
   }
@@ -355,6 +361,7 @@ function renderDay(day, items, settings, nowFraction, ctx, staging, setBlockErro
       extraClass,
       item: it,
       day: day.date,
+      linkUrl: d.link,
     }));
   }
 

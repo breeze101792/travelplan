@@ -154,6 +154,8 @@
 }
 .tl-item .tl-item-title { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .tl-item .tl-item-time  { opacity: .85; font-size: 10px; }
+.tl-item .tl-item-link  { position:absolute; top:2px; right:2px; text-decoration:none; font-size:11px; padding:1px 3px; border-radius:3px; z-index:2; }
+.tl-item .tl-item-link:hover { background:rgba(0,0,0,0.08); }
 .tl-item:hover { filter: brightness(1.05); box-shadow: 0 2px 8px rgba(15, 23, 42, .15); }
 .tl-item.empty { background: #94a3b8; color: #1f2937; }
 .tl-item.multi { box-shadow: inset 3px 0 0 rgba(255,255,255,.45); } /* marker when stacked side-by-side */

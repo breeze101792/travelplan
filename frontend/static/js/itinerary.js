@@ -274,6 +274,15 @@ export async function initItinerary(ctx) {
       }));
     }
 
+    const linkUrl = item.details && item.details.link;
+    if (linkUrl) {
+      card.appendChild(el('a', {
+        class: 'card-link-btn', href: linkUrl, target: '_blank', rel: 'noopener',
+        title: 'Open link', html: '🔗',
+        onclick: (e) => e.stopPropagation(),
+      }));
+    }
+
     card.addEventListener('click', (e) => {
       if (e.button != null && e.button !== 0) return;
       if (e.detail > 1) return; // part of double-click
