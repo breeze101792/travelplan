@@ -251,3 +251,46 @@
   margin: 0;
   flex-shrink: 0;
 }
+
+/* ---------- attachment modal tabs ---------- */
+.att-tab-row {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 12px;
+}
+.att-tab {
+  flex: 1;
+  text-align: center;
+  padding: 8px 12px;
+  border: 1px solid var(--border, #cbd5e1);
+  background: var(--surface-2, #f8fafc);
+  color: var(--muted, #64748b);
+  cursor: pointer;
+  border-radius: 8px;
+  font-size: .9rem;
+}
+.att-tab:hover {
+  background: var(--surface, #fff);
+}
+.att-tab-active {
+  background: var(--accent, #6366f1);
+  border-color: var(--accent, #6366f1);
+  color: #fff;
+}
+.att-tab-active:hover {
+  background: var(--accent, #6366f1);
+  filter: brightness(1.05);
+}
+.att-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.att-panel .field {
+  display: block; font-size: .85rem; font-weight: 600;
+  color: var(--muted, #475569); margin: 6px 0 3px;
+}
+.att-panel .input {
+  width: 100%; box-sizing: border-box; padding: 10px 12px; font-size: 1rem;
+  border: 1px solid var(--border, #cbd5e1); border-radius: 8px; background: var(--surface, #fff);
+}

@@ -156,56 +156,18 @@ export function openItemEditor(ctx, { plan, item, settings, members, staging, se
   renderAttachments();
 
   if (!readOnly) {
-    const linkUrl = document.createElement('input');
-    linkUrl.type = 'url'; linkUrl.className = 'input'; linkUrl.placeholder = 'https://link';
-    const linkCap = document.createElement('input');
-    linkCap.type = 'text'; linkCap.className = 'input'; linkCap.placeholder = 'Caption';
-    const linkBtn = document.createElement('button');
-    linkBtn.type = 'button'; linkBtn.className = 'btn'; linkBtn.textContent = 'Add link';
-    linkBtn.addEventListener('click', () => {
-      const v = linkUrl.value.trim();
-      if (!v) return;
-      const localId = '__pending__' + Math.random().toString(36).slice(2, 10);
-      attachments.push({
-        id: localId,
-        item_id: item.id,
-        kind: 'link',
-        value: v,
-        caption: linkCap.value.trim() || '',
-        isLocal: true,
-        _pendingUrl: v,
-        _pendingCaption: linkCap.value.trim(),
+    const addAttBtn = document.createElement('button');
+    addAttBtn.type = 'button'; addAttBtn.className = 'btn';
+    addAttBtn.textContent = 'Add attachment';
+    addAttBtn.addEventListener('click', () => {
+      openAttachmentModal({
+        item,
+        attachments,
+        pendingFiles,
+        onAttachmentsChanged: () => renderAttachments(),
       });
-      linkUrl.value = ''; linkCap.value = '';
-      renderAttachments();
     });
-    const linkRow = el('div', { class: 'link-row' }, [linkUrl, linkCap, linkBtn]);
-    colSide.appendChild(linkRow);
-
-    const fileLabel = el('label', { class: 'file-label', text: 'Upload image: ' });
-    const fileInput = document.createElement('input');
-    fileInput.type = 'file'; fileInput.accept = 'image/*';
-    fileInput.addEventListener('change', () => {
-      if (fileInput.files[0]) {
-        const f = fileInput.files[0];
-        const previewUrl = URL.createObjectURL(f);
-        const localId = '__pending__' + Math.random().toString(36).slice(2, 10);
-        pendingFiles.push({ file: f, previewUrl });
-        attachments.push({
-          id: localId,
-          item_id: item.id,
-          kind: 'image',
-          value: previewUrl,
-          caption: f.name,
-          isLocal: true,
-          _pendingFileIdx: pendingFiles.length - 1,
-        });
-        fileInput.value = '';
-        renderAttachments();
-      }
-    });
-    fileLabel.appendChild(fileInput);
-    colSide.appendChild(fileLabel);
+    colSide.appendChild(addAttBtn);
 
     // expense button
     colSide.appendChild(el('h4', { class: 'section-title', text: 'Expenses' }));
@@ -487,6 +449,111 @@ export function openItemEditor(ctx, { plan, item, settings, members, staging, se
   // Cancel). Multiple expenses can be queued; each is bundled into the
   // SAVE_ITEM op as a separate sub-effect.
   let pendingExpenses = [];
+}
+
+/* Open a modal for adding an attachment — either a URL link or an image upload. */
+function openAttachmentModal({ item, attachments, pendingFiles, onAttachmentsChanged }) {
+  const backdrop = el('div', { class: 'modal-backdrop editor-backdrop' });
+  const modal = el('div', { class: 'modal expense-modal' });
+  backdrop.appendChild(modal);
+
+  modal.appendChild(el('div', { class: 'modal-header' }, [
+    el('h3', { text: 'Add attachment' }),
+    el('button', { type: 'button', class: 'modal-close', text: '\u00d7',
+      onclick: () => backdrop.remove() }),
+  ]));
+
+  const body = el('div', { class: 'modal-body' });
+  modal.appendChild(body);
+
+  const tabRow = el('div', { class: 'att-tab-row' });
+  const linkTab = el('button', { type: 'button', class: 'btn att-tab att-tab-active', text: 'Link' });
+  const uploadTab = el('button', { type: 'button', class: 'btn att-tab', text: 'Upload image' });
+  tabRow.append(linkTab, uploadTab);
+  body.appendChild(tabRow);
+
+  const linkPanel = el('div', { class: 'att-panel' });
+  const uploadPanel = el('div', { class: 'att-panel', style: 'display:none' });
+  body.appendChild(linkPanel);
+  body.appendChild(uploadPanel);
+
+  // --- Link panel ---
+  const linkUrl = document.createElement('input');
+  linkUrl.type = 'url'; linkUrl.className = 'input'; linkUrl.placeholder = 'https://link';
+  const linkCap = document.createElement('input');
+  linkCap.type = 'text'; linkCap.className = 'input'; linkCap.placeholder = 'Caption';
+  linkPanel.appendChild(el('label', { class: 'field', text: 'URL' }));
+  linkPanel.appendChild(linkUrl);
+  linkPanel.appendChild(el('label', { class: 'field', text: 'Caption' }));
+  linkPanel.appendChild(linkCap);
+
+  // --- Upload panel ---
+  const fileInput = document.createElement('input');
+  fileInput.type = 'file'; fileInput.accept = 'image/*';
+  fileInput.className = 'input';
+  uploadPanel.appendChild(el('label', { class: 'field', text: 'Select image' }));
+  uploadPanel.appendChild(fileInput);
+
+  // --- Tab switching ---
+  function activateTab(tab) {
+    [linkTab, uploadTab].forEach(t => t.classList.remove('att-tab-active'));
+    tab.classList.add('att-tab-active');
+    linkPanel.style.display = tab === linkTab ? '' : 'none';
+    uploadPanel.style.display = tab === uploadTab ? '' : 'none';
+  }
+  linkTab.addEventListener('click', () => activateTab(linkTab));
+  uploadTab.addEventListener('click', () => activateTab(uploadTab));
+
+  const msg = el('p', { class: 'muted' });
+  body.appendChild(msg);
+
+  const addBtn = document.createElement('button');
+  addBtn.type = 'button'; addBtn.className = 'btn btn-primary';
+  addBtn.textContent = 'Add';
+
+  addBtn.addEventListener('click', () => {
+    if (linkTab.classList.contains('att-tab-active')) {
+      const v = linkUrl.value.trim();
+      if (!v) { msg.textContent = 'Enter a URL.'; return; }
+      const localId = '__pending__' + Math.random().toString(36).slice(2, 10);
+      attachments.push({
+        id: localId,
+        item_id: item.id,
+        kind: 'link',
+        value: v,
+        caption: linkCap.value.trim() || '',
+        isLocal: true,
+        _pendingUrl: v,
+        _pendingCaption: linkCap.value.trim(),
+      });
+    } else {
+      const f = fileInput.files && fileInput.files[0];
+      if (!f) { msg.textContent = 'Select an image file.'; return; }
+      const previewUrl = URL.createObjectURL(f);
+      const localId = '__pending__' + Math.random().toString(36).slice(2, 10);
+      pendingFiles.push({ file: f, previewUrl });
+      attachments.push({
+        id: localId,
+        item_id: item.id,
+        kind: 'image',
+        value: previewUrl,
+        caption: f.name,
+        isLocal: true,
+        _pendingFileIdx: pendingFiles.length - 1,
+      });
+    }
+    backdrop.remove();
+    if (onAttachmentsChanged) onAttachmentsChanged();
+  });
+
+  const footer = el('div', { class: 'modal-footer' });
+  footer.appendChild(el('button', { type: 'button', class: 'btn btn-ghost',
+    text: 'Cancel', onclick: () => backdrop.remove() }));
+  footer.appendChild(addBtn);
+  modal.appendChild(footer);
+
+  document.body.appendChild(backdrop);
+  backdrop.addEventListener('click', (e) => { if (e.target === backdrop) backdrop.remove(); });
 }
 
 /* Open a modal for adding an expense. Queues the expense into the
