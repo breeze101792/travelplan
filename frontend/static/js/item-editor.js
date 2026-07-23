@@ -153,6 +153,100 @@ export function openItemEditor(ctx, { plan, item, settings, members, staging, se
     colSide.appendChild(dateInput);
   }
 
+  // todo list (right col, after dates)
+  const todos = (item.details && item.details.todos) || [];
+  const todoSection = el('div', { class: 'todo-section' });
+  const todoHeader = el('div', { class: 'todo-header' });
+  todoHeader.appendChild(el('span', { class: 'todo-header-title', text: 'To-do list' }));
+  todoSection.appendChild(todoHeader);
+
+  const todoBody = el('div', { class: 'todo-body' });
+  const todoList = el('ul', { class: 'todo-list' });
+  todoBody.appendChild(todoList);
+  todoSection.appendChild(todoBody);
+
+  if (!readOnly) {
+    const addTodoRow = el('div', { class: 'todo-add-row' });
+    const todoInput = document.createElement('input');
+    todoInput.type = 'text'; todoInput.className = 'input'; todoInput.placeholder = 'Add a to-do...';
+    const addTodoBtn = document.createElement('button');
+    addTodoBtn.type = 'button'; addTodoBtn.className = 'btn'; addTodoBtn.textContent = 'Add';
+    addTodoBtn.addEventListener('click', () => {
+      const text = todoInput.value.trim();
+      if (!text) return;
+      todos.push({ text, done: false });
+      todoInput.value = '';
+      renderTodos();
+    });
+    todoInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') addTodoBtn.click();
+    });
+    addTodoRow.append(todoInput, addTodoBtn);
+    todoSection.appendChild(addTodoRow);
+  }
+
+  function renderTodos() {
+    clear(todoList);
+    const sorted = [...todos].sort((a, b) => {
+      if (a.done !== b.done) return a.done ? 1 : -1;
+      return 0;
+    });
+    for (let i = 0; i < sorted.length; i++) {
+      const t = sorted[i];
+      const li = el('li', { class: 'todo-item', draggable: !readOnly });
+      const cb = document.createElement('input');
+      cb.type = 'checkbox'; cb.checked = !!t.done;
+      cb.addEventListener('change', () => {
+        t.done = cb.checked;
+        renderTodos();
+      });
+      const span = document.createElement('span');
+      span.textContent = t.text;
+      span.className = t.done ? 'todo-done' : '';
+      li.append(cb, span);
+      if (!readOnly) {
+        const delBtn = el('button', { type: 'button', class: 'btn btn-ghost att-del', text: '\u2715' });
+        delBtn.addEventListener('click', () => {
+          const idx = todos.indexOf(t);
+          if (idx !== -1) todos.splice(idx, 1);
+          renderTodos();
+        });
+        li.appendChild(delBtn);
+        // drag-and-drop
+        li.addEventListener('dragstart', (e) => {
+          e.dataTransfer.setData('text/plain', i);
+          li.classList.add('dragging');
+        });
+        li.addEventListener('dragend', () => {
+          li.classList.remove('dragging');
+        });
+        li.addEventListener('dragover', (e) => {
+          e.preventDefault();
+          li.classList.add('drag-over');
+        });
+        li.addEventListener('dragleave', () => {
+          li.classList.remove('drag-over');
+        });
+        li.addEventListener('drop', (e) => {
+          e.preventDefault();
+          li.classList.remove('drag-over');
+          const fromIdx = parseInt(e.dataTransfer.getData('text/plain'), 10);
+          if (isNaN(fromIdx) || fromIdx === i) return;
+          const item = sorted[fromIdx];
+          const realFrom = todos.indexOf(item);
+          const realTo = todos.indexOf(t);
+          if (realFrom === -1 || realTo === -1) return;
+          todos.splice(realFrom, 1);
+          todos.splice(realTo, 0, item);
+          renderTodos();
+        });
+      }
+      todoList.appendChild(li);
+    }
+  }
+  renderTodos();
+  colSide.appendChild(todoSection);
+
   // attachments (right col)
   colSide.appendChild(el('h4', { class: 'section-title', text: 'Attachments' }));
   const attList = el('div', { class: 'att-list' });
@@ -335,6 +429,11 @@ export function openItemEditor(ctx, { plan, item, settings, members, staging, se
       else delete details[k];
     }
     details.is_backup = !!backupInput.checked;
+    if (todos.length) {
+      details.todos = todos;
+    } else {
+      delete details.todos;
+    }
     // Clean up the legacy `time` field for restaurant/transport once the
     // new start_time + end_time shape is in place — otherwise the item
     // would carry two ways of saying the same thing.
