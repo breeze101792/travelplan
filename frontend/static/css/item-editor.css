@@ -331,7 +331,7 @@
   background: var(--surface, #fff); border-radius: 14px;
   box-shadow: 0 20px 60px rgba(15,23,42,.3);
   display: flex; flex-direction: column;
-  max-height: 80vh;
+  max-height: min(80vh, 600px);
   padding: 0;
   margin: 0;
 }
@@ -340,6 +340,8 @@
   display: flex;
   flex-direction: column;
   gap: 10px;
+  overflow-y: auto;
+  min-height: 0;
 }
 .modal.expense-modal .modal-body .field {
   display: block; font-size: .85rem; font-weight: 600;
