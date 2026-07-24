@@ -240,7 +240,7 @@ export async function initItinerary(ctx) {
       dataset: { itemId: String(item.id), date: dayDate, end: item.end_date || '',
                  type: item.item_type, spans: isSpanningItem(item, settings) ? '1' : '0' },
     });
-    if (ctx.role !== 'viewer' && !item._hotelEvent) card.draggable = true;
+    if (ctx.role !== 'viewer' && (!item._hotelEvent || item._hotelEvent === 'check-out')) card.draggable = true;
     if (item.isLocal) card.classList.add('is-local');
     if (item._hotelEvent) card.classList.add('hotel-event', `hotel-event-${item._hotelEvent}`);
 
@@ -297,7 +297,13 @@ export async function initItinerary(ctx) {
     });
     card.addEventListener('dblclick', (e) => {
       if (e.button != null && e.button !== 0) return;
-      if (ctx.role !== 'viewer' && !item._hotelEvent) openEditorFor(item);
+      if (ctx.role === 'viewer') return;
+      if (item._hotelEvent) {
+        const parent = staging.viewItems().find(i => String(i.id) === String(item._hotelId));
+        if (parent) openEditorFor(parent);
+        return;
+      }
+      openEditorFor(item);
     });
     card.addEventListener('contextmenu', (e) => {
       if (ctx.role === 'viewer') return;
@@ -503,6 +509,9 @@ export async function initItinerary(ctx) {
    *                            Cmd+click on a hotel.
    */
   function handleCardClick(item, ev) {
+    // Hotel events (check-in/check-out): single click does nothing;
+    // double-click opens the parent hotel's editor.
+    if (item._hotelEvent) return;
     if (ev.metaKey || ev.ctrlKey) {
       if (!isSelectable(item)) {
         showToast('Spanning items (e.g. hotels) can\'t be multi-selected. Drag or open the editor to change dates.', 'warn');

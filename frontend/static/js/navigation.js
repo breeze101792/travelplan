@@ -339,8 +339,12 @@ function renderCard(item, status) {
     selectItem(item.id);
   });
   card.addEventListener('dblclick', () => {
+    if (item._hotelEvent) {
+      const parent = allItems.find(i => String(i.id) === String(item._hotelId));
+      if (parent) openEditorFor(parent);
+      return;
+    }
     if (item.item_type === 'hotel') return;
-    if (item._hotelEvent) return;
     openEditorFor(item);
   });
 

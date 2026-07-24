@@ -4,6 +4,7 @@ import { buildDays, wirePlanHeader } from '/static/js/plan-header.js';
 import { Staging, moveItemOp, deleteItemOp, saveItemOp } from '/static/js/staging.js';
 import { el, clear } from '/static/js/util.js';
 import { openItemEditor, openGeoMapPopup } from '/static/js/item-editor.js';
+import { expandHotelEvents } from '/static/js/hotel-events.js';
 import { clipboardGet, clipboardSet, serializeItem } from '/static/js/clipboard.js';
 
 const DAY_COLORS = [
@@ -132,25 +133,32 @@ function closeContextMenu() {
 function showContextMenu(x, y, item, dayIdx) {
   closeContextMenu();
 
+  // For hotel events, resolve to the parent hotel for relevant actions.
+  const isEvent = item._hotelEvent;
+  const realItem = isEvent
+    ? (allItems.find(i => String(i.id) === String(item._hotelId)) || item)
+    : item;
+  const hasGeo = (realItem.geocodes || []).length > 0;
+
   const menu = el('ul', { class: 'context-menu', role: 'menu' });
   const day = days[dayIdx];
 
   const items = [
-    { label: 'Cut', shortcut: '\u2318X', enabled: true, action: () => {
+    { label: 'Cut', shortcut: '\u2318X', enabled: !isEvent, action: () => {
       clipboardSet({ items: [item], action: 'cut' });
       staging.add(deleteItemOp({ itemId: item.id, label: `Cut ${item.title || 'item'}`, sessionId: 'cut-' + item.id }));
       closeContextMenu();
       reloadAll();
     }},
-    { label: 'Delete', shortcut: 'Del', enabled: true, danger: true, action: () => {
+    { label: 'Delete', shortcut: 'Del', enabled: !isEvent, danger: true, action: () => {
       staging.add(deleteItemOp({ itemId: item.id, label: `Delete ${item.title || 'item'}` }));
       closeContextMenu();
       reloadAll();
     }},
     { sep: true },
-    { label: 'Center on map', enabled: (item.geocodes || []).length > 0, action: () => {
+    { label: 'Center on map', enabled: hasGeo, action: () => {
       closeContextMenu();
-      const geoPoints = (item.geocodes || []).filter(g => g.lat != null && g.lng != null).map(g => [g.lat, g.lng]);
+      const geoPoints = (realItem.geocodes || []).filter(g => g.lat != null && g.lng != null).map(g => [g.lat, g.lng]);
       if (geoPoints.length === 1) {
         map.setView(geoPoints[0], 15, { animate: true });
       } else if (geoPoints.length > 1) {
@@ -160,7 +168,7 @@ function showContextMenu(x, y, item, dayIdx) {
     { label: 'Open detail', enabled: true, action: () => {
       closeContextMenu();
       openItemEditor(ctx, {
-        plan, item, settings, members: [], staging, sessionId: 'map-' + item.id,
+        plan, item: realItem, settings, members: [], staging, sessionId: 'map-' + realItem.id,
         onApplied: () => { reloadAll(); },
       });
     }},
@@ -359,9 +367,12 @@ function renderList() {
             showItemGeocodes(it.id);
           });
           row.addEventListener('dblclick', () => {
+            const target = it._hotelEvent
+              ? (allItems.find(i => String(i.id) === String(it._hotelId)) || it)
+              : it;
             openItemEditor(ctx, {
-              plan, item: it, settings, members: [], staging,
-              sessionId: 'map-detail-' + it.id,
+              plan, item: target, settings, members: [], staging,
+              sessionId: 'map-detail-' + target.id,
               onApplied: () => { reloadAll(); },
             });
           });
@@ -384,7 +395,10 @@ function renderList() {
 }
 
 function dayItemsFor(dayIndex) {
-  return allItems.filter(it => it.item_date === days[dayIndex].date && it.item_type !== 'hotel');
+  return allItems.filter(it =>
+    it.item_date === days[dayIndex].date &&
+    (it.item_type !== 'hotel' || it._hotelEvent)
+  );
 }
 
 function showItemGeocodes(itemId, selectGeoIdx) {
@@ -494,16 +508,7 @@ function updateItemGeocodes(itemId, geocodes) {
     isNew: false,
     sideEffects: [],
   }));
-  dayCoords = {};
-  for (let i = 0; i < days.length; i++) {
-    const batch = [];
-    for (const it of dayItemsFor(i)) {
-      (it.geocodes || []).forEach((g, gi) => {
-        batch.push({ lat: g.lat, lng: g.lng, label: g.label, item: it, geoIdx: gi });
-      });
-    }
-    dayCoords[i] = batch;
-  }
+  dayCoords = buildDayCoords();
   for (const idx in dayLayers) removeDay(Number(idx));
   dayLayers = {};
   if (expIndex !== null) {
@@ -513,6 +518,23 @@ function updateItemGeocodes(itemId, geocodes) {
   renderList();
   if (selectedItemId) showItemGeocodes(selectedItemId);
   renderPendingBar();
+}
+
+function buildDayCoords() {
+  const coords = {};
+  for (let i = 0; i < days.length; i++) {
+    const batch = [];
+    for (const it of dayItemsFor(i)) {
+      const src = it._hotelEvent
+        ? allItems.find(p => String(p.id) === String(it._hotelId))
+        : it;
+      (src ? (src.geocodes || []) : []).forEach((g, gi) => {
+        batch.push({ lat: g.lat, lng: g.lng, label: g.label, item: it, geoIdx: gi });
+      });
+    }
+    coords[i] = batch;
+  }
+  return coords;
 }
 
 function toggleDay(index) {
@@ -541,17 +563,8 @@ function toggleDay(index) {
 async function reloadAll() {
   selectedItemId = null;
   const res = await apiGet(`/api/plans/${plan.id}/items`);
-  allItems = res.items || [];
-  dayCoords = {};
-  for (let i = 0; i < days.length; i++) {
-    const batch = [];
-    for (const it of dayItemsFor(i)) {
-      (it.geocodes || []).forEach((g, gi) => {
-        batch.push({ lat: g.lat, lng: g.lng, label: g.label, item: it, geoIdx: gi });
-      });
-    }
-    dayCoords[i] = batch;
-  }
+  allItems = expandHotelEvents(res.items || []);
+  dayCoords = buildDayCoords();
   for (const idx in dayLayers) removeDay(Number(idx));
   dayLayers = {};
   renderList();
@@ -609,18 +622,9 @@ export async function initMap(c) {
 
   // Load items with their persisted geocodes (set via the item editor)
   const itemsRes = await apiGet(`/api/plans/${ctx.planId}/items`);
-  allItems = itemsRes.items || [];
+  allItems = expandHotelEvents(itemsRes.items || []);
 
-  dayCoords = {};
-  for (let i = 0; i < days.length; i++) {
-    const batch = [];
-    for (const it of dayItemsFor(i)) {
-      (it.geocodes || []).forEach((g, gi) => {
-        batch.push({ lat: g.lat, lng: g.lng, label: g.label, item: it, geoIdx: gi });
-      });
-    }
-    dayCoords[i] = batch;
-  }
+  dayCoords = buildDayCoords();
 
   enableDropZone(document.getElementById('day-list'));
   renderList();

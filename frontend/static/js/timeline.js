@@ -225,7 +225,8 @@ function makeBar({ kind, top, end, totalCols, col, title, time, titleText, extra
   const height = Math.max(20, (end - top) * HOUR_PX);
   const baseClass = `tl-item ${kind}` + (w > 1 ? ' multi' : '') + extraClass;
   // Hotels get a stable class hook so the CSS opt-out rule can target them.
-  const klass = kind === 'hotel' ? `${baseClass} tl-item-hotel` : baseClass;
+  const isHotelEvent = item && item._hotelEvent;
+  const klass = kind === 'hotel' && !isHotelEvent ? `${baseClass} tl-item-hotel` : baseClass;
   const node = el('div', {
     class: klass,
     style: `top:${topPx}px; height:${height}px; left:${left}; width:calc(${width} - 2px);`,
@@ -241,10 +242,17 @@ function makeBar({ kind, top, end, totalCols, col, title, time, titleText, extra
   ]);
   if (item) {
     node.dataset.itemId = String(item.id);
+    if (item._hotelEvent) {
+      node.dataset.hotelEvent = item._hotelEvent;
+      node.dataset.hotelId = String(item._hotelId);
+    }
   }
-  if (draggable && kind !== 'hotel' && item) {
+  if (draggable && item && (kind !== 'hotel' || item._hotelEvent)) {
     const f = TIME_FIELDS[item.item_type] || {};
-    const timeFields = { start: f.start || 'start_time', end: f.end || 'end_time' };
+    const timeFields = item._hotelEvent
+      ? { start: item._hotelEvent === 'check-in' ? 'check_in_time' : 'check_out_time',
+           end:  item._hotelEvent === 'check-in' ? 'check_in_time' : 'check_out_time' }
+      : { start: f.start || 'start_time', end: f.end || 'end_time' };
     node.dataset.timeField = JSON.stringify(timeFields);
     if (day) node.dataset.day = day;
     node.dataset.start = String(top);
@@ -518,7 +526,10 @@ function wireBarDrag({ bar, staging, getViewItems, getSelection, onMultiDrag, ct
     if (ctx.role === 'viewer') return;
     const itemId = bar.dataset.itemId;
     if (!itemId) return;
-    const it = getViewItems().find(x => String(x.id) === String(itemId));
+    const isHotelEvent = bar.dataset.hotelEvent;
+    const it = isHotelEvent
+      ? getViewItems().find(x => String(x.id) === String(bar.dataset.hotelId))
+      : getViewItems().find(x => String(x.id) === String(itemId));
     if (!it) return;
     const fields = JSON.parse(bar.dataset.timeField || '{}');
     const dayIso = bar.dataset.day;
@@ -655,17 +666,23 @@ function wireBarDrag({ bar, staging, getViewItems, getSelection, onMultiDrag, ct
       // shape every timed item type now uses. This also auto-migrates
       // any legacy items that only had a single `time` field.
       newDetails[fields.start] = combineDateHour(hoverDayIso, newStartH);
-      if (fields.end) newDetails[fields.end] = combineDateHour(hoverDayIso, newEndH);
+      if (fields.end && fields.end !== fields.start) newDetails[fields.end] = combineDateHour(hoverDayIso, newEndH);
       // Clear the legacy `time` field once the new shape is in place,
       // so the item doesn't carry two ways of saying the same thing.
       if (newDetails.time && (it.item_type === 'restaurant' || it.item_type === 'transport' || it.item_type === 'transit')) {
         delete newDetails.time;
       }
 
+      // For hotel events, map the drag correctly to the parent hotel's fields:
+      // check-in drag → update item_date, check-out drag → update end_date.
+      const hotelEvent = bar.dataset.hotelEvent;
+      const itemDate = hotelEvent === 'check-out' ? (it.item_date || dayIso) : hoverDayIso;
+      const endDate = hotelEvent === 'check-out' ? hoverDayIso : undefined;
       staging.add(timeEditItemOp({
         planId: ctx.planId,
         itemId: it.id,
-        item_date: hoverDayIso,
+        item_date: itemDate,
+        end_date: endDate,
         details: newDetails,
         title: it.title,
       }));
@@ -1208,7 +1225,14 @@ export async function initTimeline(ctx) {
                        onToggleSelect: toggleSelect,
                        onRangeSelect: (id) => selectRangeAcrossDays(lastSelectedId, id),
                        onContextMenu: showContextMenu,
-                       onDblClick: (item) => { if (!item._hotelEvent) openEditorFor(item); } });
+                       onDblClick: (item) => {
+                         if (item._hotelEvent) {
+                           const parent = staging.viewItems().find(i => String(i.id) === String(item._hotelId));
+                           if (parent) openEditorFor(parent);
+                         } else {
+                           openEditorFor(item);
+                         }
+                       } });
       }
     }
 
@@ -1383,9 +1407,13 @@ function wireBarClick({ bar, ctx, getViewItems, onPlainClick, onToggleSelect, on
   // The bar's data-item-id is the live id (number for server items,
   // string for local drafts). The handlers below resolve back to the
   // staged item so the editor sees the current title.
+  // Check-in/check-out hotel event bars carry data-hotel-id pointing to
+  // the parent hotel — resolve to that so double-click opens the hotel.
   function findItem() {
     const all = (getViewItems && getViewItems()) || [];
-    return all.find(i => String(i.id) === itemId);
+    const isHotelEvent = bar.dataset.hotelEvent;
+    const id = isHotelEvent ? bar.dataset.hotelId : itemId;
+    return all.find(i => String(i.id) === String(id)) || null;
   }
   bar.addEventListener('click', (e) => {
     if (e.button != null && e.button !== 0) return;

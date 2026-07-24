@@ -224,7 +224,7 @@ export function updateItemOp({ planId, item, sessionId }) {
  * ("Move Lunch 14:00→15:30", "Resize Train 09:00→10:00"). The op bundles
  * the new item_date + details into one PATCH so the server sees the whole
  * change in one request. */
-export function timeEditItemOp({ planId, itemId, item_date, details, title, sessionId }) {
+export function timeEditItemOp({ planId, itemId, item_date, end_date, details, title, sessionId }) {
   const label = title || 'item';
   return {
     id: null, kind: 'TIME_EDIT', label: `Reschedule ${label}`, sessionId,
@@ -235,19 +235,19 @@ export function timeEditItemOp({ planId, itemId, item_date, details, title, sess
         item_date: item_date || null,
         details: details ? Object.assign({}, details) : (it.details || {}),
       });
+      if (end_date !== undefined) next.end_date = end_date;
       return patchItem(items, itemId, next);
     },
     planApply() { return null; },
     async execute(api) {
       if (isLocalId(itemId)) {
-        // Drag on a draft — the upcoming SAVE_ITEM op carries the new
-        // item_date + details, so the standalone PATCH would 404.
         return { skipped: true };
       }
       const body = {
         item_date: item_date || null,
         details: details || {},
       };
+      if (end_date !== undefined) body.end_date = end_date;
       const res = await api.patch(`/api/items/${itemId}`, body);
       return { updatedItem: res.item };
     },
