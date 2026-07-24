@@ -12,7 +12,7 @@ An **item** is the core unit of a trip itinerary — a single entry on a day's s
 CREATE TABLE items (
   id         INTEGER PRIMARY KEY AUTOINCREMENT,
   plan_id    INTEGER NOT NULL REFERENCES plans(id) ON DELETE CASCADE,
-  item_type  TEXT NOT NULL,            -- hotel|flight|train|ticket|restaurant|activity|transport|note
+  item_type  TEXT NOT NULL,            -- hotel|transit|restaurant|activity|note
   title      TEXT NOT NULL,
   item_date  TEXT,                     -- start date (the day this item belongs to)
   end_date   TEXT,                     -- nullable; hotel = check-out; rendered on every day in [start,end)
@@ -49,35 +49,29 @@ CREATE INDEX IF NOT EXISTS idx_items_plan ON items(plan_id, item_date);
 
 ## Item Types
 
-Defined in `data/config/settings.json`. Each type has a `label`, `icon` (for UI), `spans_days` flag, and typed field list.
+Defined in `data/config/settings.json` (served to the frontend via
+`GET /api/settings`) and validated against the hardcoded `ITEM_TYPES` set in
+`backend/blueprints/items.py`. Each type has a `label`, `icon` (for UI),
+`spans_days` flag, and a typed field list that drives the editor form.
 
 ### hotel
 - **spans_days:** `true` — renders across `[item_date, end_date)`
-- `hotel_name`, `address`, `check_in_time`, `check_out_time`, `booking_ref`, `price`, `currency`, `link`, `note`
+- `hotel_name`, `address`, `check_in_time`, `check_out_time`, `booking_ref`, `note`
 
-### flight
+### transit
 - **spans_days:** `false`
-- `airline`, `flight_no`, `from`, `to`, `depart_time`, `arrive_time`, `confirmation`, `price`, `currency`, `link`, `note`
-
-### train
-- **spans_days:** `false`
-- `train_no`, `from`, `to`, `depart_time`, `arrive_time`, `seat`, `price`, `currency`, `link`, `note`
-
-### ticket
-- **spans_days:** `false`
-- `name`, `venue`, `start_time`, `end_time`, `qty`, `price`, `currency`, `link`, `note`
-
-### restaurant
-- **spans_days:** `false`
-- `name`, `address`, `start_time`, `end_time`, `party_size`, `link`, `note`
+- A unified type for flights, trains, buses, ferries, taxis, and rental cars.
+  The `mode` field (select) distinguishes the sub-type at entry time.
+- `mode` (Flight/Train/Bus/Ferry/Taxi/Rental car), `provider`, `ref_no`,
+  `from`, `to`, `depart_time`, `arrive_time`, `seat`, `confirmation`, `note`
 
 ### activity
 - **spans_days:** `false`
-- `name`, `location`, `start_time`, `end_time`, `price`, `currency`, `link`, `note`
+- `name`, `location`, `start_time`, `end_time`, `note`
 
-### transport
+### restaurant
 - **spans_days:** `false`
-- `mode` (taxi/rental/bus), `from`, `to`, `start_time`, `end_time`, `price`, `currency`, `link`, `note`
+- `name`, `address`, `start_time`, `end_time`, `party_size`, `note`
 
 ### note
 - **spans_days:** `false`
@@ -152,19 +146,25 @@ When cut/copy-pasting items, only a portable subset is serialized (see `frontend
 
 ## API Endpoints
 
-All item CRUD lives in `backend/blueprints/items.py`:
+Item CRUD lives in `backend/blueprints/items.py`; image upload lives in
+`backend/blueprints/uploads.py`:
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
 | `GET` | `/api/plans/<id>/items` | list all items for a plan |
 | `POST` | `/api/plans/<id>/items` | create a new item |
-| `PATCH` | `/api/items/<id>` | edit item fields |
+| `PATCH` | `/api/items/<id>` | edit item fields (title, dates, status, details, geocodes) |
 | `DELETE` | `/api/items/<id>` | delete an item |
-| `POST` | `/api/items/<id>/move` | drag-and-drop reorder |
-| `POST` | `/api/items/<id>/attachments` | add link attachment |
-| `DELETE` | `/api/attachments/<id>` | delete attachment |
-| `PUT` | `/api/items/<id>/geocodes` | set geocodes |
-| `DELETE` | `/api/items/<id>/image` | delete image attachment |
+| `POST` | `/api/items/<id>/move` | drag-and-drop reorder/move |
+| `POST` | `/api/items/<id>/attachments` | add a link attachment |
+| `PATCH` | `/api/attachments/<id>` | update a link attachment (value/caption) |
+| `DELETE` | `/api/attachments/<id>` | delete an attachment (image or link) |
+| `POST` | `/api/items/<id>/upload` | upload an image attachment (multipart) |
+
+Geocodes are saved via the `geocodes` field in the `PATCH /api/items/<id>`
+body (an array of `{ label, lat, lng, sort_order }`). Image attachments are
+stored in the `attachments` table with `kind='image'` and are deleted via
+`DELETE /api/attachments/<id>`.
 
 Items also link to `expenses` (0+ per item) via `expenses.item_id`.
 

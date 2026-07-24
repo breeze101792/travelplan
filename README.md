@@ -1,10 +1,10 @@
 # TravelPlan
 
 A small, self-hostable web app to plan trips with friends: build day-by-day
-itineraries out of typed items (hotel, flight, train, ticket, restaurant,
-activity, transport), attach images/links, drag-and-drop items across days,
-manage members with per-plan sharing, and split expenses per item across
-currencies (you supply the exchange rates at settlement).
+itineraries out of typed items (hotel, transit, restaurant, activity, note),
+attach images/links, drag-and-drop items across days, manage members with
+per-plan sharing, and split expenses per item across currencies (you supply
+the exchange rates at settlement).
 
 The dashboard organises trips into three tabs (**Planning** / **Ongoing** /
 **Archived**) with drag-and-drop between them. Cards support single-click
@@ -26,6 +26,15 @@ frontend/     HTML/CSS/JS: Jinja2 templates + static JS modules
 data/         SQLite DB, uploads, config (secret key + settings.json)
 ```
 
+Plan pages (all share the `_plan_header.html` partial):
+
+- **Board** (`plan.html`) — day-by-day cards, drag-and-drop reorder
+- **Timeline** (`timeline.html`) — 24-hour lanes per day, drag to move/resize
+- **Map** (`plan-map.html`) — Leaflet map with item geocodes
+- **Navigate** (`navigation.html`) — turn-by-turn directions for transit items
+- **Expenses** (`expenses.html`) — per-item ledger + multi-currency settlement
+- **Members** (`plan-members.html`) — share the plan with members, transfer ownership
+
 ## Run
 
 ```bash
@@ -35,12 +44,12 @@ PORT=9000 ./start.sh    # or set the port via the PORT env var
 ./start.sh --help       # full usage / help message
 ```
 
-`start.sh` creates `.venv/`, installs Flask, runs the self-tests (expense
-engine + auth + frontend fixtures), then serves the app. Set the port
-with a positional arg (`./start.sh 8080`) or the `PORT` env var (the
-arg wins); `HOST` defaults to `0.0.0.0` so friends on the same network
-can reach your machine at that port. Debug/auto-reload is **off** by
-default (the Werkzeug debugger is unsafe to expose on a shared network) — use
+`start.sh` creates a per-host virtualenv (`.venv_$(hostname)`), installs Flask,
+runs the self-tests (expense engine + auth + frontend fixtures), then serves
+the app. Set the port with a positional arg (`./start.sh 8080`) or the
+`PORT` env var (the arg wins); `HOST` defaults to `0.0.0.0` so friends on the
+same network can reach your machine at that port. Debug/auto-reload is **off**
+by default (the Werkzeug debugger is unsafe to expose on a shared network) — use
 `DEBUG=1 ./start.sh` while developing locally. `./backend/run.sh` still works as
 an alias for `./start.sh`.
 
@@ -56,24 +65,25 @@ back-compat).
 ## Try it with fake data
 
 ```bash
-./seed.sh            # wipe & populate a realistic test dataset
+./seed.sh            # seed or reset passwords
 ```
 
-Seeds three trips (**Japan 2026** base JPY, **Iceland Ring Road** base EUR,
-**Beijing 2026** base CNY) with full itineraries, per-day hotels, image + link
-attachments, expenses in five currencies (JPY / USD / EUR / ISK / CNY) using
-all four split methods, exchange rates, and recorded payments. All seeded
-accounts use the password **`traveler`**:
+If no admin exists yet, `./seed.sh` wipes and populates a realistic test
+dataset. If an admin already exists, it resets all user passwords to
+`traveler` without touching any existing data.
+
+Seeds four trips (**Japan 2026** base JPY, **Iceland Ring Road** base EUR,
+**Beijing 2026** base CNY, **Tokyo 1-Day Test** base JPY) with full itineraries,
+per-day hotels, image + link attachments, expenses in five currencies
+(JPY / USD / EUR / ISK / CNY) using all four split methods, exchange rates,
+and recorded payments. All seeded accounts use the password **`traveler`**:
 
 | username | role |
 |---|---|
-| `admin` | admin, owns all three trips |
-| `alice` | editor on all three trips |
+| `admin` | admin, owns all four trips |
+| `alice` | editor on all four trips |
 | `bob` | editor on Japan 2026 |
 | `carol` | viewer on Iceland Ring Road |
-
-`./seed.sh` wipes the DB first by default (it's a test fixture); use
-`./seed.sh --no-reset` to seed only when no admin exists yet.
 
 ## Expenses & multi-currency
 
@@ -86,14 +96,14 @@ the base currency using a greedy min-cash-flow ("who owes whom") algorithm.
 ## Development
 
 ```bash
-.venv/bin/python -m flask --app backend.app run --debug
-.venv/bin/python -m backend.expense        # backend engine self-tests
-.venv/bin/python -m backend.tests         # auth + settings page tests
+.venv_$(hostname)/bin/python -m flask --app backend.app run --debug
+.venv_$(hostname)/bin/python -m backend.expense        # backend engine self-tests
+.venv_$(hostname)/bin/python -m backend.tests         # auth + plans + fmt_date tests
 bash frontend/tests/run.sh                  # frontend tests (needs node)
 ```
 
 The frontend fixtures under `frontend/tests/` run the staging engine's unit
-tests and execute `initItinerary()` and the settings page against a DOM shim
-+ stubbed fetch (no browser, no npm install — plain node ES modules).
-`start.sh` runs all three suites before serving (skipped if node is not
-installed).
+tests, execute `initItinerary()` and `initTimeline()` against a DOM shim +
+stubbed fetch, and verify `fmtDate()` matches the server's `fmt_date()`
+(no browser, no npm install — plain node ES modules). `start.sh` runs all
+four suites before serving (skipped if node is not installed).

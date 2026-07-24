@@ -11,8 +11,13 @@ any of them aborts startup:
 | Suite                  | Command                              | What it covers                              |
 | ---                    | ---                                  | ---                                         |
 | Backend expense engine | `python -m backend.expense`          | the settlement / multi-currency engine      |
-| Backend auth           | `python -m backend.tests`            | login + self-serve settings (Flask client)   |
-| Frontend fixtures      | `bash frontend/tests/run.sh`         | staging engine + page execution (node)      |
+| Backend auth + plans   | `python -m backend.tests`            | login, self-serve settings, plan API, buffer days, `fmt_date` |
+| Frontend fixtures      | `bash frontend/tests/run.sh`         | staging engine, board boot, timeline boot, `fmtDate` |
+
+`backend.tests` (run via `backend/tests/__main__.py`) loads both
+`test_auth.py` (auth, self-serve settings, admin user management) and
+`test_plans.py` (plan CRUD, buffer days, shared header rendering,
+`fmt_date` parity with the frontend).
 
 The frontend fixture is skipped (exit 0) if `node` is not on `PATH`; set
 `NODE=/path/to/node` to force a failure in that case. Every suite also
@@ -27,22 +32,28 @@ modules, no `npm install`, no build step. The structure:
 ```
 frontend/tests/
   lib/dom-shim.mjs    minimal DOM (elements, classList, events, attribute
-                     selectors, dataset as a Proxy, getBoundingClientRect)
+                      selectors, dataset as a Proxy, getBoundingClientRect)
   lib/fetch-stub.mjs  route-table fetch replacement that records calls
   lib/t.mjs           assert/eq/summary harness
   loader.mjs          maps browser-absolute /static/… to the real files
   register.mjs        module.register hook for the loader
   itinerary.test.mjs  executes the real initItinerary() under the shim
   staging.test.mjs    unit tests for the staging engine (view, undo/redo,
-                     save dispatch, error halt, session discard, id
-                     remapping for create+attach+expense)
+                      save dispatch, error halt, session discard, id
+                      remapping for create+attach+expense)
+  timeline.test.mjs   regression fixture for the timeline view (boot,
+                      day numbering, bar drag/resize math, multi-select,
+                      context menu, buffer days, toolbar, header edit,
+                      beforeunload guard)
+  util.test.mjs       unit tests for fmtDate (matches server fmt_date byte-for-byte)
   run.sh              runs every *.test.mjs; exits 0 (skip) without node
 ```
 
-The point of the page-execution test (`itinerary.test.mjs`) is to
-catch the *runtime* bugs a syntax check can't see — a missing import,
-a block-scope `const` that escapes its `try`, a missing DOM method on a
-shim element. See the lesson below on the blank-board crash.
+The point of the page-execution tests (`itinerary.test.mjs`,
+`timeline.test.mjs`) is to catch the *runtime* bugs a syntax check can't
+see — a missing import, a block-scope `const` that escapes its `try`, a
+missing DOM method on a shim element. See the lesson below on the
+blank-board crash.
 
 ## Lessons
 
@@ -82,7 +93,8 @@ point the app at a new temp data dir must call `db.reset_for_tests()`
 first to drop the cached connection, otherwise `init_db()` creates the
 schema in the new file but `get_db()` reuses the old connection —
 queries return empty / stale data and `UNIQUE` constraints fire on
-re-runs. The pattern in `backend/tests/_fresh_app()`:
+re-runs. The pattern in `test_auth.py` and `test_plans.py` (each has
+its own `_fresh_app()` helper):
 
 ```python
 db_mod.reset_for_tests()

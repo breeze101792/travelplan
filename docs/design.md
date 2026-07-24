@@ -1,14 +1,18 @@
 # Plan pages — design
 
-The two pages under `/plans/<id>/` (board = `plan.html`, timeline =
-`timeline.html`) are two views over the same plan data. They share an
-item model, a staging engine, an editor, and a chrome (header, pending
-bar, toolbar, buffer-day controls). The two views differ in *how* they
-lay items out; the *what* (item create / edit / move / stage / save)
-is the same engine under both.
+The plan pages under `/plans/<id>/` are multiple views over the same plan
+data. The **Board** (`plan.html`) and **Timeline** (`timeline.html`) share an
+item model, a staging engine, an editor, and a chrome (header, pending bar,
+toolbar, buffer-day controls). The **Map** (`plan-map.html`), **Navigate**
+(`navigation.html`), **Expenses** (`expenses.html`), and **Members**
+(`plan-members.html`) pages share the same header partial and use
+`wirePlanHeaderDirect()` for inline title/dates editing (saved immediately,
+no pending bar). The two editor pages (Board / Timeline) are two views over
+the same data; the *what* (item create / edit / move / stage / save) is the
+same engine under both.
 
-This file is the design contract for those two pages — both the parts
-that are already wired and the parts that are still a TODO. If you are
+This file is the design contract for the Board and Timeline pages — both the
+parts that are already wired and the parts that are still a TODO. If you are
 adding a new feature, start here.
 
 ## Architecture
@@ -52,12 +56,9 @@ the same ops the other page would stage.
 every timed type the shape is mandatory:
 
 ```
-flight:     { depart_time, arrive_time, ... }
-train:      { depart_time, arrive_time, ... }
-ticket:     { start_time,  end_time,     ... }
-restaurant: { start_time,  end_time,     ... }   (was { time } before)
-transport:  { start_time,  end_time,     ... }   (was { time } before)
+transit:    { depart_time, arrive_time, ... }
 activity:   { start_time,  end_time,     ... }
+restaurant: { start_time,  end_time,     ... }   (was { time } before)
 hotel:      { hotel_name, check_in_time, check_out_time, end_date on item, ... }
 ```
 
@@ -91,17 +92,24 @@ Concepts:
   (e.g. a quick-add → editor → Apply). On Cancel, `discardSession()`
   removes them so the editor's preview is rolled back.
 
-Op kinds the engine knows: `updatePlanTitleOp`, `updatePlanDatesOp`,
-`updatePlanBufferDaysOp`, `updateItemOp`, `createBlankItemOp`,
-`saveItemOp`, `deleteItemOp`, `moveItemOp`, `addLinkOp`,
-`deleteAttachmentOp`, `uploadImageOp`, `addExpenseOp`,
-`createItemsFromClipOp`, `timeEditItemOp`. Each has a one-line label
-("Reschedule X", "Delete Y", …) shown in the pending bar.
+Op kinds the engine knows (factory function → `kind` string):
+`createBlankItemOp` → `CREATE_BLANK_ITEM`, `saveItemOp` → `SAVE_ITEM`,
+`updateItemOp` → `UPDATE_ITEM`, `timeEditItemOp` → `TIME_EDIT`,
+`deleteItemOp` → `DELETE_ITEM`, `moveItemOp` → `MOVE_ITEM`,
+`uploadImageOp` → `UPLOAD_IMAGE`, `addLinkOp` → `ADD_LINK`,
+`updateAttachmentOp` → `UPDATE_ATTACHMENT`, `deleteAttachmentOp` →
+`DELETE_ATTACHMENT`, `addExpenseOp` → `ADD_EXPENSE`,
+`createItemsFromClipOp` → `CREATE_ITEMS_FROM_CLIP`,
+`updatePlanTitleOp` → `UPDATE_PLAN_TITLE`, `updatePlanDatesOp` →
+`UPDATE_PLAN_DATES`, `updatePlanBufferDaysOp` → `UPDATE_PLAN_BUFFER_DAYS`.
+Each has a one-line label ("Reschedule X", "Delete Y", …) shown in the
+pending bar.
 
-`saveAll({ post, patch, del, upload })` walks the op list, calls the
-matching API call for each, then resets `base` to the canonical
-post-save state. A failed op halts the save and surfaces the error in
-the pending bar (the user can Revert to roll back everything staged so
+`saveAll(api, onProgress)` walks the op list, calls each op's `execute(api)`
+with the matching API call, then resets `base` to the canonical post-save
+state. `api` is an object with `{ post, patch, del, upload }` methods
+(typically from `api.js`). A failed op halts the save and surfaces the error
+in the pending bar (the user can Revert to roll back everything staged so
 far).
 
 ## Pending bar
@@ -209,11 +217,11 @@ itself. The data model is just a list of extra dates on the plan:
 buffer_days  TEXT    -- JSON array of YYYY-MM-DD strings
 ```
 
-`buildDays(plan)` on the board (and now on the timeline, after this
-work) returns a unified `day[]` with `is_buffer: true` on the buffer
-entries. The board then styles buffer days with a dashed border +
-soft tint, hides the day number / date in the title (just "Buffer"),
-and shows a × chip that calls `stageBufferRemove(date)`. The
+`buildDays(plan)` (in `plan-header.js`) returns a unified `day[]` with
+`is_buffer: true` on the buffer entries. Both the board and the timeline
+use this shared function. The board styles buffer days with a dashed
+border + soft tint, hides the day number / date in the title (just
+"Buffer"), and shows a × chip that calls `stageBufferRemove(date)`. The
 × chip refuses to fire if the buffer has any items on it (block
 error: "Can't remove this buffer day — it has item(s)").
 
@@ -222,18 +230,14 @@ error: "Can't remove this buffer day — it has item(s)").
 it finds a free slot. Each click of `+ Buffer day` adds the next-earlier
 buffer.
 
-**TODO (timeline):** Before this work, the timeline called
-`buildDays(plan)` that returned only trip days. With buffer support
-the timeline now calls the same shared `buildDays` (in
-`plan-header.js` — see `Refactoring plan` below), gets the unified
-list, and `renderDay` skips the hour gridlines for buffer days
-(no schedule, just a holding area).
+The timeline's `renderDay` skips the hour gridlines for buffer days (no
+schedule, just a holding area) and shows the same × close chip.
 
 ## Plan header
 
-The header at the top of all four plan pages (Board / Timeline /
-Expenses / Share) has the same markup. It comes from the shared
-`_plan_header.html` Jinja partial, so the four templates can't drift:
+The header at the top of all six plan pages (Board / Timeline / Map /
+Navigate / Expenses / Members) has the same markup. It comes from the shared
+`_plan_header.html` Jinja partial, so the pages can't drift:
 
 ```html
 <header class="plan-header">
@@ -246,8 +250,9 @@ Expenses / Share) has the same markup. It comes from the shared
 </header>
 ```
 
-Each plan page sets `plan_active_page = 'board' | 'timeline' | 'expenses' | 'share'`
-before including the partial, which highlights the right tab in the nav.
+Each plan page sets `plan_active_page = 'board' | 'timeline' | 'map' |
+'navigate' | 'expenses' | 'members'` before including the partial, which
+highlights the right tab in the nav.
 
 **Server-side date formatting.** The partial uses a `fmt_date()` helper
 (injected via context processor in `app.py`, defined in `backend/util.py`)
@@ -258,14 +263,23 @@ on first paint — without server formatting, the template renders
 to `Sep 10, 2026 → Sep 12, 2026` a moment later. With server formatting
 the first paint already shows the formatted string, so there's nothing
 to rewrite (and the inline-edit repaint is a no-op for the date format).
+The `editable` class is also added server-side in the partial (owner
+gets it on the title, non-viewer gets it on the dates), so the click
+affordance is present on first paint without a JS-driven class addition.
 
-Wired by `wirePlanHeader()` in `plan-header.js` (loaded only on Board
-and Timeline — the Expenses/Share pages show a static header). The
-title and dates become inline-editable (click → input → blur or Enter
-commits, Escape reverts) on the two editor pages. Edits are staged,
-not auto-saved: the user clicks Save in the pending bar. The
+Wired by `wirePlanHeader()` in `plan-header.js` (loaded on Board and
+Timeline). The title and dates become inline-editable (click → input →
+blur or Enter commits, Escape reverts) on the two editor pages. Edits
+are staged, not auto-saved: the user clicks Save in the pending bar. The
 plan-currency line is read-only; currency is set on the plan itself,
 not per-item.
+
+The Expenses, Members, Map, and Navigate pages don't have a pending bar,
+so they use `wirePlanHeaderDirect()` (also in `plan-header.js`) which
+PATCHes the server immediately on commit. The inline-edit DOM is
+identical to `wirePlanHeader()` — same inputs, same Enter/Escape/blur
+behavior, same "don't orphan items" validation — but a successful edit
+is saved straight away rather than staged.
 
 The board's wireHeader / beginTitleEdit / beginDatesEdit / paintDates
 were copy-pasted into the timeline in earlier work. This file
@@ -275,9 +289,9 @@ add).
 
 ## Add toolbar (range + buffer + quick add)
 
-The board has had the `add-toolbar` since the start. Before this
-work, the timeline had no toolbar at all. With the new shared
-`plan-header.js`, both pages get the same toolbar:
+The board has had the `add-toolbar` since the start. The timeline now
+gets the same toolbar via the shared `renderPlanToolbar()` in
+`plan-header.js`:
 
 ```
 [‹ +1 day]  [−1 day ›]    |    [‹ −1 day]  [+1 day ›]    [+ Buffer day]    Quick add (Day N): [Hotel] [Activity] [Note] ...
@@ -298,35 +312,39 @@ message is shown in the pending bar as `pb-blocked` (red text).
 
 The toolbar is hidden for `viewer` role.
 
-## Refactoring plan (this work)
+## Refactoring (completed)
 
-To make "the two pages are two views over the same data" real:
+The "two pages are two views over the same data" goal is achieved:
 
-1. Extract the shared code into `static/js/plan-header.js`:
-   - `buildDays(plan)` — same shape both pages use.
-   - `wirePlanHeader({ plan, staging, ctx, onChange })` — title +
-     dates + range-block messages.
-   - `renderPlanToolbar({ days, settings, staging, ctx, onChange })` —
-     range controls + Buffer day + Quick add.
-   - `nextBufferDate(plan)` and `stageBufferAdd`, `stageBufferRemove` —
-     buffer helpers.
-   - `extendStartBy(delta)`, `extendEndBy(delta)` — guarded range
-     extend/trim.
+1. **Extracted shared code into `static/js/plan-header.js`:**
+   - `buildDays(plan)` — same shape both pages use (trip days + buffer days).
+   - `wirePlanHeader({ plan, staging, ctx, onChange })` — title + dates +
+     range-block messages (board/timeline).
+   - `wirePlanHeaderDirect({ planId, role })` — same inline-edit UI but
+     PATCHes immediately (expenses/members/map/navigation).
+   - `renderPlanToolbar({ days, settings, staging, ctx, setBlockError,
+     getFocusedDay, setFocusedDay, onCreateItem, onChange })` — range
+     controls + Buffer day + Quick add.
+   - `nextBufferDate(plan)`, `stageBufferAdd`, `stageBufferRemove` — buffer
+     helpers.
+   - `extendStartBy(delta, opts)`, `extendEndBy(delta, opts)` — guarded
+     range extend/trim.
+   - `makeBufferAddButton`, `makeDayActions` — per-day UI elements.
 
-2. `itinerary.js` imports from `plan-header.js` and keeps the same
-   behavior. The existing functions there are removed; the call sites
-   (the `initItinerary()` boot path) call the shared ones.
+2. **`itinerary.js` imports from `plan-header.js`** and uses the shared
+   `buildDays`, `wirePlanHeader`, and `renderPlanToolbar`. The board's
+   old `wireHeader` / `beginTitleEdit` / `beginDatesEdit` / `paintDates`
+   are replaced by the shared versions.
 
-3. `timeline.js` gets the same imports and uses the same toolbar. Its
-   `renderDay` is taught about `is_buffer: true` days: skip the hour
-   gridlines, draw a "+ Add item" pill (timeline doesn't have a
-   per-card "Add item" dropdown, the board does), and show a × chip
-   for removing the buffer.
+3. **`timeline.js` imports from `plan-header.js`** and uses the same
+   toolbar. Its `renderDay` handles `is_buffer: true` days: skips the
+   hour gridlines, draws a "+ Add item" pill, and shows a × chip for
+   removing the buffer.
 
-4. `timeline.html` template includes `#add-toolbar` (currently only
-   `plan.html` has it).
+4. **`timeline.html` template includes `#add-toolbar`** (same as
+   `plan.html`).
 
-5. The header `wireHeader` is removed from both page modules; both
+5. **The header `wireHeader` is removed** from both page modules; both
    import `wirePlanHeader` from `plan-header.js`.
 
 The shared module is a *contract* — the rule is: "if you change the
@@ -335,25 +353,31 @@ because the code lives in one place." That's the test: an inline-edit
 on the board's title is reflected on the timeline in the same render
 cycle, no extra wiring.
 
+Buffer day support is complete on both pages: `buildDays()` returns
+buffer days with `is_buffer: true`, `renderDay` skips gridlines for
+buffer days, the × chip calls `stageBufferRemove(date)` (blocked if the
+buffer has items), and `+ Buffer day` calls `nextBufferDate()` which
+walks 9999-12-31, 9999-12-30, … to find the first free slot.
+
 ## Shared template partial
 
 The same "one source of truth" rule applies on the template side:
-all four plan pages (`plan.html`, `timeline.html`, `expenses.html`,
-`share.html`) include `_plan_header.html` for the header markup.
-Before this, the four templates each had their own copy of the
-`<header class="plan-header">…</header>` block, and the share page
-didn't even include the dates line. The partial fixes both: the four
-pages can't drift, and they all show the same title + dates + currency
-+ nav. Each page sets `plan_active_page` before including the partial
-so the right tab gets `aria-current="page"`.
+all six plan pages (`plan.html`, `timeline.html`, `plan-map.html`,
+`navigation.html`, `expenses.html`, `plan-members.html`) include
+`_plan_header.html` for the header markup. Before this, the four
+templates each had their own copy of the `<header class="plan-header">…</header>`
+block, and the share page didn't even include the dates line. The partial
+fixes both: the pages can't drift, and they all show the same title + dates
++ currency + nav. Each page sets `plan_active_page` before including the
+partial so the right tab gets `aria-current="page"`.
 
 The partial also uses server-side date formatting (via `fmt_date()`
-in `backend/util.py`, injected as a context processor in `app.py`)
-to match the frontend's `fmtDate()`. Without this, the first paint
-shows raw ISO (`2026-09-10 → 2026-09-12`) and the page's JS rewrites
-it to `Sep 10, 2026 → Sep 12, 2026` a moment later — the "flash"
-the user saw. With server formatting, the first paint already shows
-the formatted string, so there's nothing to rewrite.
+in `backend/util.py`, injected as a context processor in `app.py`) to
+match the frontend's `fmtDate()`. Without this, the first paint shows
+raw ISO (`2026-09-10 → 2026-09-12`) and the page's JS rewrites it to
+`Sep 10, 2026 → Sep 12, 2026` a moment later — the "flash" the user
+saw. With server formatting, the first paint already shows the
+formatted string, so there's nothing to rewrite.
 
 ## Future ideas (not yet implemented)
 
