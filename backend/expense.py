@@ -306,8 +306,99 @@ def recorded_payments_base(plan_id: int, rates: dict[str, float],
     return dict(net)
 
 
-def plan_settlement(plan_id: int) -> dict:
-    """Full settlement view: balances, who-owes-whom, recorded payments, gaps."""
+def _convert_balances(balances: dict[int, int],
+                      from_currency: str,
+                      to_currency: str,
+                      rates: dict[str, float]) -> dict[int, int]:
+    """Convert a {user_id: cents} dict from one currency to another.
+    rates[CURR] = amount of base_currency per 1 CURR (major unit)."""
+    if to_currency == from_currency or not balances:
+        return dict(balances)
+    from_dec = _currency_decimals(from_currency)
+    to_dec = _currency_decimals(to_currency)
+    rate = Decimal(str(rates[to_currency]))
+    result = {}
+    for uid, cents in balances.items():
+        from_major = Decimal(cents) / Decimal(10 ** from_dec)
+        to_major = from_major / rate
+        converted = int((to_major * Decimal(10 ** to_dec)).quantize(CENT, rounding=ROUND_HALF_UP))
+        result[uid] = converted
+    return result
+
+
+def _recorded_payments_by_currency(plan_id: int) -> dict[str, dict[int, int]]:
+    """Net effect of recorded payments per currency.
+    Returns {currency: {user_id: net_cents}}."""
+    db = get_db()
+    rows = db.execute(
+        "SELECT * FROM payments WHERE plan_id = ?", (plan_id,)
+    ).fetchall()
+    net: dict[str, dict[int, int]] = defaultdict(lambda: defaultdict(int))
+    for r in rows:
+        cur = r["currency"]
+        net[cur][r["from_user_id"]] += r["amount_cents"]
+        net[cur][r["to_user_id"]] -= r["amount_cents"]
+    return {cur: dict(v) for cur, v in net.items()}
+
+
+def _per_currency_settlement(plan_id: int,
+                              per_cur: dict[str, dict[int, int]],
+                              rates: dict[str, float],
+                              currencies: list[str],
+                              missing: list[str],
+                              users: dict[int, str],
+                              base_currency: str) -> dict:
+    """Settlement view per original currency (no FX conversion needed)."""
+    payment_effects = _recorded_payments_by_currency(plan_id)
+
+    per_currency_result = {}
+    for cur in sorted(per_cur.keys()):
+        balances = per_cur[cur]
+        pay = payment_effects.get(cur, {})
+
+        proposed = settle_debts(balances)
+
+        remaining = {}
+        for uid in set(balances) | set(pay):
+            v = balances.get(uid, 0) + pay.get(uid, 0)
+            if v != 0:
+                remaining[uid] = v
+
+        per_currency_result[cur] = {
+            "currency": cur,
+            "decimals": _currency_decimals(cur),
+            "balances": [{"user_id": uid, "username": users.get(uid, str(uid)),
+                          "balance_cents": v} for uid, v in sorted(balances.items())],
+            "proposed_settlement": [
+                {"from": s["from"], "from_name": users.get(s["from"], str(s["from"])),
+                 "to": s["to"], "to_name": users.get(s["to"], str(s["to"])),
+                 "amount_cents": s["amount_cents"]} for s in proposed
+            ],
+            "remaining_balances": [{"user_id": uid, "username": users.get(uid, str(uid)),
+                                    "balance_cents": v} for uid, v in sorted(remaining.items())],
+        }
+
+    return {
+        "mode": "per_currency",
+        "base_currency": base_currency,
+        "settlement_currency": None,
+        "currencies_present": currencies,
+        "rates": rates,
+        "missing_currencies": missing,
+        "per_currency": per_currency_result,
+    }
+
+
+def plan_settlement(plan_id: int,
+                    mode: str = "single",
+                    settlement_currency: str | None = None) -> dict:
+    """Full settlement view: balances, who-owes-whom, recorded payments, gaps.
+
+    * ``mode="single"`` (default): convert all balances to a single settlement
+      currency (defaults to plan base_currency) and produce one settlement.
+    * ``mode="per_currency"``: settle each currency independently without FX
+      conversion.
+    """
     db = get_db()
     plan = db.execute("SELECT base_currency FROM plans WHERE id = ?", (plan_id,)).fetchone()
     base_currency = plan["base_currency"] if plan else "USD"
@@ -317,13 +408,7 @@ def plan_settlement(plan_id: int) -> dict:
 
     per_cur = per_currency_balances(plan_id)
     currencies = sorted(set(per_cur.keys()) | set(rates.keys()))
-    base_balances, missing = convert_to_base(per_cur, rates, base_currency)
-    proposed = settle_debts(base_balances)
-    paid_base = recorded_payments_base(plan_id, rates, base_currency)
-
-    remaining = {uid: base_balances.get(uid, 0) + paid_base.get(uid, 0)
-                 for uid in set(base_balances) | set(paid_base)}
-    remaining = {uid: v for uid, v in remaining.items() if v != 0}
+    missing = [c for c in currencies if c != base_currency and c not in rates]
 
     users = {u["id"]: u["username"] for u in db.execute(
         """SELECT u.id, u.username FROM users u
@@ -334,20 +419,50 @@ def plan_settlement(plan_id: int) -> dict:
         (plan_id, plan_id)
     ).fetchall()}
 
+    if mode == "per_currency":
+        return _per_currency_settlement(plan_id, per_cur, rates, currencies, missing, users, base_currency)
+
+    # ---- single-currency mode ----
+    cur = (settlement_currency or base_currency).upper()
+    if cur not in rates and cur != base_currency:
+        missing.append(cur)
+        cur = base_currency
+
+    base_balances, _ = convert_to_base(per_cur, rates, base_currency)
+
+    if cur == base_currency:
+        settle_balances = base_balances
+    else:
+        settle_balances = _convert_balances(base_balances, base_currency, cur, rates)
+
+    proposed = settle_debts(settle_balances)
+    paid_base = recorded_payments_base(plan_id, rates, base_currency)
+
+    if cur != base_currency:
+        paid_eff = _convert_balances(paid_base, base_currency, cur, rates)
+    else:
+        paid_eff = paid_base
+
+    remaining = {uid: settle_balances.get(uid, 0) + paid_eff.get(uid, 0)
+                 for uid in set(settle_balances) | set(paid_eff)}
+    remaining = {uid: v for uid, v in remaining.items() if v != 0}
+
     return {
+        "mode": "single",
+        "settlement_currency": cur,
         "base_currency": base_currency,
         "currencies_present": currencies,
         "rates": rates,
         "missing_currencies": missing,
         "balances_base": [{"user_id": uid, "username": users.get(uid, str(uid)),
-                            "balance_cents": v} for uid, v in base_balances.items()],
+                            "balance_cents": v} for uid, v in sorted(settle_balances.items())],
         "proposed_settlement": [
             {"from": s["from"], "from_name": users.get(s["from"], str(s["from"])),
              "to": s["to"], "to_name": users.get(s["to"], str(s["to"])),
              "amount_cents": s["amount_cents"]} for s in proposed
         ],
         "remaining_balances": [{"user_id": uid, "username": users.get(uid, str(uid)),
-                                "balance_cents": v} for uid, v in remaining.items()],
+                                "balance_cents": v} for uid, v in sorted(remaining.items())],
     }
 
 

@@ -255,6 +255,22 @@ input:disabled { background: #f3f4f6; color: var(--muted, #6b7280); }
 .pay-amt { font-variant-numeric: tabular-nums; font-weight: 600; }
 .pay-note { font-size: 0.85rem; }
 
+/* ---- settlement mode controls ---- */
+.settlement-controls {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 0.75rem 1.5rem;
+  margin-bottom: 1rem; padding: 0.5rem 0;
+}
+.control-group { display: inline-flex; align-items: center; gap: 0.5rem; }
+.control-label { font-size: 0.85rem; color: var(--muted, #6b7280); font-weight: 500; }
+.radio-label { display: inline-flex; align-items: center; gap: 0.3rem; cursor: pointer; font-size: 0.9rem; }
+.radio-label input[type="radio"] { margin: 0; cursor: pointer; }
+.settlement-currency-select { font-size: 0.9rem; padding: 0.25rem 0.5rem; border-radius: 6px; border: 1px solid var(--border, #d1d5db); }
+
+/* ---- per-currency settlement panels ---- */
+.settlement-currency-panel { margin-bottom: 1rem; }
+.settlement-currency-panel h3 { border-bottom: 2px solid var(--border, #e5e7eb); padding-bottom: 0.5rem; }
+.settlement-currency-panel h4.sub-title { margin: 0.75rem 0 0.4rem; font-size: 0.9rem; color: var(--muted, #6b7280); font-weight: 500; }
+
 /* ---- responsive ---- */
 @media (max-width: 640px) {
   .ledger { display: block; overflow-x: auto; white-space: nowrap; }

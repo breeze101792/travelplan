@@ -28,6 +28,15 @@ export async function initSettlement(ctx, { plan, users }) {
   const userOptions = users.map(u => ({ value: u.id, label: u.display_name || u.username }));
   const baseDec = decimalsFor(baseCurrency);
 
+  let currentMode = 'single';
+  let currentCurrency = baseCurrency;
+
+  const allCurrencyOptions = (currencies && currencies.length ? currencies : [baseCurrency])
+    .map(c => ({ value: c, label: c }));
+  if (!allCurrencyOptions.find(o => o.value === baseCurrency)) {
+    allCurrencyOptions.unshift({ value: baseCurrency, label: baseCurrency });
+  }
+
   function nameOf(id, fallback) {
     const u = userById[id];
     return u ? (u.display_name || u.username) : (fallback || `user ${id}`);
@@ -38,17 +47,109 @@ export async function initSettlement(ctx, { plan, users }) {
       onclick: () => { render(); } });
   }
 
+  function renderSettlementPanel(label, balances, proposed, remaining, dec, currency) {
+    const wrap = el('div', { class: 'panel settlement-currency-panel' });
+    wrap.append(el('h3', { text: label }));
+
+    // balances
+    const balList = el('ul', { class: 'balance-list' });
+    (balances || []).forEach(b => {
+      const cents = b.balance_cents || 0;
+      const cls = cents > 0 ? 'creditor' : (cents < 0 ? 'debtor' : 'even');
+      balList.append(el('li', { class: `balance-row ${cls}` }, [
+        el('span', { class: 'bal-name', text: nameOf(b.user_id, b.username) }),
+        el('span', { class: 'bal-amt', text: money(cents, dec, currency) }),
+      ]));
+    });
+    if (!(balances || []).length) {
+      balList.append(el('li', { class: 'muted', text: 'No balances.' }));
+    }
+    wrap.append(el('h4', { class: 'sub-title', text: 'Balances' }));
+    wrap.append(balList);
+
+    // proposed settlement
+    const propList = el('ul', { class: 'prop-list' });
+    (proposed || []).forEach(p => {
+      propList.append(el('li', { class: 'prop-row' }, [
+        el('span', { class: 'prop-who' }, [
+          el('strong', { text: nameOf(p.from, p.from_name) }),
+          el('span', { text: ' pays ' }),
+          el('strong', { text: nameOf(p.to, p.to_name) }),
+        ]),
+        el('span', { class: 'prop-amt',
+          text: money(p.amount_cents || 0, dec, currency) }),
+      ]));
+    });
+    if (!(proposed || []).length) {
+      propList.append(el('li', { class: 'muted', text: 'Everyone is settled up.' }));
+    }
+    wrap.append(el('h4', { class: 'sub-title', text: 'Who pays whom' }));
+    wrap.append(propList);
+
+    // remaining balances
+    const remList = el('ul', { class: 'balance-list' });
+    (remaining || []).forEach(b => {
+      const cents = b.balance_cents || 0;
+      const cls = cents > 0 ? 'creditor' : (cents < 0 ? 'debtor' : 'even');
+      remList.append(el('li', { class: `balance-row ${cls}` }, [
+        el('span', { class: 'bal-name', text: nameOf(b.user_id, b.username) }),
+        el('span', { class: 'bal-amt', text: money(cents, dec, currency) }),
+      ]));
+    });
+    if (!(remaining || []).length) {
+      remList.append(el('li', { class: 'muted', text: 'No remaining balances.' }));
+    }
+    wrap.append(el('h4', { class: 'sub-title', text: 'Remaining balances' }));
+    wrap.append(remList);
+
+    return wrap;
+  }
+
   async function render() {
     clear(root);
     root.append(el('h2', { class: 'section-title', text: 'Settlement' }));
     root.append(el('p', { class: 'muted',
       text: `Base currency: ${baseCurrency}. Exchange rates are user-supplied and saved on this plan.` }));
 
+    // --- mode / currency selector ---
+    const controls = el('div', { class: 'settlement-controls' });
+    const singleRadio = el('input', { type: 'radio', name: 'settlement-mode',
+      value: 'single', checked: currentMode === 'single',
+      onchange: () => { currentMode = 'single'; render(); } });
+    const perCurRadio = el('input', { type: 'radio', name: 'settlement-mode',
+      value: 'per_currency', checked: currentMode === 'per_currency',
+      onchange: () => { currentMode = 'per_currency'; render(); } });
+
+    const curSel = makeSelect(allCurrencyOptions, currentCurrency, {
+      class: 'settlement-currency-select',
+      onchange: () => { currentCurrency = curSel.value; render(); },
+    });
+
+    const currencyGroup = el('span', { class: 'control-group' }, [
+      el('span', { class: 'control-label', text: 'Settle in:' }),
+      curSel,
+    ]);
+    controls.append(
+      el('span', { class: 'control-group' }, [
+        el('span', { class: 'control-label', text: 'Mode:' }),
+        el('label', { class: 'radio-label' }, [singleRadio, ' Single currency']),
+        el('label', { class: 'radio-label' }, [perCurRadio, ' Per currency']),
+      ]),
+      currencyGroup
+    );
+    currencyGroup.style.display = currentMode === 'single' ? '' : 'none';
+    root.append(controls);
+
+    // --- fetch settlement data ---
     let st;
     try {
-      st = await apiGet(`/api/plans/${planId}/settlement`);
+      const params = new URLSearchParams();
+      params.set('mode', currentMode);
+      if (currentMode === 'single') params.set('currency', currentCurrency);
+      st = await apiGet(`/api/plans/${planId}/settlement?${params.toString()}`);
     } catch (e) {
       root.append(el('p', { class: 'error', text: e.message }));
+      root.append(refreshBtn());
       return;
     }
 
@@ -100,6 +201,38 @@ export async function initSettlement(ctx, { plan, users }) {
         .catch(e => alert(e.message));
     }
 
+    // ---- per-currency settlement ----'
+    if (st.mode === 'per_currency') {
+      const pc = st.per_currency || {};
+      const curKeys = Object.keys(pc).sort();
+      if (!curKeys.length) {
+        root.append(el('p', { class: 'muted',
+          text: 'No expenses to settle.' }));
+      }
+      curKeys.forEach(cur => {
+        const data = pc[cur];
+        const d = data.decimals != null ? data.decimals : decimalsFor(cur);
+        root.append(renderSettlementPanel(
+          `${cur}`,
+          data.balances || [],
+          data.proposed_settlement || [],
+          data.remaining_balances || [],
+          d, cur
+        ));
+      });
+
+      if (!readOnly) {
+        root.append(renderPaymentForm());
+      }
+      root.append(await renderPayments());
+      root.append(refreshBtn());
+      return;
+    }
+
+    // ---- single-currency mode ----
+    const settleCur = st.settlement_currency || baseCurrency;
+    const settleDec = decimalsFor(settleCur);
+
     // If rates are missing, stop here (form shown, balances hidden).
     if (missing.length) {
       root.append(el('p', { class: 'muted',
@@ -108,67 +241,18 @@ export async function initSettlement(ctx, { plan, users }) {
       return;
     }
 
-    // --- balances ---
-    const balPanel = el('div', { class: 'panel balances-panel' });
-    balPanel.append(el('h3', { text: 'Balances' }));
-    const balList = el('ul', { class: 'balance-list' });
-    (st.balances_base || []).forEach(b => {
-      const cents = b.balance_cents || 0;
-      const cls = cents > 0 ? 'creditor' : (cents < 0 ? 'debtor' : 'even');
-      balList.append(el('li', { class: `balance-row ${cls}` }, [
-        el('span', { class: 'bal-name', text: nameOf(b.user_id, b.username) }),
-        el('span', { class: 'bal-amt', text: money(cents, baseDec, baseCurrency) }),
-      ]));
-    });
-    if (!(st.balances_base || []).length) {
-      balList.append(el('li', { class: 'muted', text: 'No balances.' }));
-    }
-    balPanel.append(balList);
-    root.append(balPanel);
-
-    // --- proposed settlement (who pays whom) ---
-    const propPanel = el('div', { class: 'panel proposed-panel' });
-    propPanel.append(el('h3', { text: 'Who pays whom' }));
-    const propList = el('ul', { class: 'prop-list' });
-    (st.proposed_settlement || []).forEach(p => {
-      propList.append(el('li', { class: 'prop-row' }, [
-        el('span', { class: 'prop-who' }, [
-          el('strong', { text: nameOf(p.from, p.from_name) }),
-          el('span', { text: ' pays ' }),
-          el('strong', { text: nameOf(p.to, p.to_name) }),
-        ]),
-        el('span', { class: 'prop-amt',
-          text: money(p.amount_cents || 0, baseDec, baseCurrency) }),
-      ]));
-    });
-    if (!(st.proposed_settlement || []).length) {
-      propList.append(el('li', { class: 'muted', text: 'Everyone is settled up.' }));
-    }
-    propPanel.append(propList);
-    root.append(propPanel);
+    root.append(renderSettlementPanel(
+      `All amounts in ${settleCur}`,
+      st.balances_base || [],
+      st.proposed_settlement || [],
+      st.remaining_balances || [],
+      settleDec, settleCur
+    ));
 
     // --- record payment form ---
     if (!readOnly) {
       root.append(renderPaymentForm());
     }
-
-    // --- remaining balances ---
-    const remPanel = el('div', { class: 'panel remaining-panel' });
-    remPanel.append(el('h3', { text: 'Remaining balances' }));
-    const remList = el('ul', { class: 'balance-list' });
-    (st.remaining_balances || []).forEach(b => {
-      const cents = b.balance_cents || 0;
-      const cls = cents > 0 ? 'creditor' : (cents < 0 ? 'debtor' : 'even');
-      remList.append(el('li', { class: `balance-row ${cls}` }, [
-        el('span', { class: 'bal-name', text: nameOf(b.user_id, b.username) }),
-        el('span', { class: 'bal-amt', text: money(cents, baseDec, baseCurrency) }),
-      ]));
-    });
-    if (!(st.remaining_balances || []).length) {
-      remList.append(el('li', { class: 'muted', text: 'No remaining balances.' }));
-    }
-    remPanel.append(remList);
-    root.append(remPanel);
 
     // --- recorded payments ---
     root.append(await renderPayments());

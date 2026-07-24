@@ -241,7 +241,9 @@ def set_rates(plan_id):
 @expenses_bp.route("/api/plans/<int:plan_id>/settlement")
 @plan_access()
 def settlement(plan_id):
-    return jsonify(ex.plan_settlement(plan_id))
+    mode = request.args.get("mode", "single")
+    currency = request.args.get("currency") or None
+    return jsonify(ex.plan_settlement(plan_id, mode=mode, settlement_currency=currency))
 
 
 @expenses_bp.route("/api/plans/<int:plan_id>/payments")
