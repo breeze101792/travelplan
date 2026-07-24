@@ -13,7 +13,7 @@ from __future__ import annotations
 
 from flask import Blueprint, request, g, abort, jsonify
 
-from ..auth import plan_access, login_required, check_expense_access, check_payment_access
+from ..auth import plan_access, login_required, check_item_access, check_expense_access, check_payment_access
 from ..db import get_db
 from ..util import parse_amount_to_cents, format_cents
 from .. import expense as ex
@@ -93,6 +93,17 @@ def create_expense(plan_id):
     except ValueError as ve:
         return jsonify({"error": str(ve)}), 400
     return jsonify({"expense": _serialize_expense(eid)})
+
+
+@expenses_bp.route("/api/items/<int:item_id>/expenses")
+@login_required
+def item_expenses(item_id):
+    """Expenses for a specific item."""
+    check_item_access(item_id)
+    db = get_db()
+    rows = db.execute(
+        "SELECT id FROM expenses WHERE item_id = ? ORDER BY created_at DESC", (item_id,)).fetchall()
+    return jsonify({"expenses": [_serialize_expense(r["id"]) for r in rows]})
 
 
 @expenses_bp.route("/api/expenses/<int:expense_id>", methods=["DELETE"])

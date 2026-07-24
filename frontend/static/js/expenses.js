@@ -3,6 +3,7 @@
 import { apiGet, apiPost, apiDel } from '/static/js/api.js';
 import { el, clear, money, statusBadge, loadSettings } from '/static/js/util.js';
 import { initSettlement } from '/static/js/settlement.js';
+import { openExpenseFormModal } from '/static/js/expense-form.js';
 
 // --- helpers ---------------------------------------------------------------
 
@@ -11,43 +12,13 @@ function decimalsFor(currency) {
   return (currency === 'JPY' || currency === 'KRW') ? 0 : 2;
 }
 
-// Parse a human money string ('120.00' or '40000') into integer cents
-// (or units for 0-decimal currencies). Returns null when invalid.
-function parseMoneyStr(str, decimals) {
-  if (str == null) return null;
-  const s = String(str).trim();
-  if (s === '') return null;
-  const n = parseFloat(s);
-  if (isNaN(n)) return null;
-  const factor = decimals === 0 ? 1 : 100;
-  return Math.round(n * factor);
-}
-
 function moneyFor(cents, currency) {
   return money(cents, decimalsFor(currency), currency);
 }
 
-// Filter out null/false children so el() never gets boolean junk.
 function kids(...xs) {
   return xs.filter(x => x != null && x !== false);
 }
-
-// Build a <select> from [{value,label}] and set the current value.
-function makeSelect(options, value, attrs = {}) {
-  const sel = el('select', attrs);
-  options.forEach(o => {
-    sel.append(el('option', { value: o.value, text: o.label }));
-  });
-  if (value != null) sel.value = String(value);
-  return sel;
-}
-
-const METHODS = [
-  { value: 'EQUAL', label: 'Equal' },
-  { value: 'EXACT', label: 'Exact amounts' },
-  { value: 'PERCENTAGE', label: 'Percentages' },
-  { value: 'SHARES', label: 'Shares' },
-];
 
 // --- main entry ------------------------------------------------------------
 
@@ -219,7 +190,7 @@ export async function initExpenses(ctx) {
     }
 
     if (!readOnly) {
-      root.append(renderAddForm());
+      root.append(renderAddBtn());
     }
   }
 
@@ -233,348 +204,24 @@ export async function initExpenses(ctx) {
     }
   }
 
-  // --- (c) add-expense form ----------------------------------------------
-  // Form state lives in a closure; dynamic panels re-render on change.
-  function renderAddForm() {
-    const fs = {
-      description: '',
-      itemId: '',
-      currency: baseCurrency,
-      amount: '',
-      payers: [{ user_id: currentUser.id, amount: '' }],
-      method: 'EQUAL',
-      participants: new Set(users.map(u => u.id)),
-      exact: {},
-      percent: {},
-      shares: {},
-    };
-
-    const form = el('form', { class: 'expense-form', autocomplete: 'off' });
-    form.append(el('h3', { class: 'form-title', text: 'Add an expense' }));
-
-    // description
-    const descInput = el('input', { type: 'text', placeholder: 'Description',
-      value: fs.description, required: true });
-    descInput.addEventListener('input', () => { fs.description = descInput.value; });
-    form.append(el('label', { class: 'field' }, [
-      el('span', { class: 'field-label', text: 'Description' }), descInput,
-    ]));
-
-    // item link
-    const itemSelect = makeSelect(itemOptions, fs.itemId);
-    itemSelect.addEventListener('change', () => { fs.itemId = itemSelect.value; });
-    form.append(el('label', { class: 'field' }, [
-      el('span', { class: 'field-label', text: 'Item' }), itemSelect,
-    ]));
-
-    // currency + amount on one row
-    const curSelect = makeSelect(
-      currencies.map(c => ({ value: c, label: c })), fs.currency);
-    curSelect.addEventListener('change', () => {
-      fs.currency = curSelect.value;
-      renderMethodPanel();
-      renderPreview();
-    });
-
-    const amountInput = el('input', { type: 'text', inputmode: 'decimal',
-      placeholder: '0.00', value: fs.amount });
-    amountInput.addEventListener('input', () => {
-      fs.amount = amountInput.value;
-      renderPayersPanel();
-      renderPreview();
-    });
-
-    form.append(el('div', { class: 'field-row' }, [
-      el('label', { class: 'field' }, [
-        el('span', { class: 'field-label', text: 'Currency' }), curSelect]),
-      el('label', { class: 'field' }, [
-        el('span', { class: 'field-label', text: 'Total amount' }), amountInput]),
-    ]));
-
-    // payers section
-    const payersPanel = el('div', { class: 'payers-panel' });
-    form.append(payersPanel);
-
-    // split method
-    const methodSelect = makeSelect(METHODS, fs.method);
-    methodSelect.addEventListener('change', () => {
-      fs.method = methodSelect.value;
-      renderMethodPanel();
-      renderPreview();
-    });
-    form.append(el('label', { class: 'field' }, [
-      el('span', { class: 'field-label', text: 'Split method' }), methodSelect,
-    ]));
-
-    // method-specific panel
-    const methodPanel = el('div', { class: 'method-panel' });
-    form.append(methodPanel);
-
-    // live preview
-    const previewPanel = el('div', { class: 'preview-panel' });
-    form.append(previewPanel);
-
-    // validation message + submit
-    const msg = el('p', { class: 'form-msg' });
-    const submitBtn = el('button', { type: 'submit', class: 'btn btn-primary',
-      text: 'Add expense' });
-    form.append(el('div', { class: 'form-actions' }, [msg, submitBtn]));
-
-    // ---- payers panel ----
-    function renderPayersPanel() {
-      clear(payersPanel);
-      payersPanel.append(el('span', { class: 'field-label', text: 'Paid by' }));
-      const rows = el('div', { class: 'payer-rows' });
-      fs.payers.forEach((p, idx) => {
-        const single = fs.payers.length === 1;
-        const sel = makeSelect(userOptions, p.user_id);
-        sel.addEventListener('change', () => { p.user_id = Number(sel.value); });
-        const amt = el('input', { type: 'text', inputmode: 'decimal',
-          placeholder: 'amount', value: p.amount, disabled: single });
-        if (single) amt.value = fs.amount;
-        amt.addEventListener('input', () => { p.amount = amt.value; renderPreview(); });
-        const row = el('div', { class: 'payer-row' }, kids(
-          sel,
-          amt,
-          single ? null : el('button', { type: 'button', class: 'btn btn-sm btn-ghost',
-            text: 'Remove', onclick: () => {
-              fs.payers.splice(idx, 1);
-              renderPayersPanel();
-              renderPreview();
-            } })
-        ));
-        rows.append(row);
+  // --- (c) add-expense button (opens shared modal) -----------------------
+  function renderAddBtn() {
+    const btn = el('button', { type: 'button', class: 'btn btn-primary',
+      text: '+ Add an expense' });
+    btn.addEventListener('click', () => {
+      openExpenseFormModal({
+        members: users,
+        currencies,
+        baseCurrency,
+        currentUser,
+        itemOptions,
+        onSubmit: async (body) => {
+          await apiPost(`/api/plans/${planId}/expenses`, body);
+          await refresh();
+        },
       });
-      payersPanel.append(rows);
-      payersPanel.append(el('button', { type: 'button', class: 'btn btn-sm btn-ghost',
-        text: '+ Add payer', onclick: () => {
-          fs.payers.push({ user_id: users[0].id, amount: '' });
-          // when moving to multi-payer, clear the auto-filled single amount
-          if (fs.payers.length === 2) fs.payers[0].amount = '';
-          renderPayersPanel();
-          renderPreview();
-        } }));
-    }
-
-    // ---- method panel ----
-    function renderMethodPanel() {
-      clear(methodPanel);
-      if (fs.method === 'EQUAL') {
-        const wrap = el('div', { class: 'check-grid' });
-        users.forEach(u => {
-          const id = `part-${u.id}`;
-          const cb = el('input', { type: 'checkbox', id, value: u.id });
-          cb.checked = fs.participants.has(u.id);
-          cb.addEventListener('change', () => {
-            if (cb.checked) fs.participants.add(u.id);
-            else fs.participants.delete(u.id);
-            renderPreview();
-          });
-          wrap.append(el('label', { class: 'check-row', for: id }, [cb,
-            el('span', { text: u.display_name || u.username })]));
-        });
-        methodPanel.append(wrap);
-      } else {
-        const grid = el('div', { class: 'per-person-grid' });
-        users.forEach(u => {
-          const store = fs.method === 'EXACT' ? fs.exact
-            : fs.method === 'PERCENTAGE' ? fs.percent : fs.shares;
-          const inp = el('input', {
-            type: fs.method === 'SHARES' ? 'number' : 'text',
-            inputmode: fs.method === 'SHARES' ? 'numeric' : 'decimal',
-            placeholder: fs.method === 'PERCENTAGE' ? '%' : '0',
-            value: store[u.id] || '',
-            step: fs.method === 'SHARES' ? '1' : 'any',
-            min: '0',
-          });
-          inp.addEventListener('input', () => {
-            store[u.id] = inp.value;
-            renderPreview();
-          });
-          grid.append(el('div', { class: 'pp-row' }, [
-            el('span', { class: 'pp-name', text: u.display_name || u.username }),
-            inp,
-          ]));
-        });
-        methodPanel.append(grid);
-        if (fs.method === 'EXACT') {
-          methodPanel.append(el('p', { class: 'muted hint',
-            text: 'Per-person amounts should sum to the total.' }));
-        } else if (fs.method === 'PERCENTAGE') {
-          methodPanel.append(el('p', { class: 'muted hint',
-            text: 'Percentages should sum to 100.' }));
-        } else {
-          methodPanel.append(el('p', { class: 'muted hint',
-            text: 'Shares are relative integers (e.g. 2 and 1).' }));
-        }
-      }
-    }
-
-    // ---- preview ----
-    function computeOwed() {
-      const dec = decimalsFor(fs.currency);
-      const total = parseMoneyStr(fs.amount, dec);
-      if (total == null) return null;
-      const out = {};
-      if (fs.method === 'EQUAL') {
-        const parts = users.filter(u => fs.participants.has(u.id));
-        if (!parts.length) return null;
-        const each = Math.floor(total / parts.length);
-        let rem = total - each * parts.length;
-        parts.forEach(u => {
-          let a = each;
-          if (rem > 0) { a += 1; rem -= 1; }
-          out[u.id] = a;
-        });
-      } else if (fs.method === 'EXACT') {
-        users.forEach(u => {
-          const v = parseMoneyStr(fs.exact[u.id] || '', dec);
-          if (v != null) out[u.id] = v;
-        });
-      } else if (fs.method === 'PERCENTAGE') {
-        users.forEach(u => {
-          const p = parseFloat(fs.percent[u.id] || '');
-          if (!isNaN(p)) out[u.id] = Math.round(total * p / 100);
-        });
-      } else if (fs.method === 'SHARES') {
-        let totalShares = 0;
-        users.forEach(u => {
-          const s = parseInt(fs.shares[u.id] || '', 10);
-          if (!isNaN(s) && s > 0) totalShares += s;
-        });
-        if (totalShares > 0) {
-          users.forEach(u => {
-            const s = parseInt(fs.shares[u.id] || '', 10);
-            if (!isNaN(s) && s > 0) out[u.id] = Math.round(total * s / totalShares);
-          });
-        }
-      }
-      return out;
-    }
-
-    function renderPreview() {
-      clear(previewPanel);
-      const dec = decimalsFor(fs.currency);
-      const owed = computeOwed();
-      if (!owed) {
-        previewPanel.append(el('p', { class: 'muted',
-          text: 'Enter a total and split details to preview each person’s share.' }));
-        return;
-      }
-      previewPanel.append(el('span', { class: 'field-label', text: 'Preview' }));
-      const list = el('ul', { class: 'preview-list' });
-      users.forEach(u => {
-        if (owed[u.id] == null) return;
-        list.append(el('li', {}, [
-          el('span', { text: u.display_name || u.username }),
-          el('strong', { text: money(owed[u.id], dec, fs.currency) }),
-        ]));
-      });
-      previewPanel.append(list);
-    }
-
-    // ---- validation + submit ----
-    function validate() {
-      const dec = decimalsFor(fs.currency);
-      if (!fs.description.trim()) return 'Enter a description.';
-      const total = parseMoneyStr(fs.amount, dec);
-      if (total == null) return 'Enter a valid total amount.';
-
-      // payers
-      if (fs.payers.length === 1) {
-        // single payer implicitly pays the total
-      } else {
-        let psum = 0;
-        for (const p of fs.payers) {
-          const v = parseMoneyStr(p.amount, dec);
-          if (v == null) return 'Enter a valid amount for every payer.';
-          psum += v;
-        }
-        if (psum !== total) return 'Payer amounts must sum to the total.';
-      }
-
-      if (fs.method === 'EQUAL') {
-        if (!users.some(u => fs.participants.has(u.id)))
-          return 'Select at least one participant.';
-      } else if (fs.method === 'EXACT') {
-        let s = 0, any = false;
-        users.forEach(u => {
-          const v = parseMoneyStr(fs.exact[u.id] || '', dec);
-          if (v != null) { s += v; any = true; }
-        });
-        if (!any) return 'Enter per-person amounts.';
-        if (s !== total) return 'Exact amounts must sum to the total.';
-      } else if (fs.method === 'PERCENTAGE') {
-        let s = 0;
-        users.forEach(u => {
-          const p = parseFloat(fs.percent[u.id] || '');
-          if (!isNaN(p)) s += p;
-        });
-        if (Math.abs(s - 100) > 0.01) return 'Percentages must sum to 100.';
-      } else if (fs.method === 'SHARES') {
-        let s = 0;
-        users.forEach(u => {
-          const sh = parseInt(fs.shares[u.id] || '', 10);
-          if (!isNaN(sh) && sh > 0) s += sh;
-        });
-        if (s < 1) return 'Enter at least one share.';
-      }
-      return null;
-    }
-
-    form.addEventListener('submit', async (ev) => {
-      ev.preventDefault();
-      const err = validate();
-      if (err) { msg.textContent = err; msg.className = 'form-msg error'; return; }
-
-      const dec = decimalsFor(fs.currency);
-      const body = {
-        description: fs.description.trim(),
-        currency: fs.currency,
-        amount: fs.amount,
-        split_method: fs.method,
-        payers: fs.payers.map(p => ({
-          user_id: p.user_id,
-          amount: fs.payers.length === 1 ? fs.amount : (p.amount || fs.amount),
-        })),
-      };
-      if (fs.itemId) body.item_id = parseInt(fs.itemId, 10);
-
-      if (fs.method === 'EQUAL') {
-        body.participants = users.filter(u => fs.participants.has(u.id)).map(u => u.id);
-      } else if (fs.method === 'EXACT') {
-        body.split_data = users
-          .map(u => ({ user_id: u.id, amount: fs.exact[u.id] || '' }))
-          .filter(o => o.amount !== '');
-      } else if (fs.method === 'PERCENTAGE') {
-        body.split_data = users
-          .map(u => ({ user_id: u.id, percent: parseFloat(fs.percent[u.id] || '') }))
-          .filter(o => !isNaN(o.percent));
-      } else if (fs.method === 'SHARES') {
-        body.split_data = users
-          .map(u => ({ user_id: u.id, shares: parseInt(fs.shares[u.id] || '', 10) }))
-          .filter(o => !isNaN(o.shares));
-      }
-
-      submitBtn.disabled = true;
-      msg.textContent = 'Saving…';
-      msg.className = 'form-msg';
-      try {
-        await apiPost(`/api/plans/${planId}/expenses`, body);
-        await refresh();
-      } catch (e) {
-        msg.textContent = e.message;
-        msg.className = 'form-msg error';
-      } finally {
-        submitBtn.disabled = false;
-      }
     });
-
-    // initial paint of dynamic panels
-    renderPayersPanel();
-    renderMethodPanel();
-    renderPreview();
-    return form;
+    return btn;
   }
 
   // --- initial render ---
