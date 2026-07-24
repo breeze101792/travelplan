@@ -1343,14 +1343,15 @@ export async function initTimeline(ctx) {
 
 /* Wire click + right-click handlers on one bar. The drag handler is
  * separate (it owns pointerdown→move→up). Click semantics:
- *   - plain click         → open editor
+ *   - plain click         → select only
  *   - ⌘ / Ctrl + click    → toggle this bar in the multi-select
  *   - Shift + click       → range select (across the visible bar order)
- *   - right-click         → add to selection + show the context menu
+ *   - double-click        → open detail editor
+ *   - right-click         → show the context menu
  *
- * Hotels opt out: a plain click opens the editor, but ⌘ / Shift / right-
- * click on a hotel are no-ops (the user gets a brief toast explaining
- * why if they tried to multi-select).
+ * Hotels: plain click does nothing; ⌘ / Ctrl / Shift + click show a
+ * toast (can't multi-select spanning items). Double-click opens the
+ * editor; right-click shows the context menu.
  *
  * The boot owns the multi-select state and the context-menu renderer;
  * we pass them in as callbacks so this module stays stateless. */
@@ -1402,11 +1403,6 @@ function wireBarClick({ bar, ctx, getViewItems, onPlainClick, onToggleSelect, on
   bar.addEventListener('contextmenu', (e) => {
     if (ctx.role === 'viewer') return;
     e.preventDefault();
-    if (isHotel) {
-      // Hotels don't participate in multi-select — don't show a menu
-      // (the user would only see disabled options, which is confusing).
-      return;
-    }
     if (onContextMenu) onContextMenu(e.clientX, e.clientY);
   });
 }

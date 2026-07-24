@@ -295,21 +295,12 @@ export async function initItinerary(ctx) {
     });
     card.addEventListener('dblclick', (e) => {
       if (e.button != null && e.button !== 0) return;
-      if (ctx.role !== 'viewer' && isSelectable(item)) openEditorFor(item);
+      if (ctx.role !== 'viewer') openEditorFor(item);
     });
     card.addEventListener('contextmenu', (e) => {
       if (ctx.role === 'viewer') return;
       e.preventDefault();
-      // Spanning items (hotels) don't participate in multi-select; the
-      // right-click is unused. Bail without showing a menu so the user
-      // doesn't see a confusingly-disabled context menu.
-      if (!isSelectable(item)) return;
-      // Right-click is a shortcut for "show the action menu" — like
-      // ⌘+click but with a menu. If the right-clicked card isn't already
-      // in the selection, add it so the menu acts on it. (Cmd+click
-      // toggles a single card; the right-click is a one-shot equivalent
-      // that also opens the menu.)
-      if (!isSelected(item.id)) {
+      if (isSelectable(item) && !isSelected(item.id)) {
         selection.add(String(item.id));
         lastSelectedId = String(item.id);
         refreshCardOutlines();
@@ -504,7 +495,7 @@ export async function initItinerary(ctx) {
    *                            between, including items on intermediate
    *                            days. Spanning items are skipped — they
    *                            can't be part of a multi-select.
-   *   - Plain click on a hotel → open the editor (unchanged).
+   * - Plain click on a hotel → do nothing (double-click to open the editor).
    *   - Shift + click on a hotel → rejected with the same toast as
    *                            Cmd+click on a hotel.
    */
