@@ -55,6 +55,7 @@
 
 /* type accents (left border) */
 .card.item.hotel      { border-left-color: #6366f1; }
+.card.item.hotel.hotel-event { border-left-color: #818cf8; }
 .card.item.transit    { border-left-color: #0ea5e9; }
 .card.item.flight     { border-left-color: #0ea5e9; }
 .card.item.train      { border-left-color: #10b981; }

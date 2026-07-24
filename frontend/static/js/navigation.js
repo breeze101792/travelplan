@@ -3,6 +3,7 @@ import { el, clear, loadSettings } from '/static/js/util.js';
 import { buildDays, isoOf, addDaysIso, wirePlanHeaderDirect } from '/static/js/plan-header.js';
 import { openItemEditor } from '/static/js/item-editor.js';
 import { Staging } from '/static/js/staging.js';
+import { expandHotelEvents } from '/static/js/hotel-events.js';
 
 const api = { get: apiGet, post: apiPost, patch: apiPatch, del: apiDel, upload: apiUpload };
 
@@ -134,17 +135,17 @@ function renderSchedule() {
   clear(content);
 
   const dateStr = selectedDay.date;
-  const viewItems = staging.viewItems();
+  const viewItems = expandHotelEvents(staging.viewItems());
 
   const dayItems = viewItems.filter(item => {
-    if (item.item_type === 'hotel') {
+    if (item.item_type === 'hotel' && !item._hotelEvent) {
       return dateStr >= item.item_date && dateStr < (item.end_date || item.item_date);
     }
     return item.item_date === dateStr;
   });
 
-  const hotels = dayItems.filter(i => i.item_type === 'hotel');
-  const nonHotels = dayItems.filter(i => i.item_type !== 'hotel');
+  const hotels = dayItems.filter(i => i.item_type === 'hotel' && !i._hotelEvent);
+  const nonHotels = dayItems.filter(i => i.item_type !== 'hotel' || i._hotelEvent);
 
   const isToday = dateStr === isoOf(new Date());
   const now = new Date();
@@ -320,11 +321,13 @@ function renderCard(item, status) {
     }
   }
 
-  actions.appendChild(el('button', {
-    class: 'nav-card-open',
-    text: 'Open details \u25B8',
-    onclick: e => { e.stopPropagation(); openEditorFor(item); },
-  }));
+  if (!item._hotelEvent) {
+    actions.appendChild(el('button', {
+      class: 'nav-card-open',
+      text: 'Open details \u25B8',
+      onclick: e => { e.stopPropagation(); openEditorFor(item); },
+    }));
+  }
 
   body.appendChild(actions);
   card.appendChild(body);
@@ -337,6 +340,7 @@ function renderCard(item, status) {
   });
   card.addEventListener('dblclick', () => {
     if (item.item_type === 'hotel') return;
+    if (item._hotelEvent) return;
     openEditorFor(item);
   });
 
@@ -430,7 +434,10 @@ function openEditorFor(item) {
 function itemTimeWindow(item) {
   const d = item.details || {};
   let start = null, end = null;
-  if (item.item_type === 'transit') {
+  if (item._hotelEvent) {
+    start = timeOfDay(d.time);
+    end = start !== null ? start + 1 : null;
+  } else if (item.item_type === 'transit') {
     start = timeOfDay(d.depart_time);
     end = timeOfDay(d.arrive_time);
   } else if (item.item_type === 'activity' || item.item_type === 'restaurant') {

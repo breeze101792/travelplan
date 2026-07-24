@@ -29,6 +29,7 @@ import { Staging, timeEditItemOp, moveItemOp, deleteItemOp, createItemsFromClipO
 import { openItemEditor } from '/static/js/item-editor.js';
 import { clipboardGet, clipboardSet, serializeItem } from '/static/js/clipboard.js';
 import { buildDays, isoOf, wirePlanHeader, renderPlanToolbar, makeDayActions } from '/static/js/plan-header.js';
+import { expandHotelEvents } from '/static/js/hotel-events.js';
 
 let HOUR_PX = 36;     // recalculated by updateScale() to fill viewport
 
@@ -59,6 +60,7 @@ function timeOfDay(v) {
 // default-fill in itemTimeWindow() below handles existing rows that
 // only have `time`.
 const TIME_FIELDS = {
+  hotel:      { start: 'time',      end: 'time'       },
   transit:    { start: 'depart_time', end: 'arrive_time', label: 'transit' },
   flight:     { start: 'depart_time', end: 'arrive_time', label: 'flight' },
   train:      { start: 'depart_time', end: 'arrive_time', label: 'train' },
@@ -89,7 +91,13 @@ function typeHasEndField(itemType) {
 function itemTimeWindow(item) {
   const d = item.details || {};
   if (item.item_type === 'hotel') {
-    // Hotels are handled by renderHotelStays() below, not as a single bar.
+    if (item._hotelEvent) {
+      // Check-in / check-out events — render as timed bars.
+      const time = timeOfDay(d.time);
+      if (time != null) return { start: time, end: time + 1 };
+      return null;
+    }
+    // Regular spanning hotels are handled by renderHotelStays() below.
     return null;
   }
   const f = TIME_FIELDS[item.item_type];
@@ -332,7 +340,7 @@ function renderDay(day, items, settings, nowFraction, ctx, staging, setBlockErro
   // so the user can drag them to a time slot.
   const timed = [];
   for (const it of items) {
-    if (it.item_type === 'hotel') continue;
+    if (it.item_type === 'hotel' && !it._hotelEvent) continue;
     if (it.item_date !== day.date) continue;
     const d = it.details || {};
     const w = itemTimeWindow(it);
@@ -1140,7 +1148,7 @@ export async function initTimeline(ctx) {
     clear(root);
     updateScale(root);
     if (ctx.role !== 'viewer') root.classList.add('editable');
-    const viewItems = staging.viewItems();
+    const viewItems = expandHotelEvents(staging.viewItems());
 
     root.appendChild(renderHourCol());
     const scrollWrap = el('div', { class: 'timeline-scroll' });
@@ -1189,7 +1197,7 @@ export async function initTimeline(ctx) {
                        onToggleSelect: toggleSelect,
                        onRangeSelect: (id) => selectRangeAcrossDays(lastSelectedId, id),
                        onContextMenu: showContextMenu,
-                       onDblClick: openEditorFor });
+                       onDblClick: (item) => { if (!item._hotelEvent) openEditorFor(item); } });
       }
     }
 

@@ -23,6 +23,7 @@ import {
 import {
   buildDays, isoOf, wirePlanHeader, renderPlanToolbar, makeDayActions,
 } from '/static/js/plan-header.js';
+import { expandHotelEvents } from '/static/js/hotel-events.js';
 
 /* JPY/KRW have 0 minor units; everything else uses 2. Matches backend. */
 function decimalsFor(cur) {
@@ -199,7 +200,7 @@ export async function initItinerary(ctx) {
     // Re-derive the day columns from the latest staged plan (handles date
     // edits and buffer-day toggles in the same render pass).
     days = buildDays(staging.viewPlan());
-    const items = staging.viewItems();
+    const items = expandHotelEvents(staging.viewItems());
     const grouped = groupByDay(items, days, settings);
     for (const day of days) {
       const sec = el('section', {
@@ -239,8 +240,9 @@ export async function initItinerary(ctx) {
       dataset: { itemId: String(item.id), date: dayDate, end: item.end_date || '',
                  type: item.item_type, spans: isSpanningItem(item, settings) ? '1' : '0' },
     });
-    if (ctx.role !== 'viewer') card.draggable = true;
+    if (ctx.role !== 'viewer' && !item._hotelEvent) card.draggable = true;
     if (item.isLocal) card.classList.add('is-local');
+    if (item._hotelEvent) card.classList.add('hotel-event', `hotel-event-${item._hotelEvent}`);
 
     card.appendChild(el('div', { class: 'card-head' }, [
       el('span', { class: 'card-type', text: ti.label }),
@@ -295,7 +297,7 @@ export async function initItinerary(ctx) {
     });
     card.addEventListener('dblclick', (e) => {
       if (e.button != null && e.button !== 0) return;
-      if (ctx.role !== 'viewer') openEditorFor(item);
+      if (ctx.role !== 'viewer' && !item._hotelEvent) openEditorFor(item);
     });
     card.addEventListener('contextmenu', (e) => {
       if (ctx.role === 'viewer') return;
@@ -368,6 +370,7 @@ export async function initItinerary(ctx) {
    * user can still open them with a regular click. */
   function isSelectable(item) {
     if (!item) return false;
+    if (item._hotelEvent) return false;
     return !isSpanningItem(item, settings);
   }
 
