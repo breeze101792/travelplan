@@ -181,12 +181,19 @@ def expenses_by_item(plan_id):
            FROM expenses e JOIN items i ON i.id = e.item_id
            WHERE e.plan_id = ? GROUP BY i.id, e.currency ORDER BY i.item_date, i.id""",
         (plan_id,)).fetchall()
+    def _base_decimals(cur):
+        return 0 if cur in ('JPY', 'KRW') else 2
     items_map: dict[int, dict] = {}
     from decimal import Decimal
     for r in rows:
         cur = r["currency"]
         rate = Decimal(str(rates[cur])) if cur in rates else (Decimal(1) if cur == base else None)
-        base_cents = int((Decimal(r["total"]) * rate).quantize(Decimal(1))) if rate is not None else None
+        if rate is not None:
+            exp_major = Decimal(r["total"]) / Decimal(10 ** r["decimals"])
+            base_major = exp_major * rate
+            base_cents = int((base_major * Decimal(10 ** _base_decimals(base))).quantize(Decimal(1)))
+        else:
+            base_cents = None
         it = items_map.setdefault(r["item_id"], {
             "item_id": r["item_id"], "title": r["title"], "item_type": r["item_type"],
             "total_by_currency": {}, "grand_total_base_cents": 0, "has_missing_rate": False})

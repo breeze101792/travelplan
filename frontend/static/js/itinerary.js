@@ -114,9 +114,8 @@ function detailLines(item, settings) {
     // covered above (or they're the only time field, shown as a single value).
     if (f.key === 'start_time' || f.key === 'end_time' || f.key === 'time' ||
         f.key === 'depart_time' || f.key === 'arrive_time') continue;
-    // Skip price/currency/link — handled by the expense form and
-    // "Add link" on the right panel of the editor.
-    if (f.key === 'price' || f.key === 'currency' || f.key === 'link') continue;
+    // Skip link — handled by the "Add link" button on the editor's right panel.
+    if (f.key === 'link') continue;
     const v = d[f.key];
     if (v !== undefined && v !== null && String(v).trim() !== '') {
       lines.push(`${f.label}: ${v}`);

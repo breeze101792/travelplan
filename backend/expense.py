@@ -252,6 +252,9 @@ def settle_debts(net_balances: dict[int, int]) -> list[dict]:
     return out
 
 
+def _currency_decimals(cur: str) -> int:
+    return 0 if cur in ('JPY', 'KRW') else 2
+
 def convert_to_base(per_currency: dict[str, dict[int, int]],
                     rates: dict[str, float],
                     base_currency: str) -> tuple[dict[int, int], list[str]]:
@@ -260,6 +263,7 @@ def convert_to_base(per_currency: dict[str, dict[int, int]],
     Returns (base_balances, missing_currencies)."""
     base: dict[int, int] = defaultdict(int)
     missing = []
+    base_decimals = _currency_decimals(base_currency)
     for currency, usermap in per_currency.items():
         if currency == base_currency:
             rate = Decimal("1")
@@ -268,8 +272,11 @@ def convert_to_base(per_currency: dict[str, dict[int, int]],
         else:
             missing.append(currency)
             continue
+        exp_decimals = _currency_decimals(currency)
         for uid, cents in usermap.items():
-            converted = (Decimal(cents) * rate).quantize(CENT, rounding=ROUND_HALF_UP)
+            exp_major = Decimal(cents) / Decimal(10 ** exp_decimals)
+            base_major = exp_major * rate
+            converted = (base_major * Decimal(10 ** base_decimals)).quantize(CENT, rounding=ROUND_HALF_UP)
             base[uid] += int(converted)
     return dict(base), missing
 
@@ -281,13 +288,17 @@ def recorded_payments_base(plan_id: int, rates: dict[str, float],
     rows = db.execute(
         "SELECT * FROM payments WHERE plan_id = ?", (plan_id,)
     ).fetchall()
+    base_decimals = _currency_decimals(base_currency)
     net: dict[int, int] = defaultdict(int)
     for r in rows:
         if r["currency"] == base_currency:
             rate = Decimal("1")
         else:
             rate = Decimal(str(rates.get(r["currency"], 0)))
-        amt = int((Decimal(r["amount_cents"]) * rate).quantize(CENT, rounding=ROUND_HALF_UP))
+        exp_decimals = _currency_decimals(r["currency"])
+        exp_major = Decimal(r["amount_cents"]) / Decimal(10 ** exp_decimals)
+        base_major = exp_major * rate
+        amt = int((base_major * Decimal(10 ** base_decimals)).quantize(CENT, rounding=ROUND_HALF_UP))
         # A recorded payment settles debt: the payer's debt decreases (balance
         # rises toward 0), the payee's credit decreases. balance>0 = creditor.
         net[r["from_user_id"]] += amt
@@ -373,13 +384,15 @@ def _self_test() -> None:
     got2 = {(s["from"], s["to"]): s["amount_cents"] for s in settle2}
     eq(got2, {(2, 1): 10, (3, 1): 40}, "settle largest-debtor first")
 
-    # multi-currency: $100 USD + ¥10000 JPY, each 50/50, paid by A
-    # per-currency: USD {A:+5000,B:-5000}, JPY {A:+5000,B:-5000}
-    # rates USD->1.0, JPY->0.0067 -> base(USD) A:+5000+33=5033, B:-5000-33=-5033
+    # multi-currency: $100 USD (10,000 cents) + ¥10000 JPY (minor units),
+    # each 50/50, paid by A.  per-currency balances in minor units:
+    #   USD {A:+5000, B:-5000},  JPY {A:+5000, B:-5000}
+    # rates USD->1.0, JPY->0.0067 -> base(USD)
+    #   JPY: ¥5000 × 0.0067 = $33.50 = 3350¢  →  A:5000+3350=8350  B:-5000-3350=-8350
     per_cur = {"USD": {1: 5000, 2: -5000}, "JPY": {1: 5000, 2: -5000}}
     base, missing = convert_to_base(per_cur, {"USD": 1.0, "JPY": 0.0067}, "USD")
     eq(missing, [], "multi-currency no missing rates")
-    eq(base, {1: 5033, 2: -5033}, "multi-currency cross-net in USD cents")
+    eq(base, {1: 8350, 2: -8350}, "multi-currency cross-net in USD cents")
 
     failed = [n for n, ok in checks if not ok]
     print(f"\n{len(checks) - len(failed)}/{len(checks)} passed")

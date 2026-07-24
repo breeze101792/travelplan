@@ -146,7 +146,7 @@ def init_db() -> None:
         except Exception:
             pass
         # Migration: move link from details to attachments, rename venue→location,
-        # convert legacy time→start_time/end_time, remove qty/price/currency from details
+        # convert legacy time→start_time/end_time, remove qty/price from details
         try:
             c = conn.execute("SELECT id, item_type, details FROM items")
             rows = c.fetchall()
@@ -175,7 +175,7 @@ def init_db() -> None:
                     details['start_time'] = details.pop('time')
                     changed = True
                 # Remove fields that no longer belong in details
-                for legacy_field in ('qty', 'price', 'currency'):
+                for legacy_field in ('qty', 'price'):
                     if legacy_field in details:
                         del details[legacy_field]
                         changed = True
