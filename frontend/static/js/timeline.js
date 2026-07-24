@@ -152,31 +152,42 @@ function hotelPosition(hotelItem, date) {
 // graph-coloring / strip-packing approach.
 function assignColumns(intervals) {
   // intervals: [{start, end, isBackup}], returns same array augmented with .col
+  // The minimum bar height (20px) makes a bar visually taller than its
+  // temporal span, so we use a "visual end" that accounts for that when
+  // deciding whether two items can share a column.
+  function visualEnd(it) {
+    const naturalPx = (it.end - it.start) * HOUR_PX;
+    return it.start + Math.max(20, naturalPx) / HOUR_PX;
+  }
+  function visuallyOverlap(a, b) {
+    return a.start < visualEnd(b) && b.start < visualEnd(a);
+  }
   const sorted = intervals.slice().sort((a, b) => {
     if (a.start !== b.start) return a.start - b.start;
-    // longer first so the bigger bar gets the better column
     if ((b.end - b.start) !== (a.end - a.start)) return (b.end - b.start) - (a.end - a.start);
-    // main before backup at the same start + duration
     return (a.isBackup ? 1 : 0) - (b.isBackup ? 1 : 0);
   });
-  const cols = []; // cols[i] = end of the rightmost bar in column i
+  // First pass — assign columns based on visual end (so a short bar that
+  // gets stretched to 20px still blocks the column until its visual bottom).
+  const cols = [];
   for (const it of sorted) {
     let placed = -1;
     for (let i = 0; i < cols.length; i++) {
       if (cols[i] <= it.start) { placed = i; break; }
     }
-    if (placed === -1) { placed = cols.length; cols.push(it.end); }
-    else cols[placed] = it.end;
+    if (placed === -1) { placed = cols.length; }
+    cols[placed] = visualEnd(it);
     it.col = placed;
   }
-  // Per-item column count: only items whose time range actually overlaps
-  // share the reduced width — items that sit alone at their time stay full-width.
+  // Second pass — count columns whose items visually overlap this one,
+  // so side-by-side items each get the correct narrowed width.
+  const colByItem = new Map(sorted.map(it => [it, it.col]));
   for (const it of sorted) {
-    const overlapCols = new Set([it.col]);
+    const overlapCols = new Set([colByItem.get(it)]);
     for (const other of sorted) {
       if (other === it) continue;
-      if (other.start < it.end && other.end > it.start) {
-        overlapCols.add(other.col);
+      if (visuallyOverlap(it, other)) {
+        overlapCols.add(colByItem.get(other));
       }
     }
     it.totalCols = overlapCols.size;
