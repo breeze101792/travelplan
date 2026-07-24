@@ -1,6 +1,6 @@
 // expenses.js — Expenses ledger, by-item totals, add-expense form.
 // Delegates settlement rendering to settlement.js.
-import { apiGet, apiPost, apiDel } from '/static/js/api.js';
+import { apiGet, apiPost, apiPatch, apiDel } from '/static/js/api.js';
 import { el, clear, money, statusBadge, loadSettings } from '/static/js/util.js';
 import { initSettlement } from '/static/js/settlement.js';
 import { openExpenseFormModal } from '/static/js/expense-form.js';
@@ -18,6 +18,68 @@ function moneyFor(cents, currency) {
 
 function kids(...xs) {
   return xs.filter(x => x != null && x !== false);
+}
+
+function expenseToInitial(exp) {
+  const dec = exp.decimals != null ? exp.decimals : decimalsFor(exp.currency);
+  const factor = dec === 0 ? 1 : 100;
+  const init = {
+    description: exp.description,
+    currency: exp.currency,
+    amount: (exp.total_cents / factor).toFixed(dec),
+    item_id: exp.item_id,
+    split_method: exp.split_method,
+    payers: (exp.payers || []).map(p => ({
+      user_id: p.user_id,
+      amount: (p.paid_cents / factor).toFixed(dec),
+    })),
+  };
+  if (exp.split_method === 'EQUAL') {
+    init.participants = (exp.splits || []).map(s => s.user_id);
+  } else if (exp.split_method === 'EXACT') {
+    init.split_data = (exp.splits || []).map(s => ({
+      user_id: s.user_id,
+      amount: (s.value_cents / factor).toFixed(dec),
+    }));
+  } else if (exp.split_method === 'PERCENTAGE') {
+    init.split_data = (exp.splits || []).map(s => ({
+      user_id: s.user_id,
+      percent: s.value_denom / 100,
+    }));
+  } else if (exp.split_method === 'SHARES') {
+    init.split_data = (exp.splits || []).map(s => ({
+      user_id: s.user_id,
+      shares: s.value_denom,
+    }));
+  }
+  return init;
+}
+
+// --- custom confirmation modal ---
+function confirmModal(msg) {
+  return new Promise((resolve) => {
+    const backdrop = el('div', { class: 'modal-backdrop editor-backdrop' });
+    const modal = el('div', { class: 'modal expense-modal', style: 'width: min(90vw, 380px); padding: 0;' });
+    backdrop.appendChild(modal);
+    modal.appendChild(el('div', { class: 'modal-header' }, [
+      el('h3', { text: 'Confirm' }),
+      el('button', { type: 'button', class: 'modal-close', text: '\u00d7',
+        onclick: () => { backdrop.remove(); resolve(false); } }),
+    ]));
+    modal.appendChild(el('div', { class: 'modal-body', style: 'padding: 16px 24px;' }, [
+      el('p', { text: msg, style: 'margin: 0;' }),
+    ]));
+    modal.appendChild(el('div', { class: 'modal-footer' }, [
+      el('button', { type: 'button', class: 'btn btn-ghost', text: 'Cancel',
+        onclick: () => { backdrop.remove(); resolve(false); } }),
+      el('button', { type: 'button', class: 'btn btn-danger', text: 'Delete',
+        onclick: () => { backdrop.remove(); resolve(true); } }),
+    ]));
+    document.body.appendChild(backdrop);
+    backdrop.addEventListener('click', (e) => {
+      if (e.target === backdrop) { backdrop.remove(); resolve(false); }
+    });
+  });
 }
 
 // --- main entry ------------------------------------------------------------
@@ -178,11 +240,13 @@ export async function initExpenses(ctx) {
           el('td', { class: 'payers', text: payersText || '—' }),
           el('td', {}, [methodBadge]),
           el('td', { class: 'splits-cell', text: splitsText || '—' }),
-          readOnly ? null : el('td', {}, [el('button', {
-            class: 'btn btn-danger btn-sm',
-            text: 'Delete',
-            onclick: () => delExpense(exp.id),
-          })])
+          readOnly ? null : el('td', { style: 'white-space: nowrap;' }, [
+            el('button', { class: 'btn btn-sm', text: 'Edit',
+              onclick: () => editExpense(exp) }),
+            ' ',
+            el('button', { class: 'btn btn-danger btn-sm', text: 'Delete',
+              onclick: () => delExpense(exp) }),
+          ])
         )));
       });
       table.append(tbody);
@@ -194,14 +258,31 @@ export async function initExpenses(ctx) {
     }
   }
 
-  async function delExpense(id) {
-    if (!confirm('Delete this expense?')) return;
+  async function delExpense(exp) {
+    const ok = await confirmModal(
+      `Delete "${exp.description || 'Untitled'}" (${exp.currency} ${(exp.total_cents / 100).toFixed(2)})?`);
+    if (!ok) return;
     try {
-      await apiDel(`/api/expenses/${id}`);
+      await apiDel(`/api/expenses/${exp.id}`);
       await refresh();
     } catch (e) {
       alert(e.message);
     }
+  }
+
+  function editExpense(exp) {
+    openExpenseFormModal({
+      members: users,
+      currencies,
+      baseCurrency,
+      currentUser,
+      itemOptions,
+      initial: expenseToInitial(exp),
+      onSubmit: async (body) => {
+        await apiPatch(`/api/expenses/${exp.id}`, body);
+        await refresh();
+      },
+    });
   }
 
   // --- (c) add-expense button (opens shared modal) -----------------------

@@ -106,6 +106,56 @@ def item_expenses(item_id):
     return jsonify({"expenses": [_serialize_expense(r["id"]) for r in rows]})
 
 
+@expenses_bp.route("/api/expenses/<int:expense_id>", methods=["PATCH"])
+@login_required
+def update_expense(expense_id):
+    """Update an existing expense (full replace body, same schema as create)."""
+    check_expense_access(expense_id, write=True)
+    data = request.get_json(force=True, silent=True) or {}
+    description = (data.get("description") or "").strip()
+    currency = (data.get("currency") or "USD").upper()
+    decimals = int(data.get("decimals", 2 if currency not in ("JPY", "KRW") else 0))
+    try:
+        total_cents = parse_amount_to_cents(data.get("amount", data.get("total_cents")), decimals)
+    except (ValueError, TypeError):
+        return jsonify({"error": "invalid amount"}), 400
+    method = (data.get("split_method") or "EQUAL").upper()
+    if method not in VALID_METHODS:
+        return jsonify({"error": "invalid split_method"}), 400
+    payers = data.get("payers") or []
+    if not isinstance(payers, list) or not payers:
+        return jsonify({"error": "payers required"}), 400
+    try:
+        payers = [(int(p["user_id"]), parse_amount_to_cents(p.get("amount", p.get("paid_cents")), decimals))
+                  for p in payers]
+    except (ValueError, TypeError, KeyError):
+        return jsonify({"error": "invalid payers"}), 400
+
+    participants = data.get("participants") or [p[0] for p in payers]
+    split_data = data.get("split_data")
+
+    if method == "EQUAL":
+        if not isinstance(participants, list) or not participants:
+            return jsonify({"error": "participants required for EQUAL split"}), 400
+        sd = [int(u) for u in participants]
+    elif method == "EXACT":
+        sd = [(int(p["user_id"]), parse_amount_to_cents(p.get("amount", p.get("value_cents")), decimals))
+              for p in (split_data or [])]
+    elif method == "PERCENTAGE":
+        sd = [(int(p["user_id"]), int(round(float(p["percent"]) * 100))) for p in (split_data or [])]
+    elif method == "SHARES":
+        sd = [(int(p["user_id"]), int(p["shares"])) for p in (split_data or [])]
+    else:
+        return jsonify({"error": "invalid method"}), 400
+
+    try:
+        ex.update_expense(expense_id, description, currency, total_cents, method, payers, sd,
+                          item_id=data.get("item_id"), decimals=decimals)
+    except ValueError as ve:
+        return jsonify({"error": str(ve)}), 400
+    return jsonify({"expense": _serialize_expense(expense_id)})
+
+
 @expenses_bp.route("/api/expenses/<int:expense_id>", methods=["DELETE"])
 @login_required
 def delete_expense(expense_id):

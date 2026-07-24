@@ -48,6 +48,11 @@ function kids(...xs) {
  *   currentUser  — {id, username, display_name}
  *   itemOptions  — optional [{value, label}] for item select
  *   itemId       — optional pre-selected item id
+ *   initial      — optional object to pre-fill the form (edit mode):
+ *     { description, currency, amount (string), item_id,
+ *       payers: [{user_id, amount (string)}],
+ *       split_method, participants (for EQUAL),
+ *       split_data: [{user_id, amount/percent/shares}] }
  *   onSubmit     — async(body) => Promise<void>, called with the ready-to-POST body
  *   onClose      — optional callback when modal is dismissed
  *   readOnly     — boolean
@@ -55,15 +60,47 @@ function kids(...xs) {
 export function openExpenseFormModal({
   members, currencies, baseCurrency, currentUser,
   itemOptions, itemId,
+  initial,
   onSubmit, onClose,
   readOnly,
 }) {
   const users = members;
+  const isEdit = !!initial;
 
   const userOptions = users.map(u => ({ value: u.id, label: u.display_name || u.username }));
 
   // Form state
-  const fs = {
+  function buildInitialFs() {
+    if (!initial) return null;
+    const parts = new Set();
+    const exact = {};
+    const percent = {};
+    const shares = {};
+    if (initial.split_method === 'EQUAL' && Array.isArray(initial.participants)) {
+      initial.participants.forEach(uid => parts.add(uid));
+    } else if (initial.split_method === 'EXACT' && Array.isArray(initial.split_data)) {
+      initial.split_data.forEach(d => { exact[d.user_id] = d.amount || ''; });
+    } else if (initial.split_method === 'PERCENTAGE' && Array.isArray(initial.split_data)) {
+      initial.split_data.forEach(d => { percent[d.user_id] = String(d.percent); });
+    } else if (initial.split_method === 'SHARES' && Array.isArray(initial.split_data)) {
+      initial.split_data.forEach(d => { shares[d.user_id] = String(d.shares); });
+    }
+    return {
+      description: initial.description || '',
+      itemId: initial.item_id != null ? String(initial.item_id) : '',
+      currency: initial.currency || baseCurrency,
+      amount: initial.amount || '',
+      payers: (initial.payers && initial.payers.length)
+        ? initial.payers.map(p => ({ user_id: p.user_id, amount: p.amount || '' }))
+        : [{ user_id: currentUser.id, amount: initial.amount || '' }],
+      method: initial.split_method || 'EQUAL',
+      participants: parts.size ? parts : new Set(users.map(u => u.id)),
+      exact,
+      percent,
+      shares,
+    };
+  }
+  const fs = buildInitialFs() || {
     description: '',
     itemId: itemId != null ? String(itemId) : '',
     currency: baseCurrency,
@@ -82,7 +119,7 @@ export function openExpenseFormModal({
   backdrop.appendChild(modal);
 
   modal.appendChild(el('div', { class: 'modal-header' }, [
-    el('h3', { text: 'Add an expense' }),
+    el('h3', { text: isEdit ? 'Edit expense' : 'Add an expense' }),
     el('button', { type: 'button', class: 'modal-close', text: '\u00d7',
       onclick: () => closeModal() }),
   ]));
@@ -161,8 +198,8 @@ export function openExpenseFormModal({
     el('button', { type: 'button', class: 'btn btn-ghost', text: 'Cancel',
       onclick: () => closeModal() }),
     msg,
-    el('button', { type: 'button', class: 'btn btn-primary', text: 'Add expense',
-      onclick: onSubmitClick }),
+    el('button', { type: 'button', class: 'btn btn-primary',
+      text: isEdit ? 'Save changes' : 'Add expense', onclick: onSubmitClick }),
   ]);
   modal.appendChild(footer);
 

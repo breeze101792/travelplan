@@ -152,6 +152,49 @@ def create_expense(plan_id: int, description: str, currency: str, total_cents: i
     return expense_id
 
 
+def update_expense(expense_id: int, description: str, currency: str, total_cents: int,
+                   split_method: str, payers: list[tuple[int, int]], split_data,
+                   *, item_id: int | None = None, decimals: int = 2) -> None:
+    """Replace an existing expense's fields, payers, and splits."""
+    if total_cents <= 0:
+        raise ValueError("total must be positive")
+    if sum(p for _, p in payers) != total_cents:
+        raise ValueError("payer amounts do not sum to total")
+    owed = compute_splits(total_cents, split_method, split_data)
+    db = get_db()
+    try:
+        db.execute(
+            """UPDATE expenses SET description=?, currency=?, decimals=?, total_cents=?,
+               split_method=?, item_id=? WHERE id=?""",
+            (description, currency, decimals, total_cents, split_method, item_id, expense_id),
+        )
+        db.execute("DELETE FROM expense_payers WHERE expense_id=?", (expense_id,))
+        db.execute("DELETE FROM expense_splits WHERE expense_id=?", (expense_id,))
+        for uid, paid in payers:
+            db.execute(
+                "INSERT INTO expense_payers (expense_id, user_id, paid_cents) VALUES (?, ?, ?)",
+                (expense_id, uid, paid),
+            )
+        for uid, cents in owed.items():
+            value_cents = None
+            value_denom = None
+            if split_method == "EXACT":
+                value_cents = cents
+            elif split_method == "PERCENTAGE":
+                value_denom = next(bp for u, bp in split_data if u == uid)
+            elif split_method == "SHARES":
+                value_denom = next(s for u, s in split_data if u == uid)
+            db.execute(
+                "INSERT INTO expense_splits (expense_id, user_id, value_cents, value_denom, owed_cents) "
+                "VALUES (?, ?, ?, ?, ?)",
+                (expense_id, uid, value_cents, value_denom, cents),
+            )
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
+
+
 # ---------------------------------------------------------------- balances
 
 def per_currency_balances(plan_id: int) -> dict[str, dict[int, int]]:
