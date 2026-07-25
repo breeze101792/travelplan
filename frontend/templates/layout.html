@@ -2,10 +2,18 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="TravelPlan">
+  <meta name="mobile-web-app-capable" content="yes">
   <title>{% block title %}TravelPlan{% endblock %}</title>
   <link rel="stylesheet" href="/static/css/base.css">
   <link rel="icon" type="image/svg+xml" href="/static/img/favicon.svg">
+  <link rel="apple-touch-icon" sizes="180x180" href="/static/img/apple-touch-icon.png">
+  <link rel="apple-touch-icon" sizes="152x152" href="/static/img/icon-152.png">
+  <link rel="apple-touch-icon" sizes="120x120" href="/static/img/icon-120.png">
+  <link rel="manifest" href="/static/manifest.json">
   {% block styles %}{% endblock %}
 </head>
 <body data-page="{% block page %}{% endblock %}">
