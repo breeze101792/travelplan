@@ -1,10 +1,22 @@
 /* overview.css — Overview page styles */
 
 .overview-page {
-  max-width: 720px;
-  margin: 0 auto;
-  padding: 24px 24px 48px;
+  padding: 24px 0 48px;
 }
+
+/* Section header */
+
+.ov-section-header {
+  margin-bottom: 16px;
+}
+
+.ov-section-header h2 {
+  margin: 0;
+  font-size: 1.15rem;
+  font-weight: 600;
+}
+
+/* Stat cards grid */
 
 .ov-grid {
   display: grid;
@@ -42,6 +54,8 @@
   font-size: .82rem;
   color: var(--muted, #64748b);
 }
+
+/* Sections */
 
 .ov-section {
   margin-bottom: 20px;

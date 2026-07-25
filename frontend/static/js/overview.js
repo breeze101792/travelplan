@@ -33,28 +33,36 @@ function render() {
   if (!root) return;
   clear(root);
 
+  const statusLabels = { planning: 'Planning', ongoing: 'Ongoing', archived: 'Archived' };
+
   const days = plan.start_date && plan.end_date
     ? Math.round((new Date(plan.end_date + 'T00:00:00') - new Date(plan.start_date + 'T00:00:00')) / 86400000) + 1
     : 0;
 
-  const statusLabels = { planning: 'Planning', ongoing: 'Ongoing', archived: 'Archived' };
+  // Section header
+  root.appendChild(el('div', { class: 'ov-section-header' }, [
+    el('h2', { text: 'Trip Details' }),
+  ]));
 
+  // Stat cards
   const cards = el('div', { class: 'ov-grid' }, [
-    statCard('Calendar days', String(days), 'Calendar days'),
+    statCard('Calendar days', String(days), 'Duration of the trip'),
     statCard('Items', String(allItems.length), 'Total items in this trip'),
     statCard('Members', String(members.length), 'People on this trip'),
-    statCard('Status', statusLabels[plan.status] || plan.status, plan.status === 'planning' ? 'Still planning' : plan.status === 'ongoing' ? 'Trip is happening' : 'Archived'),
+    statCard('Status', statusLabels[plan.status] || plan.status || 'Unknown', plan.status === 'planning' ? 'Still planning' : plan.status === 'ongoing' ? 'Trip is happening' : 'Archived'),
+    statCard('Currency', plan.base_currency || 'USD', 'Base currency for expenses'),
   ]);
-
   root.appendChild(cards);
 
+  // Description
   if (plan.description) {
     root.appendChild(el('section', { class: 'ov-section' }, [
-      el('h2', { class: 'ov-section-title', text: 'Description' }),
+      el('h3', { class: 'ov-section-title', text: 'Description' }),
       el('p', { class: 'ov-desc', text: plan.description }),
     ]));
   }
 
+  // Edit button
   if (ctx.role !== 'viewer') {
     root.appendChild(el('div', { class: 'ov-actions' }, [
       el('button', {
