@@ -32,10 +32,10 @@ export async function initNavigation(pageCtx) {
   ctx = pageCtx;
 
   const [settingsRes, planRes, itemsRes, memRes] = await Promise.all([
-    loadSettings(),
-    apiGet(`/api/plans/${ctx.planId}`),
-    apiGet(`/api/plans/${ctx.planId}/items`),
-    apiGet(`/api/plans/${ctx.planId}/members`),
+    loadSettings().catch(() => null),
+    apiGet(`/api/plans/${ctx.planId}`).catch(() => null),
+    apiGet(`/api/plans/${ctx.planId}/items`).catch(() => null),
+    apiGet(`/api/plans/${ctx.planId}/members`).catch(() => null),
   ]);
 
   settings = settingsRes;
@@ -205,7 +205,6 @@ function renderSchedule() {
     for (const item of untimed) content.appendChild(renderCard(item, 'untimed'));
   }
 
-  if (isToday) setTimeout(() => scrollToNow(), 150);
 }
 
 /* ---------------------------------------------------------------- hotels */
