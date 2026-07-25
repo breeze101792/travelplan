@@ -333,20 +333,51 @@ tr:last-child td { border-bottom: none; }
 .pn-link--muted { color: var(--muted); }
 .pn-link--muted:hover { color: var(--ink); }
 
-/* Add toolbar (range + buffer + quick add) --------------------------------
- * Shared by Board / Timeline (and any future page that mounts the
- * add-toolbar via plan-header.js). The toolbar is a sticky strip right
- * under the plan header, holding the range buttons (+1 day / -1 day
- * on each side), + Buffer day, and the Quick add type picker. The
- * page that mounts it fills it via `renderPlanToolbar()`; the CSS
- * just lays out whatever buttons are inside.
+/* Edit bar (range + buffer + quick add + revert + redo + save + status) ----
+ * Unified sticky bar under the plan header, shared by Board / Timeline /
+ * Map. Merges the old add-toolbar and pending-changes bar into one.
  */
-.add-toolbar {
+.edit-bar {
   display: flex; flex-wrap: wrap; align-items: center; gap: 8px;
-  padding: 12px 24px; border-bottom: 1px solid var(--border, #e5e7eb);
-  position: sticky; top: 0; z-index: 5;
+  padding: 10px 24px;
   background: var(--surface, #ffffff);
+  border-bottom: 1px solid var(--border, #e5e7eb);
+  position: sticky; top: 0; z-index: 6;
+  font-size: .9rem;
 }
+/* Spacer pushes the pending controls to the right side of the bar. */
+.eb-spacer { margin-left: auto; }
+
+/* Pending-changes controls (Revert / Redo / Save / status) inside the
+ * edit bar. Originally defined per-page in board.css / timeline.css /
+ * navigation.css, now unified here since the edit bar is shared. */
+.pb-btn {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 5px 11px; border-radius: 8px;
+  border: 1px solid #d8b4fe; background: #fff; color: #1f2937;
+  font: inherit; font-size: .85rem; cursor: pointer;
+  transition: background .12s, border-color .12s, opacity .12s;
+}
+.pb-btn:hover:not(:disabled) { background: #faf5ff; border-color: #a78bfa; }
+.pb-btn:disabled { opacity: .5; cursor: not-allowed; }
+.pb-save {
+  background: #6366f1; border-color: #6366f1; color: #fff;
+  font-weight: 600;
+}
+.pb-save:hover:not(:disabled) { background: #4f46e5; border-color: #4f46e5; }
+.pb-status {
+  margin-left: 0; color: #92400e; font-size: .85rem;
+  display: inline-flex; align-items: center; gap: 6px;
+}
+.pb-status::before {
+  content: ""; width: 8px; height: 8px; border-radius: 50%;
+  background: #f59e0b;
+}
+.pb-failed { color: #b91c1c; }
+.pb-failed::before { background: #dc2626; }
+.pb-blocked { color: #b91c1c; }
+.pb-blocked::before { background: #dc2626; }
+
 .toolbar-label { color: var(--muted, #64748b); font-size: .85rem; margin-right: 4px; }
 .toolbar-btn {
   padding: 5px 11px; border-radius: 999px; border: 1px solid var(--border, #cbd5e1);

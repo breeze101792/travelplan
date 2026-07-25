@@ -3,8 +3,8 @@
 {% block page %}plan{% endblock %}
 
 {% block styles %}
-<link rel="stylesheet" href="/static/css/board.css">
-<link rel="stylesheet" href="/static/css/item-editor.css">
+<link rel="stylesheet" href="/static/css/board.css?v={{ static_version }}">
+<link rel="stylesheet" href="/static/css/item-editor.css?v={{ static_version }}">
 {# Per-page context consumed by itinerary.js. Overrides the layout default. #}
 <script>window.__CONTEXT__ = { planId: {{ plan.id }}, role: {{ plan_role|tojson|safe }} };</script>
 {% endblock %}
@@ -13,15 +13,14 @@
 {% set plan_active_page = 'board' %}
 {% include "_plan_header.html" %}
 
-<div id="pending-bar" class="pending-bar" hidden></div>
-<div id="add-toolbar" class="add-toolbar"></div>
+<div id="edit-bar" class="edit-bar"></div>
 
 <div id="board" class="board"></div>
 {% endblock %}
 
 {% block scripts %}
 <script type="module">
-import { initItinerary } from '/static/js/itinerary.js';
+import { initItinerary } from '/static/js/itinerary.js?v={{ static_version }}';
 initItinerary(window.__CONTEXT__);
 </script>
 {% endblock %}

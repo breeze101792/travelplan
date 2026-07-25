@@ -21,7 +21,7 @@ import {
   clipboardGet, clipboardSet, serializeItem,
 } from '/static/js/clipboard.js';
 import {
-  buildDays, isoOf, wirePlanHeader, renderPlanToolbar, makeDayActions,
+  buildDays, isoOf, wirePlanHeader, renderEditBar, makeDayActions,
 } from '/static/js/plan-header.js';
 import { expandHotelEvents } from '/static/js/hotel-events.js';
 
@@ -149,13 +149,24 @@ export async function initItinerary(ctx) {
 
   try {
     let planRes, memRes;
+    // Each fetch handled independently so a network failure doesn't
+    // crash the whole page — cached data (if available) will be returned
+    // by apiGet's cache-first strategy.
     [, planRes, memRes, itemsRes, expRes] = await Promise.all([
-      loadSettings().then((s) => { settings = s; }),
-      apiGet(`/api/plans/${ctx.planId}`),
-      apiGet(`/api/plans/${ctx.planId}/members`),
-      apiGet(`/api/plans/${ctx.planId}/items`),
+      loadSettings().then((s) => { settings = s; }).catch(() => { settings = null; }),
+      apiGet(`/api/plans/${ctx.planId}`).catch(() => null),
+      apiGet(`/api/plans/${ctx.planId}/members`).catch(() => null),
+      apiGet(`/api/plans/${ctx.planId}/items`).catch(() => null),
       apiGet(`/api/plans/${ctx.planId}/expenses/by-item`).catch(() => ({ items: [] })),
     ]);
+    if (!settings || !planRes || !memRes || !itemsRes) {
+      const board = document.getElementById('board');
+      if (board) {
+        clear(board);
+        board.appendChild(el('p', { class: 'muted', text: 'No Internet connection. Please check your connection and try again.' }));
+      }
+      return;
+    }
     plan = planRes.plan;
     allMembers = [memRes.owner, ...memRes.members];
     days = buildDays(plan);
@@ -177,7 +188,7 @@ export async function initItinerary(ctx) {
     basePlan: plan,
     onChange: () => render(),
   });
-  staging.subscribe(() => renderPendingBar());
+  staging.subscribe(() => renderEditBarCtl());
 
   // expenseByItem is read-only display state; not part of staging base. After
   // a successful save the server is the source of truth, so we re-fetch.
@@ -227,9 +238,7 @@ export async function initItinerary(ctx) {
     // Repaint the plan title and dates — the shared header module owns
     // those, including "don't steal focus from an open editor" logic.
     renderHeaderChrome();
-    // The toolbar's +/- controls depend on the current range and
-    // need to be repainted whenever the view changes.
-    renderToolbar();
+    renderEditBarCtl();
   }
 
   function renderCard(item, dayDate) {
@@ -334,37 +343,32 @@ export async function initItinerary(ctx) {
 
   /* ----- plan-level chrome (header + toolbar) -----
    * Both the board and the timeline render the same plan-level chrome,
-   * so the wiring lives in plan-header.js. The board still owns the
-   * pending-bar (`setBlockError` + `renderPendingBar`) — the shared
-   * module just calls back into us when it wants to surface a blocked
-   * action (trim a day with items, sweep a buffer).
+   * so the wiring lives in plan-header.js. The edit bar accounts for
+   * the toolbar + pending-changes bar in one.
    */
   function setBlockError(msg) {
     blockError = msg;
-    renderPendingBar();
+    renderEditBarCtl();
   }
 
   const headerCtl = wirePlanHeader({
     plan, staging, ctx,
     onChange: () => { render(); },
   });
-  // Wire the page's setBlockError into the shared header. The shared
-  // module's default is a no-op (console.warn) — we want the pending
-  // bar to show the block message instead. The setter swaps the
-  // closure the dates-edit listener calls, so this works even though
-  // the listener was wired before this call.
   headerCtl.setBlockError(setBlockError);
 
   function renderHeaderChrome() { headerCtl.repaint(); }
 
-  function renderToolbar() {
-    renderPlanToolbar({
+  function renderEditBarCtl() {
+    renderEditBar({
       days, settings, staging, ctx,
       setBlockError,
       getFocusedDay: () => focusedDay,
       setFocusedDay,
       onCreateItem: (type, date) => createItem(type, date),
       onChange: () => { render(); },
+      doSave,
+      blockError,
     });
   }
 
@@ -713,86 +717,17 @@ export async function initItinerary(ctx) {
     contextMenuEl = menu;
   }
 
-  /* ----- pending-changes bar ----- */
 
-  function renderPendingBar() {
-    const bar = document.getElementById('pending-bar');
-    if (!bar) return;
-    clear(bar);
-    if (ctx.role === 'viewer') { bar.hidden = true; return; }
 
-    const hasPending = staging.hasPending;
-    const failed = staging.failedOpIndex >= 0;
-    if (!hasPending && !failed && !blockError) { bar.hidden = true; return; }
-    const lastLabel = hasPending
-      ? staging.ops[staging.pointer - 1].label
-      : 'All changes saved';
-    const canUndo = staging.canUndo;
-    const canRedo = staging.canRedo;
-    const canSave = hasPending && !staging.saving;
-    const failedOp = failed ? staging.ops[staging.failedOpIndex] : null;
-    const failedLabel = failedOp ? ` (failed: ${failedOp.label})` : '';
-
-    // Type picker for the Add button. Opens on click; selecting a type
-    // stages a blank item and opens the editor for it.
-    const addDet = el('details', { class: 'pb-add' });
-    addDet.appendChild(el('summary', { class: 'pb-btn pb-add-btn', text: '+ Add' }));
-    const addMenu = el('div', { class: 'pb-add-menu' });
-    for (const [type, ti] of Object.entries(settings.item_types)) {
-      const b = el('button', { type: 'button', class: 'add-type', text: ti.label });
-      b.addEventListener('click', () => { addDet.removeAttribute('open'); createItem(type, focusedDay); });
-      addMenu.appendChild(b);
-    }
-    addDet.appendChild(addMenu);
-
-    const undoBtn = el('button', {
-      type: 'button', class: 'pb-btn',
-      text: '↶ Revert',
-      title: 'Undo the last pending change (Ctrl/Cmd+Z)',
-      disabled: !canUndo,
-      onclick: () => { staging.undo(); },
-    });
-    const redoBtn = el('button', {
-      type: 'button', class: 'pb-btn',
-      text: '↷ Redo',
-      title: 'Redo the last undone change (Ctrl/Cmd+Shift+Z)',
-      disabled: !canRedo,
-      onclick: () => { staging.redo(); },
-    });
-    const saveBtn = el('button', {
-      type: 'button', class: 'pb-btn pb-save',
-      text: staging.saving ? 'Saving…' : 'Save',
-      title: 'Commit all pending changes to the server (Ctrl/Cmd+S)',
-      disabled: !canSave,
-      onclick: () => doSave(),
-    });
-
-    const status = el('span', {
-      class: 'pb-status' + (failed ? ' pb-failed' : '') + (blockError ? ' pb-blocked' : ''),
-      text: blockError
-        ? blockError
-        : staging.saving
-          ? 'Saving changes…'
-          : failed
-            ? `Save failed: ${staging.failedError}${failedLabel}`
-            : hasPending
-              ? `${staging.pendingCount} pending change${staging.pendingCount === 1 ? '' : 's'} — last: ${lastLabel}`
-              : 'All changes saved',
-    });
-
-    bar.append(addDet, undoBtn, redoBtn, saveBtn, status);
-    bar.hidden = false;
-  }
-
-  /* `setFocusedDay` updates the toolbar's "Quick add" label so the user
+  /* `setFocusedDay` updates the edit bar's "Quick add" label so the user
    * can see which day Quick add will target. Clicking a day column on
-   * the board sets this. The toolbar itself is owned by plan-header.js;
+   * the board sets this. The edit bar is owned by plan-header.js;
    * this just keeps the label in sync. */
   function setFocusedDay(date) {
     focusedDay = date;
     const day = days.find(d => d.date === date) || days[0];
     const dayLabel = day && day.index ? ` (Day ${day.index})` : '';
-    const summary = document.querySelector('#add-toolbar .qa-summary');
+    const summary = document.querySelector('#edit-bar .qa-summary');
     if (summary) summary.textContent = `+ Quick add${dayLabel}`;
   }
 
@@ -803,21 +738,30 @@ export async function initItinerary(ctx) {
     // view reflects the canonical server state (including updated
     // timestamps, sort keys, etc.). Staging's base is reset to the new
     // server state.
+    // forceRefresh bypasses the cache since we know the network is
+    // available (saveAll just succeeded). If the refresh fails we fall
+    // back to the staging base which was already updated by saveAll.
     try {
       const [itemsRes, expRes] = await Promise.all([
-        apiGet(`/api/plans/${ctx.planId}/items`),
-        apiGet(`/api/plans/${ctx.planId}/expenses/by-item`).catch(() => ({ items: [] })),
+        apiGet(`/api/plans/${ctx.planId}/items`, { forceRefresh: true }),
+        apiGet(`/api/plans/${ctx.planId}/expenses/by-item`, { forceRefresh: true }).catch(() => null),
       ]);
-      const planRes = await apiGet(`/api/plans/${ctx.planId}`).catch(() => ({ plan: staging.base.plan }));
-      staging.base = { items: itemsRes.items, plan: planRes.plan };
+      const planRes = await apiGet(`/api/plans/${ctx.planId}`, { forceRefresh: true }).catch(() => null);
+      // Use forceRefresh results if available; otherwise staging.base was
+      // already updated by saveAll's _commitFromLive with the merged state.
+      if (itemsRes) staging.base.items = itemsRes.items;
+      if (planRes) staging.base.plan = planRes.plan;
+      if (expRes && expRes.items) {
+        expenseByItem = new Map(
+          expRes.items.map(x => [x.item_id, { total: x.grand_total_base_cents, missing: x.has_missing_rate }])
+        );
+      }
       staging.ops = []; staging.pointer = 0; staging.sessionOps.clear();
-      expenseByItem = new Map(
-        (expRes.items || []).map(x => [x.item_id, { total: x.grand_total_base_cents, missing: x.has_missing_rate }])
-      );
       render();
     } catch (e) {
-      const board = document.getElementById('board');
-      if (board) { clear(board); board.appendChild(el('p', { class: 'muted', text: 'Failed to load: ' + e.message })); }
+      // staging.base was already updated by _commitFromLive — render what we have
+      staging.ops = []; staging.pointer = 0; staging.sessionOps.clear();
+      render();
     }
   }
 
@@ -833,7 +777,7 @@ export async function initItinerary(ctx) {
       members: allMembers,
       staging,
       sessionId,
-      onApplied: () => { render(); renderPendingBar(); },
+      onApplied: () => { render(); renderEditBarCtl(); },
       // The backdrop click that dismisses the editor also reaches our
       // document-level click handler. We don't want that click to wipe a
       // multi-select the user built before opening the editor — the
@@ -870,7 +814,7 @@ export async function initItinerary(ctx) {
       openItemEditor(ctx, {
         plan, item: draft, settings, members: allMembers,
         staging, sessionId,
-        onApplied: () => { render(); renderPendingBar(); },
+        onApplied: () => { render(); renderEditBarCtl(); },
         onClose: () => { suppressClearOnce = true; },
       });
     }
@@ -884,10 +828,8 @@ export async function initItinerary(ctx) {
         post: apiMod.apiPost, patch: apiMod.apiPatch, del: apiMod.apiDel, upload: apiMod.apiUpload,
       });
       await reload();
-      // Brief "Saved" status is rendered by renderPendingBar (it reads
-      // staging.hasPending which is now false).
     } catch (e) {
-      renderPendingBar();
+      renderEditBarCtl();
     }
   }
 
@@ -1016,8 +958,7 @@ export async function initItinerary(ctx) {
   /* ----- boot ----- */
   render();
   renderHeaderChrome();
-  renderPendingBar();
-  renderToolbar();
+  renderEditBarCtl();
   enableDragDrop(document.getElementById('board'), { onMove, onUpload });
   document.addEventListener('keydown', onKeydown);
   window.addEventListener('beforeunload', onBeforeUnload);

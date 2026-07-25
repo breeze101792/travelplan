@@ -1,6 +1,6 @@
 import { apiGet, apiPost, apiPatch, apiDel, apiUpload } from '/static/js/api.js';
 const api = { get: apiGet, post: apiPost, patch: apiPatch, del: apiDel, upload: apiUpload };
-import { buildDays, wirePlanHeader } from '/static/js/plan-header.js';
+import { buildDays, wirePlanHeader, renderEditBar } from '/static/js/plan-header.js';
 import { Staging, moveItemOp, deleteItemOp, saveItemOp } from '/static/js/staging.js';
 import { el, clear } from '/static/js/util.js';
 import { openItemEditor, openGeoMapPopup } from '/static/js/item-editor.js';
@@ -593,7 +593,15 @@ export async function initMap(c) {
     return;
   }
 
-  staging = new Staging({ planId: ctx.planId });
+  // Load items with their persisted geocodes (set via the item editor)
+  const itemsRes = await apiGet(`/api/plans/${ctx.planId}/items`);
+  allItems = expandHotelEvents(itemsRes.items || []);
+
+  staging = new Staging({ baseItems: itemsRes.items, basePlan: plan });
+
+  let blockError = null;
+  function setBlockError(msg) { blockError = msg || null; renderEditBarCtl(); }
+
   wirePlanHeader({ plan, staging, ctx, onChange: () => {} });
 
   map = L.map(container).setView([35.6762, 139.6503], 5);
@@ -620,11 +628,27 @@ export async function initMap(c) {
 
   days = buildDays(plan);
 
-  // Load items with their persisted geocodes (set via the item editor)
-  const itemsRes = await apiGet(`/api/plans/${ctx.planId}/items`);
-  allItems = expandHotelEvents(itemsRes.items || []);
-
   dayCoords = buildDayCoords();
+
+  function renderEditBarCtl() {
+    renderEditBar({
+      days, settings, staging, ctx,
+      setBlockError,
+      getFocusedDay: () => days[0] && days[0].date,
+      setFocusedDay: () => {},
+      onCreateItem: (type, date) => {
+        // Creating items on the map is not directly supported; log a warning.
+        console.warn('[map] item creation not directly supported from the edit bar');
+      },
+      onChange: () => { renderEditBarCtl(); reloadAll(); },
+      doSave: async (stg) => {
+        await stg.saveAll(api);
+        renderEditBarCtl();
+        reloadAll();
+      },
+      blockError,
+    });
+  }
 
   enableDropZone(document.getElementById('day-list'));
   renderList();
@@ -632,27 +656,7 @@ export async function initMap(c) {
   toggleDay(0);
   const anyCoords = Object.values(dayCoords).some(c => c.length);
   if (!anyCoords) map.setView([35.6762, 139.6503], 5);
-  renderPendingBar();
+  renderEditBarCtl();
 }
 
-function renderPendingBar() {
-  const bar = document.getElementById('pending-bar');
-  if (!bar) return;
-  clear(bar);
-  if (ctx.role === 'viewer') { bar.hidden = true; return; }
 
-  const hasPending = staging.hasPending;
-  const canUndo = staging.canUndo;
-  const canRedo = staging.canRedo;
-  const canSave = hasPending && !staging.saving;
-  const failed = staging.failedOpIndex >= 0;
-  const lastLabel = hasPending ? staging.ops[staging.pointer - 1].label : '';
-
-  bar.append(
-    el('button', { type:'button', class:'pb-btn', text:'↶ Revert', disabled:!canUndo, onclick:()=>{ staging.undo(); renderPendingBar(); reloadAll(); }}),
-    el('button', { type:'button', class:'pb-btn', text:'↷ Redo', disabled:!canRedo, onclick:()=>{ staging.redo(); renderPendingBar(); }}),
-    el('button', { type:'button', class:'pb-btn pb-save', text:staging.saving?'Saving…':'Save', disabled:!canSave, onclick:async()=>{ await staging.saveAll(api); renderPendingBar(); reloadAll(); }}),
-    el('span', { class:'pb-status'+(failed?' pb-failed':''), text:staging.saving?'Saving changes…':failed?`Save failed: ${staging.failedError}`:hasPending?`${staging.pendingCount} pending — last: ${lastLabel}`:'All changes saved' }),
-  );
-  bar.hidden = !hasPending && !failed;
-}

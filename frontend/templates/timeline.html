@@ -3,8 +3,8 @@
 {% block page %}timeline{% endblock %}
 
 {% block styles %}
-<link rel="stylesheet" href="/static/css/timeline.css">
-<link rel="stylesheet" href="/static/css/item-editor.css">
+<link rel="stylesheet" href="/static/css/timeline.css?v={{ static_version }}">
+<link rel="stylesheet" href="/static/css/item-editor.css?v={{ static_version }}">
 {# Per-page context consumed by timeline.js. Same shape as the board. #}
 <script>window.__CONTEXT__ = { planId: {{ plan.id }}, role: {{ plan_role|tojson|safe }} };</script>
 {% endblock %}
@@ -13,15 +13,14 @@
 {% set plan_active_page = 'timeline' %}
 {% include "_plan_header.html" %}
 
-<div id="pending-bar" class="pending-bar" hidden></div>
-<div id="add-toolbar" class="add-toolbar"></div>
+<div id="edit-bar" class="edit-bar"></div>
 
 <div id="timeline" class="timeline"></div>
 {% endblock %}
 
 {% block scripts %}
 <script type="module">
-import { initTimeline } from '/static/js/timeline.js';
+import { initTimeline } from '/static/js/timeline.js?v={{ static_version }}';
 initTimeline(window.__CONTEXT__);
 </script>
 {% endblock %}

@@ -239,36 +239,9 @@
 }
 .di-geo-del:hover { color: var(--danger, #ef4444); background: rgba(239,68,68,.1); }
 
-/* ---------- pending bar (shared look with Board / Timeline) ---------- */
-
-.pending-bar {
-  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
-  padding: 10px 24px;
-  background: linear-gradient(180deg, #fff7ed 0%, #fffbeb 100%);
-  border-bottom: 1px solid #fde68a;
-  position: sticky; top: 0; z-index: 6;
-  font-size: .9rem;
-}
-.pending-bar[hidden] { display: none; }
-.pb-btn {
-  display: inline-flex; align-items: center; gap: 4px;
-  padding: 5px 11px; border-radius: 8px;
-  border: 1px solid #d8b4fe; background: #fff; color: #1f2937;
-  font: inherit; font-size: .85rem; cursor: pointer;
-  transition: background .12s, border-color .12s, opacity .12s;
-}
-.pb-btn:hover:not(:disabled) { background: #faf5ff; border-color: #a78bfa; }
-.pb-btn:disabled { opacity: .5; cursor: not-allowed; }
-.pb-save {
-  background: #6366f1; border-color: #6366f1; color: #fff;
-  font-weight: 600;
-}
-.pb-save:hover:not(:disabled) { background: #4f46e5; border-color: #4f46e5; }
-.pb-status {
-  margin-left: auto;
-  font-size: .82rem;
-  color: #6b7280;
-}
+/* ---------- edit bar ----------
+ * Now unified in base.css (.edit-bar / .pb-*). The map uses the shared
+ * edit bar just like the board and timeline. */
 
 /* ---------- context menu (shared look with Board / Timeline) ---------- */
 
@@ -335,7 +308,7 @@
 /* ---------- fullscreen mode ---------- */
 
 .is-map-fullscreen .plan-header,
-.is-map-fullscreen .pending-bar,
+.is-map-fullscreen .edit-bar,
 .is-map-fullscreen .map-sidebar {
   display: none !important;
 }

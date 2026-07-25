@@ -4,8 +4,8 @@
 
 {% block styles %}
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="">
-<link rel="stylesheet" href="/static/css/map.css">
-<link rel="stylesheet" href="/static/css/item-editor.css">
+<link rel="stylesheet" href="/static/css/map.css?v={{ static_version }}">
+<link rel="stylesheet" href="/static/css/item-editor.css?v={{ static_version }}">
 <script>window.__CONTEXT__ = { planId: {{ plan.id }}, role: {{ plan_role|tojson|safe }} };</script>
 {% endblock %}
 
@@ -13,7 +13,7 @@
 {% set plan_active_page = 'map' %}
 {% include "_plan_header.html" %}
 
-<div id="pending-bar" class="pending-bar" hidden></div>
+<div id="edit-bar" class="edit-bar"></div>
 
 <div class="map-page">
   <div id="map-container" class="map-container"></div>
@@ -27,7 +27,7 @@
 {% block scripts %}
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
 <script type="module">
-import { initMap } from '/static/js/map.js';
+import { initMap } from '/static/js/map.js?v={{ static_version }}';
 initMap(window.__CONTEXT__);
 </script>
 {% endblock %}

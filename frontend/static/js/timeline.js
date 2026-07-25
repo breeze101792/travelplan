@@ -28,7 +28,7 @@ import { el, clear, loadSettings } from '/static/js/util.js';
 import { Staging, timeEditItemOp, moveItemOp, deleteItemOp, createItemsFromClipOp, createBlankItemOp } from '/static/js/staging.js';
 import { openItemEditor } from '/static/js/item-editor.js';
 import { clipboardGet, clipboardSet, serializeItem } from '/static/js/clipboard.js';
-import { buildDays, isoOf, wirePlanHeader, renderPlanToolbar, makeDayActions } from '/static/js/plan-header.js';
+import { buildDays, isoOf, wirePlanHeader, renderEditBar, makeDayActions } from '/static/js/plan-header.js';
 import { expandHotelEvents } from '/static/js/hotel-events.js';
 
 let HOUR_PX = 36;     // recalculated by updateScale() to fill viewport
@@ -694,73 +694,11 @@ function wireBarDrag({ bar, staging, getViewItems, getSelection, onMultiDrag, ct
   });
 }
 
-/* ---------- pending bar ---------- */
-
-// Same look and behavior as the board's pending bar. We render a slim
-// version (Revert / Redo / Save) — the timeline doesn't have an "Add"
-// affordance, so that part is omitted. Status text is derived from the
-// staging engine the same way the board does.
-function renderPendingBar({ bar, staging, ctx, blockError = null }) {
-  if (!bar) return;
-  clear(bar);
-  if (ctx.role === 'viewer') { bar.hidden = true; return; }
-
-  const hasPending = staging.hasPending;
-  const failed = staging.failedOpIndex >= 0;
-  if (!hasPending && !failed && !blockError) { bar.hidden = true; return; }
-  const lastLabel = hasPending
-    ? staging.ops[staging.pointer - 1].label
-    : 'All changes saved';
-  const canUndo = staging.canUndo;
-  const canRedo = staging.canRedo;
-  const canSave = hasPending && !staging.saving;
-  const failedOp = failed ? staging.ops[staging.failedOpIndex] : null;
-  const failedLabel = failedOp ? ` (failed: ${failedOp.label})` : '';
-
-  const undoBtn = el('button', {
-    type: 'button', class: 'pb-btn',
-    text: '↶ Revert',
-    title: 'Undo the last pending change (Ctrl/Cmd+Z)',
-    disabled: !canUndo,
-    onclick: () => { staging.undo(); },
-  });
-  const redoBtn = el('button', {
-    type: 'button', class: 'pb-btn',
-    text: '↷ Redo',
-    title: 'Redo the last undone change (Ctrl/Cmd+Shift+Z)',
-    disabled: !canRedo,
-    onclick: () => { staging.redo(); },
-  });
-  const saveBtn = el('button', {
-    type: 'button', class: 'pb-btn pb-save',
-    text: staging.saving ? 'Saving…' : 'Save',
-    title: 'Commit all pending changes to the server (Ctrl/Cmd+S)',
-    disabled: !canSave,
-    onclick: () => doSave({ staging }),
-  });
-
-  const status = el('span', {
-    class: 'pb-status' + (failed ? ' pb-failed' : '') + (blockError ? ' pb-blocked' : ''),
-    text: staging.saving
-      ? 'Saving changes…'
-      : failed
-        ? `Save failed: ${staging.failedError}${failedLabel}`
-        : blockError
-          ? blockError
-          : hasPending
-            ? `${staging.pendingCount} pending change${staging.pendingCount === 1 ? '' : 's'} — last: ${lastLabel}`
-            : 'All changes saved',
-  });
-
-  bar.append(undoBtn, redoBtn, saveBtn, status);
-  bar.hidden = false;
-}
-
-async function doSave({ staging }) {
+async function doSave(staging) {
   try {
     await staging.saveAll({ post: apiPost, patch: apiPatch, del: apiDel });
   } catch (e) {
-    // renderPendingBar reads the failedOpIndex / failedError off the engine
+    // The edit bar reads the failedOpIndex / failedError off the engine
     // and shows the failure inline; nothing to do here besides not throw.
   }
 }
@@ -827,7 +765,6 @@ function showToast(text, kind) {
 
 export async function initTimeline(ctx) {
   const root = document.getElementById('timeline');
-  const pendingBar = document.getElementById('pending-bar');
   if (!root) return;
   clear(root);
 
@@ -837,17 +774,20 @@ export async function initTimeline(ctx) {
   let settings, plan, items, members = [];
   try {
     const [, planRes, itemsRes, memRes] = await Promise.all([
-      loadSettings().then((s) => { settings = s; }),
-      apiGet(`/api/plans/${ctx.planId}`),
-      apiGet(`/api/plans/${ctx.planId}/items`),
+      loadSettings().then((s) => { settings = s; }).catch(() => { settings = null; }),
+      apiGet(`/api/plans/${ctx.planId}`).catch(() => null),
+      apiGet(`/api/plans/${ctx.planId}/items`).catch(() => null),
       apiGet(`/api/plans/${ctx.planId}/members`).catch(() => ({ owner: null, members: [] })),
     ]);
+    if (!settings || !planRes || !itemsRes) {
+      root.appendChild(renderEmpty('No Internet connection. Please check your connection and try again.'));
+      return;
+    }
     plan = planRes.plan;
     items = itemsRes.items;
     members = memRes.owner ? [memRes.owner, ...(memRes.members || [])] : (memRes.members || []);
   } catch (e) {
     root.appendChild(renderEmpty('Failed to load: ' + e.message));
-    if (pendingBar) pendingBar.hidden = true;
     return;
   }
 
@@ -857,7 +797,6 @@ export async function initTimeline(ctx) {
   let days = buildDays(plan);
   if (!days.length) {
     root.appendChild(renderEmpty('Set a start and end date for this plan to see the timeline.'));
-    if (pendingBar) pendingBar.hidden = true;
     return;
   }
 
@@ -875,20 +814,17 @@ export async function initTimeline(ctx) {
     onChange: () => { render(); },
   });
 
-  // Blocked-action status (e.g. "trim would orphan an item"). The board
-  // shows this in its pending bar; the timeline shows it in the status
-  // text. The shared `wirePlanHeader` and `renderPlanToolbar` both call
-  // back into this whenever a dates/buffer action is blocked.
+  // Blocked-action status (e.g. "trim would orphan an item"). Shown in
+  // the edit bar's status text.
   let blockError = null;
   function setBlockError(msg) {
     blockError = msg || null;
-    renderPendingBar({ bar: pendingBar, staging, ctx, blockError });
+    renderEditBarCtl();
   }
 
-  // Wire the plan-level chrome (title + dates inline edit, range
-  // controls, + Buffer day, Quick add) into the same shared module the
-  // board uses. The timeline tracks "focused day" via the multi-select
-  // (first selected item's day, or the first day) for Quick add.
+  // Wire the plan-level chrome (title + dates inline edit) into the
+  // shared module. The edit bar (toolbar + pending bar) is rendered
+  // separately by renderEditBarCtl.
   const headerCtl = wirePlanHeader({
     plan, staging, ctx,
     onChange: () => { render(); },
@@ -897,19 +833,21 @@ export async function initTimeline(ctx) {
 
   function renderHeaderChrome() { headerCtl.repaint(); }
 
-  function renderToolbarChrome() {
+  function renderEditBarCtl() {
     // The "focused day" is the first item in the multi-selection, so
     // Quick add lands on the same day as whatever the user was looking
     // at. Falls back to the first day.
     const sel = selectedItems();
     const focusedDate = (sel[0] && sel[0].item_date) || (days[0] && days[0].date);
-    renderPlanToolbar({
+    renderEditBar({
       days, settings, staging, ctx,
       setBlockError,
       getFocusedDay: () => focusedDate,
-      setFocusedDay: (d) => { focusedDate = d; },  // no-op for the timeline
+      setFocusedDay: (d) => { focusedDate = d; },
       onCreateItem: (type, date) => createItem(type, date),
       onChange: () => { render(); },
+      doSave,
+      blockError,
     });
   }
 
@@ -931,7 +869,7 @@ export async function initTimeline(ctx) {
       openItemEditor(ctx, {
         plan, item: draft, settings, members,
         staging, sessionId,
-        onApplied: () => { render(); renderPendingBar({ bar: pendingBar, staging, ctx, blockError }); },
+        onApplied: () => { render(); renderEditBarCtl(); },
       });
     }
   }
@@ -1244,8 +1182,7 @@ export async function initTimeline(ctx) {
     // Plan-level chrome (title, dates, toolbar) — the shared module
     // owns the markup, we just trigger the repaint.
     renderHeaderChrome();
-    renderToolbarChrome();
-    renderPendingBar({ bar: pendingBar, staging, ctx, blockError });
+    renderEditBarCtl();
   }
 
   /* Multi-drag: when the user starts dragging a bar that's part of a
@@ -1316,7 +1253,7 @@ export async function initTimeline(ctx) {
       const k = e.key.toLowerCase();
       if (k === 'z' && !e.shiftKey) { e.preventDefault(); staging.undo(); return; }
       if ((k === 'z' && e.shiftKey) || k === 'y') { e.preventDefault(); staging.redo(); return; }
-      if (k === 's') { e.preventDefault(); doSave({ staging }); return; }
+      if (k === 's') { e.preventDefault(); doSave(staging); return; }
       if (k === 'c') { e.preventDefault(); copySelection(); return; }
       if (k === 'x') { e.preventDefault(); cutSelection(); return; }
       if (k === 'v') { e.preventDefault(); pasteFromClipboard(); return; }

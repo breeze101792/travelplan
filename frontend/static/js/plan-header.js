@@ -207,6 +207,7 @@ export async function wirePlanHeaderDirect({ planId, role }) {
   let plan;
   try {
     const res = await apiGet(`/api/plans/${planId}`);
+    if (!res) { console.warn('[plan-header] direct wiring skipped: offline'); return; }
     plan = res.plan;
   } catch (e) {
     // If we can't load the plan, leave the header static — better than
@@ -222,7 +223,7 @@ export async function wirePlanHeaderDirect({ planId, role }) {
     if (_items === null) {
       try {
         const res = await apiGet(`/api/plans/${planId}/items`);
-        _items = res.items || [];
+        _items = (res && res.items) || [];
       } catch (e) {
         _items = [];
       }
@@ -530,69 +531,74 @@ function stageBufferRemove(date, { plan, staging, ctx, items, setBlockError }) {
   }));
 }
 
-/* ---- toolbar (range + buffer + quick add) -------------------------- */
+/* ---- unified edit bar (range + buffer + quick add + revert + redo + save + status) -- */
 
-/* The "Quick add (Day N)" label needs a focused-day notion. Each page
- * has a different way of tracking it: the board sets it when the user
- * clicks a day column, the timeline uses the first item in the
- * multi-selection or the first day. Pages pass a getFocusedDay()
- * function that returns the current focused day's date. */
-export function renderPlanToolbar({ days, settings, staging, ctx, setBlockError, getFocusedDay, setFocusedDay, onCreateItem, onChange }) {
-  const tb = document.getElementById('add-toolbar');
-  if (!tb) return;
-  clear(tb);
+/* The unified edit bar merges the old add-toolbar (range controls,
+ * + Buffer day, Quick add) with the pending-changes bar (Revert, Redo,
+ * Save, status) into a single sticky bar rendered once per page.
+ *
+ * Toolbar helpers (range, buffer, quick-add) work the same as before.
+ * The pending-changes section mirrors the board's renderPendingBar.
+ *
+ * Pages pass page-specific callbacks:
+ *   doSave(staging)       — commits pending ops to the server, then reloads
+ *   setBlockError(msg)    — surfaces a blocked action message
+ *   getFocusedDay()       — returns the current focused day's date
+ *   setFocusedDay(date)   — updates the focused day
+ *   onCreateItem(type,date) — creates a new item of the given type
+ *   onChange()            — called after any action that should trigger a repaint
+ *   blockError            — current block error message (or null)
+ */
+export function renderEditBar({ days, settings, staging, ctx, setBlockError, getFocusedDay, setFocusedDay, onCreateItem, onChange, doSave, blockError }) {
+  const bar = document.getElementById('edit-bar');
+  if (!bar) return;
+  clear(bar);
   if (ctx.role === 'viewer') return;
 
-  // Range controls: extend or trim the trip by 1 day on either side.
-  // Owner and editor both get this. Disabled when the relevant edge is
-  // unset.
   const view = staging.viewPlan();
+  const hasPending = staging.hasPending;
+  const failed = staging.failedOpIndex >= 0;
+  const lastLabel = hasPending
+    ? staging.ops[staging.pointer - 1].label
+    : 'All changes saved';
+  const canUndo = staging.canUndo;
+  const canRedo = staging.canRedo;
+  const canSave = hasPending && !staging.saving;
+  const failedOp = failed ? staging.ops[staging.failedOpIndex] : null;
+  const failedLabel = failedOp ? ` (failed: ${failedOp.label})` : '';
+
+  const items = staging.viewItems();
   const hasStart = !!view.start_date;
   const hasEnd = !!view.end_date;
   const canTrimStart = hasStart && (!hasEnd || view.start_date < view.end_date);
   const canTrimEnd = hasEnd && (!hasStart || view.start_date < view.end_date);
-  const items = staging.viewItems();
   const opts = { plan: view, staging, ctx, items, setBlockError };
 
+  // ---- range controls ----
   const mkRangeBtn = (text, title, action, onClick, disabled) => el('button', {
     type: 'button', class: 'toolbar-btn toolbar-range', text, title,
     dataset: { action },
     disabled: !!disabled, onclick: onClick,
   });
-  // Range controls: the arrow on each button points to the side the
-  // affected day lives on — for `+` it's where the new day appears;
-  // for `−` it's the side that just lost a day. The mental model is
-  // the calendar: extending the start means the trip starts one day
-  // earlier (the new day lives to the left of Day 1); extending the
-  // end means it ends one day later (the new day lives to the right
-  // of the last day); trimming pulls an edge inward.
-  //
-  // Each trip edge owns a pair of buttons: its extend on the outside,
-  // its trim on the inside. The toolbar reads from the outside in.
-  //
-  //   [‹ +1 day]  [−1 day ›]    |    [‹ −1 day]  [+1 day ›]
-  //     extend      trim-star       trim-end      extend
-  //     -start                          -end
   const startGroup = el('span', { class: 'toolbar-range-group' }, [
-    mkRangeBtn('‹ +1 day', 'Add one day to the start of the trip (new day on the left)', 'extend-start',
+    mkRangeBtn('\u2039 +1 day', 'Add one day to the start of the trip (new day on the left)', 'extend-start',
                () => { extendStartBy(-1, opts); if (onChange) onChange(); }, !hasStart),
-    mkRangeBtn('−1 day ›', 'Remove the first day of the trip', 'trim-start',
+    mkRangeBtn('\u22121 day \u203A', 'Remove the first day of the trip', 'trim-start',
                () => { extendStartBy(+1, opts); if (onChange) onChange(); }, !canTrimStart),
   ]);
   const endGroup = el('span', { class: 'toolbar-range-group' }, [
-    mkRangeBtn('‹ −1 day', 'Remove the last day of the trip', 'trim-end',
+    mkRangeBtn('\u2039 \u22121 day', 'Remove the last day of the trip', 'trim-end',
                () => { extendEndBy(-1, opts); if (onChange) onChange(); }, !canTrimEnd),
-    mkRangeBtn('+1 day ›', 'Add one day to the end of the trip (new day on the right)', 'extend-end',
+    mkRangeBtn('+1 day \u203A', 'Add one day to the end of the trip (new day on the right)', 'extend-end',
                () => { extendEndBy(+1, opts); if (onChange) onChange(); }, !hasEnd),
   ]);
-  tb.appendChild(startGroup);
-  tb.appendChild(endGroup);
+  bar.appendChild(startGroup);
+  bar.appendChild(endGroup);
 
-  // Buffer day control: one click adds a new buffer column. The date is
-  // derived (no picker) — see nextBufferDate() for the algorithm.
-  tb.appendChild(makeBufferAddButton({ plan: view, staging, ctx, onChange }));
+  // ---- + Buffer day ----
+  bar.appendChild(makeBufferAddButton({ plan: view, staging, ctx, onChange }));
 
-  // Quick add — dropdown menu. The label shows the focused day.
+  // ---- quick-add dropdown ----
   const focusedDay = getFocusedDay ? getFocusedDay() : (days[0] && days[0].date);
   const focused = days.find(d => d.date === focusedDay) || days[0];
   const dayLabel = focused && focused.index ? ` (Day ${focused.index})` : '';
@@ -613,8 +619,51 @@ export function renderPlanToolbar({ days, settings, staging, ctx, setBlockError,
     menu.appendChild(b);
   }
   dd.appendChild(menu);
-  tb.appendChild(dd);
+  bar.appendChild(dd);
+
+  // ---- spacer ----
+  bar.appendChild(el('span', { class: 'eb-spacer' }));
+
+  // ---- revert / redo / save / status ----
+  const undoBtn = el('button', {
+    type: 'button', class: 'pb-btn',
+    text: '\u21B6 Revert',
+    title: 'Undo the last pending change (Ctrl/Cmd+Z)',
+    disabled: !canUndo,
+    onclick: () => { staging.undo(); if (onChange) onChange(); },
+  });
+  const redoBtn = el('button', {
+    type: 'button', class: 'pb-btn',
+    text: '\u21B7 Redo',
+    title: 'Redo the last undone change (Ctrl/Cmd+Shift+Z)',
+    disabled: !canRedo,
+    onclick: () => { staging.redo(); if (onChange) onChange(); },
+  });
+  const saveBtn = el('button', {
+    type: 'button', class: 'pb-btn pb-save',
+    text: staging.saving ? 'Saving\u2026' : 'Save',
+    title: 'Commit all pending changes to the server (Ctrl/Cmd+S)',
+    disabled: !canSave,
+    onclick: () => { if (doSave) doSave(staging); },
+  });
+
+  const status = el('span', {
+    class: 'pb-status' + (failed ? ' pb-failed' : '') + (blockError ? ' pb-blocked' : ''),
+    text: staging.saving
+      ? 'Saving changes\u2026'
+      : failed
+        ? `Save failed: ${staging.failedError}${failedLabel}`
+        : blockError
+          ? blockError
+          : hasPending
+            ? `${staging.pendingCount} pending change${staging.pendingCount === 1 ? '' : 's'} \u2014 last: ${lastLabel}`
+            : 'All changes saved',
+  });
+
+  bar.append(undoBtn, redoBtn, saveBtn, status);
 }
+
+/* ---- makeBufferAddButton / makeDayActions (kept for page-level use) --- */
 
 /* "Buffer day" button: a single click adds a new buffer day. The date
  * is derived automatically — never ask the user. The column header
