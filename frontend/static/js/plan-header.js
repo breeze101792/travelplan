@@ -624,7 +624,7 @@ export function renderEditBar({ days, settings, staging, ctx, setBlockError, get
   // ---- spacer ----
   bar.appendChild(el('span', { class: 'eb-spacer' }));
 
-  // ---- revert / redo / save / status ----
+  // ---- revert / redo / cancel / save / status ----
   const undoBtn = el('button', {
     type: 'button', class: 'pb-btn',
     text: '\u21B6 Revert',
@@ -638,6 +638,18 @@ export function renderEditBar({ days, settings, staging, ctx, setBlockError, get
     title: 'Redo the last undone change (Ctrl/Cmd+Shift+Z)',
     disabled: !canRedo,
     onclick: () => { staging.redo(); if (onChange) onChange(); },
+  });
+  const cancelBtn = el('button', {
+    type: 'button', class: 'pb-btn',
+    text: 'Cancel all',
+    title: 'Discard all pending changes',
+    disabled: !hasPending || staging.saving,
+    onclick: () => {
+      while (staging.canUndo) staging.undo();
+      staging.failedOpIndex = -1;
+      staging.failedError = null;
+      if (onChange) onChange();
+    },
   });
   const saveBtn = el('button', {
     type: 'button', class: 'pb-btn pb-save',
@@ -660,7 +672,14 @@ export function renderEditBar({ days, settings, staging, ctx, setBlockError, get
             : 'All changes saved',
   });
 
-  bar.append(undoBtn, redoBtn, saveBtn, status);
+  bar.append(undoBtn, redoBtn, cancelBtn, saveBtn, status);
+
+  // On small screens, only show the bar when there are unsaved changes to save.
+  if (window.matchMedia('(max-width: 640px)').matches) {
+    bar.hidden = !hasPending && !failed && !blockError;
+  } else {
+    bar.hidden = false;
+  }
 }
 
 /* ---- makeBufferAddButton / makeDayActions (kept for page-level use) --- */
