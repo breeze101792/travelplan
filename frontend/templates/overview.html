@@ -1,0 +1,22 @@
+{% extends "layout.html" %}
+{% block title %}{{ plan.title }} — Overview — TravelPlan{% endblock %}
+{% block page %}overview{% endblock %}
+
+{% block styles %}
+<link rel="stylesheet" href="/static/css/overview.css?v={{ static_version }}">
+<script>window.__CONTEXT__ = { planId: {{ plan.id }}, role: {{ plan_role|tojson|safe }} };</script>
+{% endblock %}
+
+{% block content %}
+{% set plan_active_page = 'overview' %}
+{% include "_plan_header.html" %}
+
+<div id="overview-root" class="overview-page"></div>
+{% endblock %}
+
+{% block scripts %}
+<script type="module">
+import { initOverview } from '/static/js/overview.js?v={{ static_version }}';
+initOverview(window.__CONTEXT__);
+</script>
+{% endblock %}

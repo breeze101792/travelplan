@@ -1,0 +1,72 @@
+/* overview.css — Overview page styles */
+
+.overview-page {
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 24px 24px 48px;
+}
+
+.ov-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 12px;
+  margin-bottom: 24px;
+}
+
+.ov-stat-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 20px 12px;
+  background: var(--surface, #fff);
+  border: 1px solid var(--border, #e5e7eb);
+  border-radius: 10px;
+  text-align: center;
+  cursor: default;
+  transition: box-shadow .15s;
+}
+
+.ov-stat-card:hover {
+  box-shadow: var(--shadow-sm, 0 1px 3px rgba(0,0,0,.06));
+}
+
+.ov-stat-value {
+  font-size: 1.6rem;
+  font-weight: 700;
+  color: var(--accent, #6366f1);
+  line-height: 1.2;
+}
+
+.ov-stat-label {
+  font-size: .82rem;
+  color: var(--muted, #64748b);
+}
+
+.ov-section {
+  margin-bottom: 20px;
+  padding: 16px 20px;
+  background: var(--surface, #fff);
+  border: 1px solid var(--border, #e5e7eb);
+  border-radius: 10px;
+}
+
+.ov-section-title {
+  margin: 0 0 8px;
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+.ov-desc {
+  margin: 0;
+  font-size: .9rem;
+  line-height: 1.6;
+  color: var(--text, #1f2937);
+  white-space: pre-wrap;
+}
+
+.ov-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}

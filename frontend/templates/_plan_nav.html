@@ -4,6 +4,7 @@
 <nav class="plan-nav" aria-label="Plan views">
   {%- set pid = plan.id -%}
   {%- set active = plan_active_page or '' -%}
+  <a class="pn-link{% if active == 'overview' %} active{% endif %}" href="/plans/{{ pid }}/overview"{% if active == 'overview' %} aria-current="page"{% endif %}>Overview</a>
   <a class="pn-link{% if active == 'board' %} active{% endif %}" href="/plans/{{ pid }}"{% if active == 'board' %} aria-current="page"{% endif %}>Board</a>
   <a class="pn-link{% if active == 'timeline' %} active{% endif %}" href="/plans/{{ pid }}/timeline"{% if active == 'timeline' %} aria-current="page"{% endif %}>Timeline</a>
   <a class="pn-link{% if active == 'map' %} active{% endif %}" href="/plans/{{ pid }}/map"{% if active == 'map' %} aria-current="page"{% endif %}>Map</a>
