@@ -286,8 +286,6 @@ tr:last-child td { border-bottom: none; }
 .dates-edit-wrap { display: inline-flex; align-items: center; gap: 6px; }
 .dates-edit-wrap .input { font-size: .9rem; padding: 3px 6px; max-width: 160px; }
 .dates-sep { color: var(--muted, #64748b); }
-.plan-currency { margin: 2px 0 0; color: var(--muted); font-size: .9rem; }
-.plan-currency strong { color: var(--ink); }
 /* Inline block message on pages without a pending bar (expenses, share):
  * shown when a dates edit would orphan items or a save fails. The board
  * and timeline use the pending bar's .pb-status.pb-blocked instead. */
@@ -492,6 +490,16 @@ tr:last-child td { border-bottom: none; }
   table { font-size: 13px; }
   th, td { padding: 8px 8px; }
   .edit-bar { display: none; }
+  .plan-header { padding: 14px 0 10px; }
+  .plan-nav-wrap { width: 100%; overflow: hidden; }
+  .plan-nav {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+    border-radius: 8px;
+  }
+  .plan-nav::-webkit-scrollbar { display: none; }
 }
 
 /* Pull-to-refresh */
