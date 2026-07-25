@@ -27,6 +27,17 @@
   margin: 0 0 2px; font-size: .95rem; font-weight: 600;
   color: var(--text, #1f2937); white-space: nowrap;
 }
+.day-today .day-title::after {
+  content: ' \b7 Today';
+  font-weight: 400;
+  color: var(--accent, #6366f1);
+  font-size: .82rem;
+}
+.day-today .card.item {
+  border-left-color: #6366f1;
+  background: #f8f9ff;
+}
+
 .day-items {
   display: flex; flex-direction: column; gap: 10px;
   min-height: 56px; border-radius: 8px; padding: 2px;

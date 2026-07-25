@@ -171,7 +171,8 @@ export async function initItinerary(ctx) {
     allMembers = [memRes.owner, ...memRes.members];
     days = buildDays(plan);
     base = plan.base_currency;
-    focusedDay = days.length ? days[0].date : '';
+    const todayStr = isoOf(new Date());
+    focusedDay = days.find(d => !d.is_buffer && d.date === todayStr)?.date || (days.length ? days[0].date : '');
     expenseByItem = new Map((expRes.items || []).map(
       (x) => [x.item_id, { total: x.grand_total_base_cents, missing: x.has_missing_rate }]
     ));
@@ -244,6 +245,12 @@ export async function initItinerary(ctx) {
     renderHeaderChrome();
     renderEditBarCtl();
 
+    // On small devices, snap the board horizontally to today's day section.
+    if (todaySec && window.matchMedia('(max-width: 640px)').matches) {
+      requestAnimationFrame(() => {
+        board.scrollLeft = todaySec.offsetLeft - board.offsetLeft - 16;
+      });
+    }
   }
 
   function renderCard(item, dayDate) {
