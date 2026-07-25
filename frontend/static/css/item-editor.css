@@ -94,13 +94,16 @@
   flex-direction: column;
 }
 @media (max-width: 640px) {
-  .modal.item-editor .field-row { flex-direction: column; gap: 6px; margin-top: 6px; }
+  .modal.item-editor { padding: 10px; }
+  .modal.item-editor .field-row { flex-direction: column; gap: 6px; margin-top: 6px; align-items: stretch; }
   .modal.item-editor .field-row:first-child { margin-top: 0; }
-  .modal.item-editor .field-row .field-group { min-width: 0; flex: 1 1 auto; overflow: hidden; }
+  .modal.item-editor .field-row .field-group { min-width: 0; flex: 1 1 auto; width: 100%; }
   .modal.item-editor .field-row .field-group .input,
-  .modal.item-editor .input { max-width: 100%; min-width: 0; width: 100%; }
-  .modal.item-editor .ie-col { min-width: 0; overflow: hidden; }
-  .modal.item-editor .modal-body { padding: 10px 12px; }
+  .modal.item-editor .input,
+  .modal.item-editor select.input,
+  .modal.item-editor textarea.input { max-width: 100%; min-width: 0; width: 100%; box-sizing: border-box; }
+  .modal.item-editor .ie-col { min-width: 0; max-width: 100%; }
+  .modal.item-editor .modal-body { padding: 8px 0; }
   .modal.item-editor .field { margin: 5px 0 2px; }
   .modal.item-editor .section-title { margin: 6px 0 3px; padding-top: 4px; }
   .modal.item-editor .todo-section { margin-top: 4px; padding-top: 4px; }
@@ -323,6 +326,11 @@
   display: flex;
   justify-content: flex-end;
 }
+@media (max-width: 640px) {
+  .geo-popup .geo-popup-header { padding: 12px; }
+  .geo-popup .geo-popup-body { padding: 12px; }
+  .geo-popup .geo-popup-body .input { width: 100%; max-width: 100%; box-sizing: border-box; }
+}
 
 /* ---------- expense modal ---------- */
 .modal.expense-modal {
@@ -430,6 +438,18 @@
 .modal.expense-modal .preview-list li { display: flex; justify-content: space-between; font-size: .85rem; }
 .modal.expense-modal .form-msg { margin: 0; font-size: .85rem; min-height: 1.2em; flex: 1; }
 .modal.expense-modal .form-msg.error { color: #b91c1c; }
+@media (max-width: 640px) {
+  .modal.expense-modal { padding: 10px; max-width: calc(100vw - 20px) !important; }
+  .modal.expense-modal .modal-body { padding: 10px 0; }
+  .modal.expense-modal .modal-footer { padding: 10px 0; }
+  .modal.expense-modal .field-row { flex-direction: column; gap: 6px; }
+  .modal.expense-modal .field-row .field-group { width: 100%; }
+  .modal.expense-modal .field-row .field-group .input,
+  .modal.expense-modal .modal-body .input { width: 100%; max-width: 100%; box-sizing: border-box; }
+  .modal.expense-modal .payer-row { flex-wrap: wrap; }
+  .modal.expense-modal .payer-row input { width: 100%; max-width: 100%; }
+  .modal.expense-modal .pp-row input { width: 100%; max-width: 100%; }
+}
 
 /* ---------- attachment modal tabs ---------- */
 .att-tab-row {
