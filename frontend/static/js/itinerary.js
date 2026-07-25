@@ -260,7 +260,7 @@ export async function initItinerary(ctx) {
       dataset: { itemId: String(item.id), date: dayDate, end: item.end_date || '',
                  type: item.item_type, spans: isSpanningItem(item, settings) ? '1' : '0' },
     });
-    if (ctx.role !== 'viewer' && (!item._hotelEvent || item._hotelEvent === 'check-out')) card.draggable = true;
+    if (ctx.role !== 'viewer' && (!item._hotelEvent || item._hotelEvent === 'check-out') && !(window.matchMedia && window.matchMedia('(max-width: 640px)').matches)) card.draggable = true;
     if (item.isLocal) card.classList.add('is-local');
     if (item._hotelEvent) card.classList.add('hotel-event', `hotel-event-${item._hotelEvent}`);
 

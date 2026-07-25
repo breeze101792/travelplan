@@ -257,11 +257,12 @@ function makeBar({ kind, top, end, totalCols, col, title, time, titleText, extra
     if (day) node.dataset.day = day;
     node.dataset.start = String(top);
     node.dataset.end = String(end);
-    // Resize handles are wired for every draggable bar. The handles
-    // read their start/end from the data-* attributes and commit them
-    // to start_time / end_time on the item's details.
-    node.appendChild(el('div', { class: 'tl-resize top',    'data-resize': 'top' }));
-    node.appendChild(el('div', { class: 'tl-resize bottom', 'data-resize': 'bottom' }));
+    // Resize handles on small screens are omitted because touch
+    // mis-triggers the resize gesture when the user tries to scroll.
+    if (!(window.matchMedia && window.matchMedia('(max-width: 640px)').matches)) {
+      node.appendChild(el('div', { class: 'tl-resize top',    'data-resize': 'top' }));
+      node.appendChild(el('div', { class: 'tl-resize bottom', 'data-resize': 'bottom' }));
+    }
   }
   return node;
 }
@@ -282,9 +283,15 @@ function renderDay(day, items, settings, nowFraction, ctx, staging, setBlockErro
   // bar, no "now" line. Just a column for items the user isn't sure
   // about yet. The shared `makeDayActions` adds the × close chip.
   const isBuffer = !!day.is_buffer;
-  const sec = el('section', { class: 'day' + (isBuffer ? ' day-buffer' : '') });
+  const isToday = !isBuffer && nowFraction != null;
+  const sec = el('section', { class: 'day' + (isBuffer ? ' day-buffer' : '') + (isToday ? ' day-today' : '') });
+  const dateEl = el('div', { class: 'date' });
+  dateEl.textContent = day.label;
+  if (isToday) {
+    dateEl.appendChild(el('small', { class: 'day-today-badge', text: 'Today' }));
+  }
   sec.appendChild(el('div', { class: 'day-head' }, [
-    el('div', { class: 'date', text: day.label }),
+    dateEl,
     ctx ? makeDayActions(day, { ctx, staging, setBlockError, onChange }) : null,
   ]));
 
@@ -1155,14 +1162,18 @@ export async function initTimeline(ctx) {
     // Wire drag/resize + click/menu on every bar. Hotels are wired too
     // (for click → editor) but they have no drag/resize handles; only
     // the body-drag is skipped for them by the `:not(.tl-item-hotel)`
-    // selector in wireBarDrag.
-    if (ctx.role !== 'viewer') {
-      const allBars = root.querySelectorAll('.tl-item');
+    // selector in wireBarDrag. On small screens drag/resize is disabled
+    // to prevent touch mis-gestures while scrolling.
+    const isSmallTimeline = !!(window.matchMedia && window.matchMedia('(max-width: 640px)').matches);
+    if (ctx.role !== 'viewer' && !isSmallTimeline) {
       const draggableBars = root.querySelectorAll('.tl-item:not(.tl-item-hotel)');
       for (const bar of draggableBars) {
         wireBarDrag({ bar, staging, getViewItems: () => staging.viewItems(),
                       getSelection: () => selection, ctx, onMultiDrag });
       }
+    }
+    if (ctx.role !== 'viewer') {
+      const allBars = root.querySelectorAll('.tl-item');
       for (const bar of allBars) {
         wireBarClick({ bar, ctx,
                        getViewItems: () => staging.viewItems(),

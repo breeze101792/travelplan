@@ -9,6 +9,7 @@
  */
 export function enableDragDrop(boardEl, { onMove, onUpload }) {
   if (!boardEl) return;
+  if (window.matchMedia && window.matchMedia('(max-width: 640px)').matches) return;
   let dragItemId = null;
   let touchState = null;
 

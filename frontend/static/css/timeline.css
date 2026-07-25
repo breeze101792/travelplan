@@ -75,6 +75,11 @@
 /* .day-action styles (× close button on buffer days) come from base.css
  * so the board and timeline show the same affordance. */
 
+.timeline .day.day-today .tl-item {
+  box-shadow: inset 3px 0 0 rgba(99,102,241,.5);
+  filter: brightness(1.08);
+}
+
 .timeline .day-head {
   position: sticky;
   top: 0;
@@ -186,6 +191,13 @@
 }
 .timeline.editable .tl-item:not(.tl-item-hotel) .tl-resize.top { top: 0; }
 .timeline.editable .tl-item:not(.tl-item-hotel) .tl-resize.bottom { bottom: 0; }
+
+/* On small screens, drag/resize is disabled — reset cursors so the user
+ * doesn't see a grab cursor they can't act on while scrolling. */
+@media (max-width: 640px) {
+  .timeline.editable .tl-item:not(.tl-item-hotel) { cursor: default; }
+  .timeline.editable .tl-item:not(.tl-item-hotel) .tl-resize { display: none; }
+}
 
 /* Day column shows a "drop here" outline when a drag is hovering over it,
  * so the user has a clear visual target on cross-day moves. */
