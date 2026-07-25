@@ -1,6 +1,7 @@
 // api.js — shared fetch wrapper for the TravelPlan JSON API.
-// All functions return parsed JSON on success and throw Error(message) on non-2xx.
-// On 401, the user is redirected to the login page with a `next` parameter.
+// GET responses are cached in IndexedDB so pages work offline.
+// Mutations (POST/PATCH/DELETE) clear the cache on success.
+import { cacheGet, cacheSet, cacheClear } from '/static/js/cache.js';
 
 function redirectLogin() {
   const next = encodeURIComponent(location.pathname + location.search);
@@ -18,7 +19,6 @@ async function handle(res) {
   if (!res.ok) {
     if (res.status === 401) {
       redirectLogin();
-      // Throw so callers stop executing; redirect is in flight.
       throw new Error('unauthorized');
     }
     const msg = (body && body.error) || (typeof body === 'string' && body) || 'request failed';
@@ -28,11 +28,20 @@ async function handle(res) {
 }
 
 export async function apiGet(path) {
+  const cached = await cacheGet(path);
+  if (cached !== null) {
+    fetch(path, { method: 'GET', headers: { 'Accept': 'application/json' } })
+      .then(res => { if (res.ok) return res.json().then(data => cacheSet(path, data)); })
+      .catch(() => {});
+    return cached;
+  }
   const res = await fetch(path, {
     method: 'GET',
     headers: { 'Accept': 'application/json' },
   });
-  return handle(res);
+  const body = await handle(res);
+  cacheSet(path, body);
+  return body;
 }
 
 export async function apiPost(path, body) {
@@ -41,7 +50,9 @@ export async function apiPost(path, body) {
     headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
     body: body == null ? null : JSON.stringify(body),
   });
-  return handle(res);
+  const result = await handle(res);
+  cacheClear();
+  return result;
 }
 
 export async function apiPatch(path, body) {
@@ -50,7 +61,9 @@ export async function apiPatch(path, body) {
     headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
     body: body == null ? null : JSON.stringify(body),
   });
-  return handle(res);
+  const result = await handle(res);
+  cacheClear();
+  return result;
 }
 
 export async function apiDel(path) {
@@ -58,7 +71,9 @@ export async function apiDel(path) {
     method: 'DELETE',
     headers: { 'Accept': 'application/json' },
   });
-  return handle(res);
+  const result = await handle(res);
+  cacheClear();
+  return result;
 }
 
 // Multipart upload: a single file under the 'file' field plus optional extra fields.

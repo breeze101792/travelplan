@@ -115,9 +115,8 @@ let _settingsCache = null;
 // GET /api/settings, cached for the lifetime of the page.
 export async function loadSettings() {
   if (_settingsCache) return _settingsCache;
-  const res = await fetch('/api/settings', { headers: { 'Accept': 'application/json' } });
-  if (!res.ok) throw new Error('failed to load settings');
-  _settingsCache = await res.json();
+  const { apiGet } = await import('/static/js/api.js');
+  _settingsCache = await apiGet('/api/settings');
   return _settingsCache;
 }
 
