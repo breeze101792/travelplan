@@ -212,9 +212,12 @@ export async function initItinerary(ctx) {
     days = buildDays(staging.viewPlan());
     const items = expandHotelEvents(staging.viewItems());
     const grouped = groupByDay(items, days, settings);
+    const todayStr = isoOf(new Date());
+    let todaySec = null;
     for (const day of days) {
+      const isToday = !day.is_buffer && day.date === todayStr;
       const sec = el('section', {
-        class: 'day' + (day.is_buffer ? ' day-buffer' : ''),
+        class: 'day' + (day.is_buffer ? ' day-buffer' : '') + (isToday ? ' day-today' : ''),
         dataset: { date: day.date, buffer: day.is_buffer ? '1' : '0' },
       });
       sec.addEventListener('click', () => setFocusedDay(day.date));
@@ -234,11 +237,13 @@ export async function initItinerary(ctx) {
       const bar = makeAddBar(day.date);
       if (bar) sec.appendChild(bar);
       board.appendChild(sec);
+      if (isToday) todaySec = sec;
     }
     // Repaint the plan title and dates — the shared header module owns
     // those, including "don't steal focus from an open editor" logic.
     renderHeaderChrome();
     renderEditBarCtl();
+
   }
 
   function renderCard(item, dayDate) {

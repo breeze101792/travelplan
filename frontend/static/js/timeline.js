@@ -1118,10 +1118,17 @@ export async function initTimeline(ctx) {
 
     root.appendChild(renderHourCol());
     const scrollWrap = el('div', { class: 'timeline-scroll' });
+    let todayNode = null;
     for (const day of days) {
       try {
-        const node = renderDay(day, viewItems, settings, nowFractionFor(day.date),
+        const nowFrac = nowFractionFor(day.date);
+        const isToday = nowFrac != null && !day.is_buffer;
+        const node = renderDay(day, viewItems, settings, nowFrac,
                                ctx, staging, setBlockError, () => { render(); });
+        if (isToday) {
+          node.classList.add('day-today');
+          todayNode = node;
+        }
         node.dataset.day = day.date;     // used by findDayAt during drag
         // Mirror the buffer flag on the section so findDayAt + drop-target
         // styling can branch on it (e.g. to skip the 30% cross-day drag
@@ -1183,6 +1190,13 @@ export async function initTimeline(ctx) {
     // owns the markup, we just trigger the repaint.
     renderHeaderChrome();
     renderEditBarCtl();
+
+    // On small devices, snap the timeline horizontally to today's column.
+    if (todayNode && window.matchMedia('(max-width: 640px)').matches) {
+      requestAnimationFrame(() => {
+        scrollWrap.scrollLeft = todayNode.offsetLeft - scrollWrap.offsetLeft - 16;
+      });
+    }
   }
 
   /* Multi-drag: when the user starts dragging a bar that's part of a
