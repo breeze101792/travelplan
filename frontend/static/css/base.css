@@ -461,3 +461,20 @@ tr:last-child td { border-bottom: none; }
   table { font-size: 13px; }
   th, td { padding: 8px 8px; }
 }
+
+/* Pull-to-refresh */
+#ptr {
+  position: fixed; top: 0; left: 0; right: 0; z-index: 9999;
+  display: flex; justify-content: center; overflow: hidden;
+  height: var(--ptr-pull, 0px); transition: height .3s;
+  pointer-events: none;
+}
+#ptr.ptr-releasing { transition: height .35s; }
+#ptr.ptr-refreshing { height: 50px; transition: height .3s; }
+#ptr-indicator {
+  display: flex; align-items: center; gap: 8px;
+  color: var(--muted); font-size: 14px; padding-top: 10px;
+}
+#ptr-icon { transition: transform .2s; }
+#ptr.ptr-refreshing #ptr-icon { animation: ptr-spin .8s linear infinite; }
+@keyframes ptr-spin { to { transform: rotate(360deg); } }
