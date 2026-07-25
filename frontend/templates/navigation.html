@@ -3,8 +3,8 @@
 {% block page %}navigation{% endblock %}
 
 {% block styles %}
-<link rel="stylesheet" href="/static/css/navigation.css">
-<link rel="stylesheet" href="/static/css/item-editor.css">
+<link rel="stylesheet" href="/static/css/navigation.css?v={{ static_version }}">
+<link rel="stylesheet" href="/static/css/item-editor.css?v={{ static_version }}">
 <script>window.__CONTEXT__ = { planId: {{ plan.id }}, role: {{ plan_role|tojson|safe }} };</script>
 {% endblock %}
 
@@ -17,7 +17,7 @@
 
 {% block scripts %}
 <script type="module">
-import { initNavigation } from '/static/js/navigation.js';
+import { initNavigation } from '/static/js/navigation.js?v={{ static_version }}';
 initNavigation(window.__CONTEXT__);
 </script>
 {% endblock %}

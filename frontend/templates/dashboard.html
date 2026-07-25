@@ -4,7 +4,7 @@
 {% block page %}dashboard{% endblock %}
 
 {% block styles %}
-<link rel="stylesheet" href="/static/css/dashboard.css">
+<link rel="stylesheet" href="/static/css/dashboard.css?v={{ static_version }}">
 {% endblock %}
 
 {% block content %}
@@ -59,7 +59,7 @@
 {% block scripts %}
 <script>window.__CONTEXT__ = {};</script>
 <script type="module">
-  import { initDashboard } from '/static/js/plans.js';
+  import { initDashboard } from '/static/js/plans.js?v={{ static_version }}';
   initDashboard(window.__CONTEXT__);
 </script>
 {% endblock %}

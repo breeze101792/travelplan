@@ -1,7 +1,7 @@
 // api.js — shared fetch wrapper for the TravelPlan JSON API.
 // GET responses are cached in IndexedDB so pages work offline.
 // Mutations (POST/PATCH/DELETE) clear the cache on success.
-import { cacheGet, cacheSet, cacheClear } from '/static/js/cache.js';
+import { cacheGet, cacheSet } from '/static/js/cache.js';
 
 function redirectLogin() {
   const next = encodeURIComponent(location.pathname + location.search);
@@ -27,21 +27,33 @@ async function handle(res) {
   return body;
 }
 
-export async function apiGet(path) {
-  const cached = await cacheGet(path);
-  if (cached !== null) {
-    fetch(path, { method: 'GET', headers: { 'Accept': 'application/json' } })
-      .then(res => { if (res.ok) return res.json().then(data => cacheSet(path, data)); })
-      .catch(() => {});
-    return cached;
+export async function apiGet(path, { forceRefresh } = {}) {
+  if (!forceRefresh) {
+    const cached = await cacheGet(path);
+    if (cached !== null) {
+      fetch(path, { method: 'GET', headers: { 'Accept': 'application/json' } })
+        .then(res => { if (res.ok) return res.json().then(data => cacheSet(path, data)); })
+        .catch(() => {});
+      return cached;
+    }
   }
-  const res = await fetch(path, {
-    method: 'GET',
-    headers: { 'Accept': 'application/json' },
-  });
-  const body = await handle(res);
-  cacheSet(path, body);
-  return body;
+  try {
+    const res = await fetch(path, {
+      method: 'GET',
+      headers: { 'Accept': 'application/json' },
+    });
+    const body = await handle(res);
+    cacheSet(path, body);
+    return body;
+  } catch (e) {
+    // Network failed — fall back to stale cache for regular loads,
+    // but not for forceRefresh (caller has its own fallback strategy).
+    if (!forceRefresh) {
+      const cached = await cacheGet(path);
+      if (cached !== null) return cached;
+    }
+    return null;
+  }
 }
 
 export async function apiPost(path, body) {
@@ -51,7 +63,6 @@ export async function apiPost(path, body) {
     body: body == null ? null : JSON.stringify(body),
   });
   const result = await handle(res);
-  cacheClear();
   return result;
 }
 
@@ -62,7 +73,6 @@ export async function apiPatch(path, body) {
     body: body == null ? null : JSON.stringify(body),
   });
   const result = await handle(res);
-  cacheClear();
   return result;
 }
 
@@ -72,7 +82,6 @@ export async function apiDel(path) {
     headers: { 'Accept': 'application/json' },
   });
   const result = await handle(res);
-  cacheClear();
   return result;
 }
 

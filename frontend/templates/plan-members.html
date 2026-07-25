@@ -2,7 +2,7 @@
 {% block title %}Members · {{ plan.title }} · TravelPlan{% endblock %}
 {% block page %}members{% endblock %}
 
-{% block styles %}<link rel="stylesheet" href="/static/css/board.css">{% endblock %}
+{% block styles %}<link rel="stylesheet" href="/static/css/board.css?v={{ static_version }}">{% endblock %}
 
 {% block content %}
 {% set plan_active_page = 'members' %}
@@ -15,9 +15,9 @@
 
 {% block scripts %}
 <script type="module">
-import { apiGet, apiPost, apiPatch, apiDel } from '/static/js/api.js';
-import { el, clear } from '/static/js/util.js';
-import { wirePlanHeaderDirect } from '/static/js/plan-header.js';
+import { apiGet, apiPost, apiPatch, apiDel } from '/static/js/api.js?v={{ static_version }}';
+import { el, clear } from '/static/js/util.js?v={{ static_version }}';
+import { wirePlanHeaderDirect } from '/static/js/plan-header.js?v={{ static_version }}';
 
 const ctx = window.__CONTEXT__;
 const root = document.getElementById('members-root');

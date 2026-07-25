@@ -56,14 +56,25 @@ def create_app(config: dict | None = None) -> Flask:
 
     @app.context_processor
     def inject_user():
+        import subprocess
         from .auth import current_user
         from .util import fmt_date
+        try:
+            static_version = subprocess.check_output(
+                ["git", "rev-parse", "--short", "HEAD"],
+                cwd=str(BASE_DIR), stderr=subprocess.DEVNULL, timeout=2,
+            ).decode("ascii", errors="replace").strip()
+        except Exception:
+            static_version = "0"
         return {
             "current_user": current_user(),
             # Server-side date formatter used by the per-plan header
             # partial so the initial render matches the frontend's
             # fmtDate() output (no "flash" of raw ISO dates).
             "fmt_date": fmt_date,
+            # Version string for cache-busting static assets.
+            # Changes after every git pull, so browsers fetch fresh JS/CSS.
+            "static_version": static_version,
         }
 
     @app.route("/")

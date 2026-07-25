@@ -335,6 +335,12 @@ tr:last-child td { border-bottom: none; }
  * Unified sticky bar under the plan header, shared by Board / Timeline /
  * Map. Merges the old add-toolbar and pending-changes bar into one.
  */
+.day-today-badge {
+  font-weight: 400;
+  color: var(--accent);
+  font-size: .72rem;
+  margin-left: .35rem;
+}
 .edit-bar {
   display: flex; flex-wrap: wrap; align-items: center; gap: 8px;
   padding: 10px 24px;

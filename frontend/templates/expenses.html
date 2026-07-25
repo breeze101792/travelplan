@@ -5,8 +5,8 @@
 {% block page %}expenses{% endblock %}
 
 {% block styles %}
-<link rel="stylesheet" href="/static/css/item-editor.css">
-<link rel="stylesheet" href="/static/css/expenses.css">
+<link rel="stylesheet" href="/static/css/item-editor.css?v={{ static_version }}">
+<link rel="stylesheet" href="/static/css/expenses.css?v={{ static_version }}">
 {% endblock %}
 
 {% block content %}
@@ -21,8 +21,8 @@
 {% block scripts %}
 <script>window.__CONTEXT__ = { planId: {{ plan.id }}, role: {{ plan_role|tojson|safe }} };</script>
 <script type="module">
-  import { initExpenses } from '/static/js/expenses.js';
-  import { wirePlanHeaderDirect } from '/static/js/plan-header.js';
+  import { initExpenses } from '/static/js/expenses.js?v={{ static_version }}';
+  import { wirePlanHeaderDirect } from '/static/js/plan-header.js?v={{ static_version }}';
   initExpenses(window.__CONTEXT__);
   // Same inline title/dates editing as the board + timeline, but saved
   // immediately (this page has no pending bar).

@@ -90,11 +90,11 @@ export async function initExpenses(ctx) {
   const readOnly = role === 'viewer';
 
   const [settings, planRes, membersRes, itemsRes, meRes] = await Promise.all([
-    loadSettings(),
-    apiGet(`/api/plans/${planId}`),
-    apiGet(`/api/plans/${planId}/members`),
-    apiGet(`/api/plans/${planId}/items`),
-    apiGet('/api/me'),
+    loadSettings().catch(() => null),
+    apiGet(`/api/plans/${planId}`).catch(() => null),
+    apiGet(`/api/plans/${planId}/members`).catch(() => null),
+    apiGet(`/api/plans/${planId}/items`).catch(() => null),
+    apiGet('/api/me').catch(() => null),
   ]);
 
   const plan = planRes.plan || planRes;

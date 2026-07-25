@@ -468,6 +468,11 @@
 
 /* Responsive ----------------------------------------------------------- */
 
+@media (max-width: 640px) {
+  .plan-editor .modal-body .input,
+  .plan-editor .modal-body select,
+  .plan-editor .modal-body textarea { width: 100%; max-width: 100%; box-sizing: border-box; }
+}
 @media (max-width: 540px) {
   .dash-header {
     align-items: stretch;
