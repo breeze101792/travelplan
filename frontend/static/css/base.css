@@ -491,6 +491,7 @@ tr:last-child td { border-bottom: none; }
   .field-row .field { min-width: 0; }
   table { font-size: 13px; }
   th, td { padding: 8px 8px; }
+  .edit-bar { display: none; }
 }
 
 /* Pull-to-refresh */
