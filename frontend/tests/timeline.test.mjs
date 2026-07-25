@@ -21,7 +21,7 @@ import { Staging, timeEditItemOp } from '/static/js/staging.js';
 // indirectly through the resize-bottom regression test below.
 const timelineMod = await import('/static/js/timeline.js');
 
-const PAGE_IDS = ['timeline', 'pending-bar', 'add-toolbar', 'plan-title', 'plan-dates', 'plan-currency'];
+const PAGE_IDS = ['timeline', 'edit-bar', 'plan-title', 'plan-dates'];
 
 const SETTINGS = {
   base_currencies: ['USD', 'JPY', 'CNY'],
@@ -116,11 +116,11 @@ await boot('owner');
        'hotel bar has no resize handles');
   }
 
-  // The pending bar is visible (owner can edit) and the drag-only
+  // The edit bar is visible (owner can edit) and the drag-only
   // buttons (Revert/Redo/Save) are wired. There is no "Add" button —
   // the timeline doesn't create items.
-  const bar = document.getElementById('pending-bar');
-  eq(bar.hidden, false, 'pending bar visible for owner');
+  const bar = document.getElementById('edit-bar');
+  eq(bar.hidden, false, 'edit bar visible for owner');
   const btnTexts = bar.querySelectorAll('.pb-btn').map(b => b.textContent);
   assert(btnTexts.some(t => t.includes('Revert')), 'bar has Revert');
   assert(btnTexts.some(t => t.includes('Redo')), 'bar has Redo');
@@ -135,8 +135,8 @@ await boot('owner');
   // Re-boot as viewer; the bar hides and bars don't carry data-* attrs.
   // (Cheap to re-run because installDom gives a fresh document.)
   await boot('viewer');
-  const bar = document.getElementById('pending-bar');
-  eq(bar.hidden, true, 'pending bar hidden for viewer');
+  const bar = document.getElementById('edit-bar');
+  eq(bar.hidden, true, 'edit bar hidden for viewer');
   const activityBar = document.querySelector('.tl-item.activity');
   assert(!!activityBar, 'viewer still sees the activity bar');
   // Bars are rendered without the data-* wiring for the drag handler
@@ -390,7 +390,7 @@ await boot('owner');
   assert(after - before >= 2, 'Delete stages one op per selected item');
 
   // Revert the staged deletes — two clicks to undo both.
-  const undoBtn = [...document.getElementById('pending-bar').querySelectorAll('button.pb-btn')]
+  const undoBtn = [...document.getElementById('edit-bar').querySelectorAll('button.pb-btn')]
     .find(b => b.textContent.includes('Revert'));
   undoBtn.click();
   undoBtn.click();
@@ -409,7 +409,7 @@ await boot('owner');
 // Helper: count pending ops. The staging engine isn't exposed from
 // initTimeline's closure, so we read the bar's status text instead.
 function staging_pendingCount() {
-  const status = document.getElementById('pending-bar').querySelector('.pb-status');
+  const status = document.getElementById('edit-bar').querySelector('.pb-status');
   const m = status && status.textContent.match(/(\d+)\s+pending/);
   return m ? Number(m[1]) : 0;
 }
@@ -542,7 +542,7 @@ function staging_pendingCount() {
          'guard calls preventDefault when there are pending changes');
 
   // Revert the staged delete and verify the guard releases again.
-  const undoBtn = [...document.getElementById('pending-bar').querySelectorAll('button.pb-btn')]
+  const undoBtn = [...document.getElementById('edit-bar').querySelectorAll('button.pb-btn')]
     .find(b => b.textContent.includes('Revert'));
   for (let i = 0; i < pending; i++) undoBtn.click();
   eq(staging_pendingCount(), 0, 'sanity: all pending changes reverted');
@@ -676,37 +676,37 @@ function staging_pendingCount() {
   eq(!!stillThere, false, 'buffer column is removed after the close click');
 }
 
-/* =============== add-toolbar: range + buffer + quick add =============== */
-// The shared renderPlanToolbar() mounts the same chrome the board uses:
+/* =============== edit-bar: range + buffer + quick add =============== */
+// The shared renderEditBar() mounts the same chrome the board uses:
 // +/- day-range buttons, + Buffer day, and a Quick add type picker.
 // The owner should see all of it; the viewer should see none of it.
 {
   await boot('owner');
-  const tb = document.getElementById('add-toolbar');
-  assert(!!tb, 'add-toolbar exists in the DOM');
-  const labels = [...tb.querySelectorAll('button.toolbar-btn')].map(b => b.textContent);
+  const eb = document.getElementById('edit-bar');
+  assert(!!eb, 'edit-bar exists in the DOM');
+  const rangeLabels = [...eb.querySelectorAll('button.toolbar-btn')].map(b => b.textContent);
   // Range buttons (in order: extend-start, trim-start, trim-end, extend-end).
-  assert(labels.includes('‹ +1 day'),  'toolbar has extend-start button');
-  assert(labels.includes('−1 day ›'),  'toolbar has trim-start button');
-  assert(labels.includes('‹ −1 day'),  'toolbar has trim-end button');
-  assert(labels.includes('+1 day ›'),  'toolbar has extend-end button');
+  assert(rangeLabels.includes('‹ +1 day'),  'edit-bar has extend-start button');
+  assert(rangeLabels.includes('−1 day ›'),  'edit-bar has trim-start button');
+  assert(rangeLabels.includes('‹ −1 day'),  'edit-bar has trim-end button');
+  assert(rangeLabels.includes('+1 day ›'),  'edit-bar has extend-end button');
   // Buffer + quick add.
-  assert(labels.includes('+ Buffer day'), 'toolbar has + Buffer day button');
-  // Quick add buttons for each item type.
+  assert(rangeLabels.includes('+ Buffer day'), 'edit-bar has + Buffer day button');
+  // Quick add buttons are inside the .qa-dropdown.
+  const qaLabels = [...eb.querySelectorAll('.qa-item')].map(b => b.textContent);
   for (const ti of Object.values(SETTINGS.item_types)) {
-    assert(labels.includes(ti.label), `toolbar has Quick add: ${ti.label}`);
+    assert(qaLabels.includes(ti.label), `edit-bar has Quick add: ${ti.label}`);
   }
-  // The "Quick add" label is the focused-day hint.
-  const lbl = tb.querySelector('.toolbar-label');
-  assert(!!lbl, 'toolbar shows a Quick add label');
-  assert(lbl.textContent.startsWith('Quick add'), 'label says "Quick add"');
+  // The "Quick add" summary is the focused-day hint.
+  const summary = eb.querySelector('.qa-summary');
+  assert(!!summary, 'edit-bar shows a Quick add summary');
+  assert(summary.textContent.startsWith('+ Quick add'), 'summary says "+ Quick add"');
 
-  // Viewer: no toolbar buttons at all (the whole toolbar is hidden for
+  // Viewer: no edit-bar buttons at all (the whole bar is hidden for
   // view-only roles, just like the board).
   await boot('viewer');
-  const tbViewer = document.getElementById('add-toolbar');
-  const viewerLabels = [...tbViewer.querySelectorAll('button.toolbar-btn')].map(b => b.textContent);
-  eq(viewerLabels.length, 0, 'viewer sees no toolbar buttons');
+  const ebViewer = document.getElementById('edit-bar');
+  eq(ebViewer.hidden, true, 'viewer: edit-bar is hidden');
 }
 
 /* =============== plan-level chrome: title + dates are editable =============== */

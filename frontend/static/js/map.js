@@ -1,6 +1,6 @@
 import { apiGet, apiPost, apiPatch, apiDel, apiUpload } from '/static/js/api.js';
 const api = { get: apiGet, post: apiPost, patch: apiPatch, del: apiDel, upload: apiUpload };
-import { buildDays, wirePlanHeader, renderEditBar } from '/static/js/plan-header.js';
+import { buildDays, isoOf, wirePlanHeader, renderEditBar } from '/static/js/plan-header.js';
 import { Staging, moveItemOp, deleteItemOp, saveItemOp } from '/static/js/staging.js';
 import { el, clear } from '/static/js/util.js';
 import { openItemEditor, openGeoMapPopup } from '/static/js/item-editor.js';
@@ -25,6 +25,7 @@ let staging = null;
 let settings = null;
 let ctx = null;
 let selectedItemId = null;
+let todayIdx = -1;
 
 /* ---------- draw ---------- */
 
@@ -330,13 +331,15 @@ function renderList() {
     const color = pickColor(i);
     const isExpanded = i === expIndex;
 
+    const isToday = !day.is_buffer && i === todayIdx;
     const hdr = document.createElement('div');
-    hdr.className = 'day-header' + (isExpanded ? ' expanded' : '') + (i === expIndex ? ' active' : '');
+    hdr.className = 'day-header' + (isExpanded ? ' expanded' : '') + (i === expIndex ? ' active' : '') + (isToday ? ' day-today' : '');
     hdr.dataset.targetDate = day.date;
     hdr.innerHTML = `
       <span class="day-dot" style="background:${color}"></span>
       <span class="day-expand-icon">&#9654;</span>
       <span class="day-label">${day.label}</span>
+      ${isToday ? '<small class="day-today-badge">Today</small>' : ''}
       <span class="day-count">${dayItemsFor(i).length}</span>
     `;
     hdr.addEventListener('click', () => toggleDay(i));
@@ -552,7 +555,11 @@ function toggleDay(index) {
   for (const idx in dayLayers) removeDay(Number(idx));
   dayLayers = {};
   const coords = dayCoords[index] || [];
-  if (coords.length) drawDay(index, coords, pickColor(index));
+  if (coords.length) {
+    drawDay(index, coords, pickColor(index));
+    const bounds = L.latLngBounds(coords.map(c => [c.lat, c.lng]));
+    if (bounds.isValid()) map.fitBounds(bounds, { padding: [40, 40], maxZoom: 14 });
+  }
   renderList();
   const hdr = document.querySelector('.day-header.active');
   if (hdr) hdr.scrollIntoView({ block: 'nearest' });
@@ -652,8 +659,10 @@ export async function initMap(c) {
 
   enableDropZone(document.getElementById('day-list'));
   renderList();
-  expIndex = 0;
-  toggleDay(0);
+  // Open today's day by default (or the first day if today isn't in range).
+  const todayStr = isoOf(new Date());
+  todayIdx = days.findIndex(d => !d.is_buffer && d.date === todayStr);
+  toggleDay(todayIdx >= 0 ? todayIdx : 0);
   const anyCoords = Object.values(dayCoords).some(c => c.length);
   if (!anyCoords) map.setView([35.6762, 139.6503], 5);
   renderEditBarCtl();

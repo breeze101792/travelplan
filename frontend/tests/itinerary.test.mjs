@@ -10,13 +10,12 @@ import { assert, eq, summary } from './lib/t.mjs';
 import { installDom } from './lib/dom-shim.mjs';
 import { installFetch } from './lib/fetch-stub.mjs';
 
-const PAGE_IDS = ['board', 'pending-bar', 'add-toolbar', 'plan-title', 'plan-dates', 'plan-currency'];
+const PAGE_IDS = ['board', 'edit-bar', 'plan-title', 'plan-dates'];
 
-/* Find a toolbar quick-add button by its type label (Hotel / Activity / ...).
- * Skips the +/- day-range buttons that sit in front of the type buttons. */
+/* Find a toolbar quick-add button by its type label (Hotel / Activity / ...). */
 function typeBtn(label) {
-  return [...document.getElementById('add-toolbar').querySelectorAll('.toolbar-btn')]
-    .find(b => !b.classList.contains('toolbar-range') && b.textContent === label);
+  return [...document.getElementById('edit-bar').querySelectorAll('.qa-item')]
+    .find(b => b.textContent === label);
 }
 
 const SETTINGS = {
@@ -113,32 +112,28 @@ const ownerStub = await boot('owner');
   const d2Order = board.children[1].querySelectorAll('.card .card-title').map(n => n.textContent);
   eq(d2Order[d2Order.length - 1], 'Hotel A', 'hotel pinned to bottom of day 2');
 
-  const bar = document.getElementById('pending-bar');
-  eq(bar.hidden, false, 'pending bar visible for owner');
+  const bar = document.getElementById('edit-bar');
+  eq(bar.hidden, false, 'edit bar visible for owner');
   const btnTexts = bar.querySelectorAll('.pb-btn').map(b => b.textContent);
-  assert(btnTexts.some(t => t.includes('Add')), 'bar has Add');
   assert(btnTexts.some(t => t.includes('Revert')), 'bar has Revert');
   assert(btnTexts.some(t => t.includes('Redo')), 'bar has Redo');
+  assert(btnTexts.some(t => t.includes('Cancel')), 'bar has Cancel all');
   assert(btnTexts.some(t => t.includes('Save')), 'bar has Save');
   assert(bar.querySelector('.pb-status').textContent.includes('All changes saved'), 'status shows saved state');
   const btns = bar.querySelectorAll('button.pb-btn');
   eq(btns[0].disabled, true, 'Revert disabled with no pending changes');
   eq(btns[1].disabled, true, 'Redo disabled with no pending changes');
-  eq(btns[2].disabled, true, 'Save disabled with no pending changes');
+  eq(btns.length >= 4 && btns[3].disabled, true, 'Save disabled with no pending changes');
 
-  const tb = document.getElementById('add-toolbar');
-  // Range extend/trim buttons come first; the 3 type buttons (Hotel /
-  // Activity / Note) follow them. Filter to just the type buttons.
-  const typeButtons = [...tb.querySelectorAll('.toolbar-btn')].filter(b => !b.classList.contains('toolbar-range'));
-  eq(typeButtons.length, 3, 'quick-add toolbar has the 3 type buttons');
+  const typeButtons = bar.querySelectorAll('.qa-item');
+  eq(typeButtons.length, 3, 'edit bar has the 3 quick-add type buttons');
   eq(document.getElementById('plan-title').textContent, 'Japan 2026', 'plan title rendered');
 }
 
 /* =============== owner: quick-add → editor → Apply → Save =============== */
 {
   const board = document.getElementById('board');
-  const bar = document.getElementById('pending-bar');
-  const tb = document.getElementById('add-toolbar');
+  const bar = document.getElementById('edit-bar');
 
   // Click "Hotel" in the quick-add toolbar → draft on board + editor opens.
   typeBtn('Hotel').click();
@@ -203,8 +198,8 @@ const ownerStub = await boot('owner');
 /* =============== owner: Add then Cancel discards the draft =============== */
 {
   const board = document.getElementById('board');
-  const bar = document.getElementById('pending-bar');
-  const tb = document.getElementById('add-toolbar');
+  const bar = document.getElementById('edit-bar');
+  const tb = document.getElementById('edit-bar');
   typeBtn('Activity').click();          // activity
   const editor = document.body.querySelector('.item-editor');
   assert(!!editor, 'editor opened for second add');
@@ -223,7 +218,7 @@ const ownerStub = await boot('owner');
   assert(!!input, 'title becomes an input on click (owner)');
   input.value = 'Japan 2026 (renamed)';
   input.blur();
-  const bar = document.getElementById('pending-bar');
+  const bar = document.getElementById('edit-bar');
   assert(bar.querySelector('.pb-status').textContent.includes('1 pending change'), 'title edit staged');
   eq(titleEl.textContent, 'Japan 2026 (renamed)', 'header shows the staged title');
   // Undo it so later scenarios are unaffected.
@@ -235,8 +230,8 @@ const ownerStub = await boot('owner');
 /* =============== owner: Ctrl+Z / Ctrl+S shortcuts =============== */
 {
   const board = document.getElementById('board');
-  const bar = document.getElementById('pending-bar');
-  const tb = document.getElementById('add-toolbar');
+  const bar = document.getElementById('edit-bar');
+  const tb = document.getElementById('edit-bar');
   typeBtn('Note').click();                                 // note
   assert(bar.querySelector('.pb-status').textContent.includes('1 pending change'), 'note staged');
   const cancelBtn = [...document.body.querySelector('.item-editor').querySelectorAll('button')].find(b => b.textContent === 'Cancel');
@@ -382,8 +377,8 @@ const ownerStub = await boot('owner');
 /* =============== owner: extend / trim trip via toolbar =============== */
 {
   const board = document.getElementById('board');
-  const bar = document.getElementById('pending-bar');
-  const tb = document.getElementById('add-toolbar');
+  const bar = document.getElementById('edit-bar');
+  const tb = document.getElementById('edit-bar');
   // Find the +1-day-at-end button (data-action="extend-end").
   const endExtend = tb.querySelector('.toolbar-range[data-action="extend-end"]');
   assert(!!endExtend, 'toolbar exposes a +1 day end-extend button');
@@ -409,8 +404,8 @@ const ownerStub = await boot('owner');
 /* =============== owner: buffer day toolbar control =============== */
 {
   const board = document.getElementById('board');
-  const bar = document.getElementById('pending-bar');
-  const tb = document.getElementById('add-toolbar');
+  const bar = document.getElementById('edit-bar');
+  const tb = document.getElementById('edit-bar');
   // Trip days don't have a buffer chip; the toolbar's "+ Buffer day" button
   // adds a new buffer column with a single click (no date picker).
   const tripDayChip = board.children[0].querySelector('.day-action');
@@ -478,7 +473,7 @@ const ownerStub = await boot('owner');
          'buffer day chip is a close (×) button');
   assert(chip.textContent === '×', 'close chip text is the × symbol');
   chip.click();
-  const bar = document.getElementById('pending-bar');
+  const bar = document.getElementById('edit-bar');
   assert(bar.querySelector('.pb-status').textContent.includes('1 pending change'),
          'clicking the on-chip stages a buffer remove');
 }
@@ -492,8 +487,8 @@ const ownerStub = await boot('owner');
   const stub = await boot('owner');
   stub.restore();
   const board = document.getElementById('board');
-  const bar = document.getElementById('pending-bar');
-  const tb = document.getElementById('add-toolbar');
+  const bar = document.getElementById('edit-bar');
+  const tb = document.getElementById('edit-bar');
   // Before the action: status is "All changes saved".
   assert(bar.querySelector('.pb-status').textContent.includes('All changes saved'),
          'starts in saved state');
@@ -744,7 +739,7 @@ const ownerStub = await boot('owner');
   // Clicking a button (e.g. the Save button) should NOT clear the
   // selection — the user might want to save with a multi-select active.
   document.dispatch('keydown', { key: 'a', metaKey: true, target: document.body });
-  const saveBtn = [...document.getElementById('pending-bar').querySelectorAll('button.pb-btn')]
+  const saveBtn = [...document.getElementById('edit-bar').querySelectorAll('button.pb-btn')]
     .find(b => b.textContent.includes('Save'));
   saveBtn.click();
   // (The Save click may or may not clear the selection — the point is
@@ -905,9 +900,9 @@ const ownerStub = await boot('owner');
   stub.restore();
   const board = document.getElementById('board');
   eq(board.children.length, 3, 'viewer: board still renders 3 day sections');
-  const bar = document.getElementById('pending-bar');
-  eq(bar.hidden, true, 'viewer: pending bar stays hidden');
-  eq(document.getElementById('add-toolbar').children.length, 0, 'viewer: no quick-add toolbar');
+  const bar = document.getElementById('edit-bar');
+  eq(bar.hidden, true, 'viewer: edit bar stays hidden');
+  eq(!document.getElementById('edit-bar') || document.getElementById('edit-bar').querySelectorAll('.qa-item').length === 0, true, 'viewer: no quick-add type buttons');
   const card = board.querySelector('.card');
   eq(card.draggable, false, 'viewer: cards not draggable');
 }

@@ -553,7 +553,12 @@ export function renderEditBar({ days, settings, staging, ctx, setBlockError, get
   const bar = document.getElementById('edit-bar');
   if (!bar) return;
   clear(bar);
-  if (ctx.role === 'viewer') return;
+  const isSmall = !!(window.matchMedia && window.matchMedia('(max-width: 640px)').matches);
+  if (ctx.role === 'viewer') {
+    bar.hidden = true;
+    return;
+  }
+  bar.hidden = isSmall && !staging.hasPending && !(staging.failedOpIndex >= 0) && !blockError;
 
   const view = staging.viewPlan();
   const hasPending = staging.hasPending;
