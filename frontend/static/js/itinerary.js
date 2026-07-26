@@ -209,14 +209,12 @@ export async function initItinerary(ctx) {
     const board = document.getElementById('board');
     if (!board) return;
     clear(board);
-    // Re-derive the day columns from the latest staged plan (handles date
-    // edits and buffer-day toggles in the same render pass).
     days = buildDays(staging.viewPlan());
     const items = expandHotelEvents(staging.viewItems());
     const grouped = groupByDay(items, days, settings);
     const todayStr = isoOf(new Date());
-    let todaySec = null;
-    for (const day of days) {
+
+    function buildDaySection(day) {
       const isToday = !day.is_buffer && day.date === todayStr;
       const sec = el('section', {
         class: 'day' + (day.is_buffer ? ' day-buffer' : '') + (isToday ? ' day-today' : ''),
@@ -235,10 +233,7 @@ export async function initItinerary(ctx) {
         });
       });
       const titleRow = el('div', { class: 'day-title-row' }, [
-        el('h3', {
-          class: 'day-title',
-          text: day.label,
-        }),
+        el('h3', { class: 'day-title', text: day.label }),
         makeDayActions(day, { ctx, staging, setBlockError, onChange: () => { render(); } }),
       ]);
       sec.appendChild(titleRow);
@@ -249,18 +244,36 @@ export async function initItinerary(ctx) {
       sec.appendChild(itemsBox);
       const bar = makeAddBar(day.date);
       if (bar) sec.appendChild(bar);
-      board.appendChild(sec);
-      if (isToday) todaySec = sec;
+      return sec;
     }
-    // Repaint the plan title and dates — the shared header module owns
-    // those, including "don't steal focus from an open editor" logic.
+
+    // Pinned days sit outside the scroll container (same as timeline).
+    const pinnedDays = days.filter(d => d.pinned);
+    const unpinnedDays = days.filter(d => !d.pinned);
+
+    if (pinnedDays.length) {
+      const pinnedWrap = el('div', { class: 'board-pinned' });
+      for (const day of pinnedDays) {
+        pinnedWrap.appendChild(buildDaySection(day));
+      }
+      board.appendChild(pinnedWrap);
+    }
+
+    const scrollWrap = el('div', { class: 'board-scroll' });
+    let todaySec = null;
+    for (const day of unpinnedDays) {
+      const sec = buildDaySection(day);
+      scrollWrap.appendChild(sec);
+      if (!day.is_buffer && day.date === todayStr) todaySec = sec;
+    }
+    board.appendChild(scrollWrap);
+
     renderHeaderChrome();
     renderEditBarCtl();
 
-    // On small devices, snap the board horizontally to today's day section.
     if (todaySec && window.matchMedia('(max-width: 640px)').matches) {
       requestAnimationFrame(() => {
-        board.scrollLeft = todaySec.offsetLeft - board.offsetLeft - 16;
+        scrollWrap.scrollLeft = todaySec.offsetLeft - 16;
       });
     }
   }

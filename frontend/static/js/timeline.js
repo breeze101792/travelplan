@@ -1136,9 +1136,37 @@ export async function initTimeline(ctx) {
     const viewItems = expandHotelEvents(staging.viewItems());
 
     root.appendChild(renderHourCol());
+
+    // Pinned days stay outside the scroll container so they float on the left.
+    const pinnedDays = days.filter(d => d.pinned);
+    const unpinnedDays = days.filter(d => !d.pinned);
+
+    if (pinnedDays.length) {
+      const pinnedWrap = el('div', { class: 'tl-pinned' });
+      for (const day of pinnedDays) {
+        try {
+          const node = renderDay(day, viewItems, settings, nowFractionFor(day.date),
+                                 ctx, staging, setBlockError, () => { render(); });
+          node.dataset.day = day.date;
+          if (day.is_buffer) node.dataset.buffer = '1';
+          pinnedWrap.appendChild(node);
+        } catch (e) {
+          const fail = el('div', { class: 'day' }, [
+            el('div', { class: 'day-head' }, [
+              el('div', { class: 'date', text: day.label }),
+              el('div', { class: 'sub', text: 'render error: ' + e.message }),
+            ]),
+          ]);
+          pinnedWrap.appendChild(fail);
+          console.error('timeline renderDay failed for pinned day', day, e);
+        }
+      }
+      root.appendChild(pinnedWrap);
+    }
+
     const scrollWrap = el('div', { class: 'timeline-scroll' });
     let todayNode = null;
-    for (const day of days) {
+    for (const day of unpinnedDays) {
       try {
         const nowFrac = nowFractionFor(day.date);
         const isToday = nowFrac != null && !day.is_buffer;
@@ -1157,7 +1185,7 @@ export async function initTimeline(ctx) {
       } catch (e) {
         // Surface render errors in the page rather than silently killing the
         // whole view — without this, a single bad day would leave the timeline
-        // looking empty and the user (and me) would have no idea why.
+        // looking empty and the user (and I) would have no idea why.
         const fail = el('div', { class: 'day' }, [
           el('div', { class: 'day-head' }, [
             el('div', { class: 'date', text: day.label }),

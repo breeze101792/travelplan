@@ -9,14 +9,31 @@
   display: flex;
   gap: 12px;
   align-items: flex-start;
-  overflow-x: auto;
-  -webkit-overflow-scrolling: touch;
-  touch-action: pan-x pan-y;
   padding: 18px 0 40px;
   min-height: 200px;
 }
+.board-pinned {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  flex: 0 0 auto;
+}
+.board-pinned:empty {
+  display: none;
+}
+.board-scroll {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-x pan-y;
+  flex: 1;
+  min-width: 0;
+}
 .day {
   flex: 0 0 var(--day-col);
+  width: 300px !important;
   display: flex;
   flex-direction: column;
   gap: 10px;
@@ -129,8 +146,9 @@
 
 /* ---------- responsive ---------- */
 @media (max-width: 640px) {
-  .board { scroll-snap-type: x mandatory; }
-  .day { scroll-snap-align: start; scroll-snap-stop: always; flex: 0 0 calc(100vw - 48px); }
+  .board-scroll { scroll-snap-type: x mandatory; }
+  .board-pinned .day { flex: 0 0 var(--day-col); }
+  .board-scroll .day { scroll-snap-align: start; scroll-snap-stop: always; flex: 0 0 calc(100vw - 48px); }
 }
 
 /* ---------- pending-changes bar ----------

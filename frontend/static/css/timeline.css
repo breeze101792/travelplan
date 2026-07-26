@@ -32,6 +32,16 @@
   -webkit-overflow-scrolling: touch;
   touch-action: pan-x pan-y;
   flex: 1;
+  min-width: 0;
+}
+
+/* Pinned days float on the left, outside the scroll container, so they
+ * stay visible when the user scrolls horizontally through the plan. */
+.timeline .tl-pinned {
+  display: flex;
+  align-items: stretch;
+  gap: var(--tl-gutter);
+  flex: 0 0 auto;
 }
 
 /* The left hour-label column is sticky so it stays visible while
@@ -295,7 +305,8 @@
 @media (max-width: 720px) {
   :root { --tl-day-min: 200px; }
   .timeline-scroll { scroll-snap-type: x mandatory; }
-  .timeline .day { scroll-snap-align: start; scroll-snap-stop: always; flex: 0 0 calc(100vw - 92px); }
+  .timeline-scroll .day { scroll-snap-align: start; scroll-snap-stop: always; flex: 0 0 calc(100vw - 92px); }
+  .tl-pinned .day { flex: 0 0 var(--tl-day-min); }
   .timeline .hour-col { flex-basis: 36px; }
 }
 
