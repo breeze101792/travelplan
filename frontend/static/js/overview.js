@@ -55,12 +55,12 @@ function render() {
   root.appendChild(cards);
 
   // Description
-  if (plan.description) {
-    root.appendChild(el('section', { class: 'ov-section' }, [
-      el('h3', { class: 'ov-section-title', text: 'Description' }),
-      el('p', { class: 'ov-desc', text: plan.description }),
-    ]));
-  }
+  root.appendChild(el('div', { class: 'ov-section-header' }, [
+    el('h2', { text: 'Description' }),
+  ]));
+  root.appendChild(el('div', { class: 'ov-section' }, [
+    el('p', { class: 'ov-desc', text: plan.description || '' }),
+  ]));
 
   // Edit button
   if (ctx.role !== 'viewer') {
