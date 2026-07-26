@@ -1062,7 +1062,10 @@ export function makeFieldInput(f, details, settings, plan) {
   }
   if (f.type === 'textarea') {
     const t = document.createElement('textarea');
-    t.className = 'input'; t.rows = 2; t.value = val;
+    t.className = 'input'; t.rows = 5; t.value = val;
+    const resize = () => { t.style.height = 'auto'; t.style.height = t.scrollHeight + 'px'; };
+    t.addEventListener('input', resize);
+    requestAnimationFrame(resize);
     return t;
   }
   if (f.type === 'currency') {
