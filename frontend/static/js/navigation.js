@@ -52,6 +52,34 @@ export async function initNavigation(pageCtx) {
   renderDayBar();
   renderSchedule();
   startStatusTimer();
+
+  /* ---------- swipe left/right to change day ---------- */
+  let touchStartX = 0;
+  let touchStartY = 0;
+  const navPage = document.getElementById('nav-page');
+  navPage.addEventListener('touchstart', (e) => {
+    touchStartX = e.touches[0].clientX;
+    touchStartY = e.touches[0].clientY;
+  }, { passive: true });
+  navPage.addEventListener('touchend', (e) => {
+    const dx = e.changedTouches[0].clientX - touchStartX;
+    const dy = e.changedTouches[0].clientY - touchStartY;
+    if (Math.abs(dx) < 50 || Math.abs(dx) < Math.abs(dy)) return;
+    const idx = days.findIndex(d => d.date === selectedDay.date);
+    const goNext = dx < 0 && idx < days.length - 1;
+    const goPrev = dx > 0 && idx > 0;
+    if (!goNext && !goPrev) return;
+    const content = document.getElementById('nav-content');
+    content.className = goNext ? 'nav-slide-out-left' : 'nav-slide-out-right';
+    content.addEventListener('animationend', () => {
+      selectedDay = goNext ? days[idx + 1] : days[idx - 1];
+      renderDayBar();
+      renderSchedule();
+      const newContent = document.getElementById('nav-content');
+      newContent.classList.add(goNext ? 'nav-slide-in-right' : 'nav-slide-in-left');
+      newContent.addEventListener('animationend', () => { newContent.className = ''; }, { once: true });
+    }, { once: true });
+  }, { passive: true });
 }
 
 /* ---------------------------------------------------------------- day bar */

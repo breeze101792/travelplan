@@ -341,5 +341,25 @@
   font-size: 16px;
 }
 
+/* ---- slide animations ---- */
+@keyframes nav-slide-out-left {
+  to { transform: translateX(-40px); opacity: 0; }
+}
+@keyframes nav-slide-out-right {
+  to { transform: translateX(40px); opacity: 0; }
+}
+@keyframes nav-slide-in-right {
+  from { transform: translateX(40px); opacity: 0; }
+  to { transform: translateX(0); opacity: 1; }
+}
+@keyframes nav-slide-in-left {
+  from { transform: translateX(-40px); opacity: 0; }
+  to { transform: translateX(0); opacity: 1; }
+}
+.nav-slide-out-left { animation: nav-slide-out-left 0.2s ease forwards; }
+.nav-slide-out-right { animation: nav-slide-out-right 0.2s ease forwards; }
+.nav-slide-in-right { animation: nav-slide-in-right 0.2s ease forwards; }
+.nav-slide-in-left { animation: nav-slide-in-left 0.2s ease forwards; }
+
 /* ---- edit bar ---- */
 
