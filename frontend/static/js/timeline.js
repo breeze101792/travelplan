@@ -1449,6 +1449,19 @@ function wireBarClick({ bar, ctx, getViewItems, onPlainClick, onToggleSelect, on
     if (it && onDblClick) onDblClick(it);
   });
 
+  if ('ontouchstart' in window) {
+    let lastTap = 0;
+    bar.addEventListener('touchend', (e) => {
+      const now = Date.now();
+      const dt = now - lastTap;
+      lastTap = now;
+      if (dt > 0 && dt < 300) {
+        const it = findItem();
+        if (it && onDblClick) onDblClick(it);
+      }
+    });
+  }
+
   bar.addEventListener('contextmenu', (e) => {
     if (ctx.role === 'viewer') return;
     e.preventDefault();

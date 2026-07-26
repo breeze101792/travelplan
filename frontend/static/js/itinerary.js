@@ -350,6 +350,23 @@ export async function initItinerary(ctx) {
       }
       openEditorFor(item);
     });
+    if ('ontouchstart' in window) {
+      let lastTap = 0;
+      card.addEventListener('touchend', (e) => {
+        const now = Date.now();
+        const dt = now - lastTap;
+        lastTap = now;
+        if (dt > 0 && dt < 300) {
+          if (ctx.role === 'viewer') return;
+          if (item._hotelEvent) {
+            const parent = staging.viewItems().find(i => String(i.id) === String(item._hotelId));
+            if (parent) openEditorFor(parent);
+            return;
+          }
+          openEditorFor(item);
+        }
+      });
+    }
     card.addEventListener('contextmenu', (e) => {
       if (ctx.role === 'viewer') return;
       e.preventDefault();
