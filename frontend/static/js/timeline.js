@@ -1423,6 +1423,7 @@ function wireBarClick({ bar, ctx, getViewItems, onPlainClick, onToggleSelect, on
   bar.addEventListener('contextmenu', (e) => {
     if (ctx.role === 'viewer') return;
     e.preventDefault();
+    e.stopPropagation();
     if (onContextMenu) onContextMenu(e.clientX, e.clientY);
   });
 }

@@ -340,6 +340,7 @@ export async function initItinerary(ctx) {
     card.addEventListener('contextmenu', (e) => {
       if (ctx.role === 'viewer') return;
       e.preventDefault();
+      e.stopPropagation();
       if (isSelectable(item) && !isSelected(item.id)) {
         selection.add(String(item.id));
         lastSelectedId = String(item.id);
