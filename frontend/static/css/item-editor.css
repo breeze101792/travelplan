@@ -97,12 +97,15 @@
   .modal.item-editor { padding: 10px; }
   .modal.item-editor .field-row { flex-direction: column; gap: 6px; margin-top: 6px; align-items: stretch; }
   .modal.item-editor .field-row:first-child { margin-top: 0; }
-  .modal.item-editor .field-row .field-group { min-width: 0; flex: 1 1 auto; width: 100%; }
+  .modal.item-editor .field-row .field-group { min-width: 0; flex: 1 1 auto; width: 100%; max-width: 100%; overflow: hidden; }
   .modal.item-editor .field-row .field-group .input,
   .modal.item-editor .input,
   .modal.item-editor select.input,
   .modal.item-editor textarea.input { max-width: 100%; min-width: 0; width: 100%; box-sizing: border-box; }
-  .modal.item-editor .ie-col { min-width: 0; max-width: 100%; }
+  .modal.item-editor input[type="date"],
+  .modal.item-editor input[type="time"],
+  .modal.item-editor input[type="datetime-local"] { width: 100% !important; max-width: 100% !important; min-width: 0 !important; box-sizing: border-box !important; -webkit-appearance: none; appearance: none; }
+  .modal.item-editor .ie-col { min-width: 0; max-width: 100%; overflow: hidden; }
   .modal.item-editor .modal-body { padding: 8px 0; }
   .modal.item-editor .field { margin: 5px 0 2px; }
   .modal.item-editor .section-title { margin: 6px 0 3px; padding-top: 4px; }
