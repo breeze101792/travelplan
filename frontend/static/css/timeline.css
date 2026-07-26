@@ -70,6 +70,7 @@
 /* Each day is a column with a header + the 24h grid below it. */
 .timeline .day {
   flex: 0 0 var(--tl-day-min);
+  width: 300px !important;
   display: flex;
   flex-direction: column;
   border: var(--tl-border);
