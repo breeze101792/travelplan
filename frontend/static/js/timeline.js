@@ -28,7 +28,7 @@ import { el, clear, loadSettings } from '/static/js/util.js';
 import { Staging, timeEditItemOp, moveItemOp, deleteItemOp, createItemsFromClipOp, createBlankItemOp } from '/static/js/staging.js';
 import { openItemEditor } from '/static/js/item-editor.js';
 import { clipboardGet, clipboardSet, serializeItem } from '/static/js/clipboard.js';
-import { buildDays, isoOf, wirePlanHeader, renderEditBar, makeDayActions } from '/static/js/plan-header.js';
+import { buildDays, isoOf, wirePlanHeader, renderEditBar, makeDayActions, showDayContextMenu } from '/static/js/plan-header.js';
 import { expandHotelEvents } from '/static/js/hotel-events.js';
 
 let HOUR_PX = 36;     // recalculated by updateScale() to fill viewport
@@ -290,10 +290,21 @@ function renderDay(day, items, settings, nowFraction, ctx, staging, setBlockErro
   if (isToday) {
     dateEl.appendChild(el('small', { class: 'day-today-badge', text: 'Today' }));
   }
-  sec.appendChild(el('div', { class: 'day-head' }, [
+  const headEl = el('div', { class: 'day-head' }, [
     dateEl,
     ctx ? makeDayActions(day, { ctx, staging, setBlockError, onChange }) : null,
-  ]));
+  ]);
+  headEl.addEventListener('contextmenu', (e) => {
+    if (ctx && ctx.role === 'viewer') return;
+    e.preventDefault();
+    showDayContextMenu(day, e.clientX, e.clientY, {
+      plan: staging.viewPlan(), staging, ctx,
+      items: staging.viewItems(),
+      onChange,
+      setBlockError,
+    });
+  });
+  sec.appendChild(headEl);
 
   const grid = el('div', { class: 'day-grid' });
 

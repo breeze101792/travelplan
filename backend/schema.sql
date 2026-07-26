@@ -59,6 +59,15 @@ CREATE TABLE IF NOT EXISTS plan_buffer_days (
   PRIMARY KEY (plan_id, date)
 );
 
+-- Per-plan day metadata: custom labels, pin state, etc.
+CREATE TABLE IF NOT EXISTS plan_day_meta (
+  plan_id INTEGER NOT NULL REFERENCES plans(id) ON DELETE CASCADE,
+  date    TEXT    NOT NULL,
+  pinned  INTEGER NOT NULL DEFAULT 0,
+  label   TEXT,
+  PRIMARY KEY (plan_id, date)
+);
+
 CREATE TABLE IF NOT EXISTS attachments (
   id         INTEGER PRIMARY KEY AUTOINCREMENT,
   item_id    INTEGER NOT NULL REFERENCES items(id) ON DELETE CASCADE,

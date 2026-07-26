@@ -15,7 +15,9 @@
 import { el, clear, fmtDate, loadSettings } from '/static/js/util.js';
 import {
   updatePlanTitleOp, updatePlanDatesOp, updatePlanBufferDaysOp,
+  updateDayMetaOp, createItemsFromClipOp,
 } from '/static/js/staging.js';
+import { serializeItem } from '/static/js/clipboard.js';
 
 /* Close any open .qa-dropdown when clicking outside it. */
 document.addEventListener('click', (e) => {
@@ -68,24 +70,36 @@ export function buildDays(plan) {
     .sort();
   // Combined list, chronological.
   const all = [...tripDates].concat(bufferDates).sort();
+  const dayMeta = plan.day_meta || {};
   let dayIndex = 0;
-  return all.map((date) => {
+  const days = all.map((date) => {
+    const meta = dayMeta[date] || {};
     const isBuffer = !tripDates.has(date);
     if (isBuffer) {
-      // Buffer days carry no "Day N" or date in their title — they're a
-      // planning scratchpad, not part of the trip. The chip on the
-      // column is what the user clicks to remove it.
-      return { date, is_buffer: true, index: 0, label: 'Buffer' };
+      const label = (meta.pinned ? '📌 ' : '') + (meta.label || 'Buffer');
+      return {
+        date, is_buffer: true, index: 0, label,
+        pinned: !!meta.pinned,
+      };
     }
     dayIndex += 1;
     const dt = new Date(date + 'T00:00:00');
+    const autoLabel = `Day ${dayIndex} · ${dayFmt.format(dt)} · ${dateFmt.format(dt)}`;
+    const label = (meta.pinned ? '📌 ' : '') + (meta.label || autoLabel);
     return {
-      date,
-      is_buffer: false,
-      index: dayIndex,
-      label: `Day ${dayIndex} · ${dayFmt.format(dt)} · ${dateFmt.format(dt)}`,
+      date, is_buffer: false, index: dayIndex, label,
+      pinned: !!meta.pinned,
     };
   });
+  // Pinned days first, sorted by date among themselves.
+  days.sort((a, b) => {
+    if (a.pinned && !b.pinned) return -1;
+    if (!a.pinned && b.pinned) return 1;
+    if (a.date < b.date) return -1;
+    if (a.date > b.date) return 1;
+    return 0;
+  });
+  return days;
 }
 
 /* ---- header: title + dates ---------------------------------------- */
@@ -723,6 +737,154 @@ export function makeDayActions(day, { ctx, staging, setBlockError, onChange } = 
     if (onChange) onChange();
   });
   return btn;
+}
+
+/* ---- day right-click context menu (shared by board, timeline, map) ---- */
+
+let dayContextMenuEl = null;
+function closeDayContextMenu() {
+  if (dayContextMenuEl) {
+    if (dayContextMenuEl.remove) dayContextMenuEl.remove();
+    else if (dayContextMenuEl.parentNode) dayContextMenuEl.parentNode.removeChild(dayContextMenuEl);
+  }
+  dayContextMenuEl = null;
+}
+// Close on outside click / Escape.
+document.addEventListener('click', (e) => {
+  if (dayContextMenuEl && !dayContextMenuEl.contains(e.target)) closeDayContextMenu();
+});
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && dayContextMenuEl) closeDayContextMenu();
+});
+document.addEventListener('scroll', closeDayContextMenu, true);
+
+/* Stage a day_meta update (pin or rename). */
+function stageDayMetaUpdate({ day, pinned, label, plan, staging, ctx, onChange }) {
+  staging.add(updateDayMetaOp({
+    planId: ctx.planId,
+    date: day.date,
+    pinned: pinned !== undefined ? pinned : undefined,
+    label: label !== undefined ? label : undefined,
+  }));
+  if (onChange) onChange();
+}
+
+/* Duplicate all items from a day onto a new buffer day. */
+function duplicateDay(day, { plan, staging, ctx, items, onChange }) {
+  const targetDate = nextBufferDate(staging.viewPlan());
+  staging.add(updatePlanBufferDaysOp({
+    planId: ctx.planId,
+    add: [targetDate],
+    remove: [],
+  }));
+  const dayItems = items.filter(i => i.item_date === day.date);
+  if (dayItems.length > 0) {
+    const sessionId = 'dup-' + day.date + '-' + Date.now().toString(36);
+    staging.add(createItemsFromClipOp({
+      planId: ctx.planId,
+      item_date: targetDate,
+      items: dayItems.map(i => Object.assign(serializeItem(i), { _srcId: i.id })),
+      sessionId,
+    }));
+  }
+  if (onChange) onChange();
+}
+
+/* Show a right-click context menu for a day. `deps` provides the page's
+ * state: { plan, staging, ctx, items, onChange, days, setBlockError }. */
+export function showDayContextMenu(day, x, y, deps) {
+  if (deps.ctx && deps.ctx.role === 'viewer') return;
+  closeDayContextMenu();
+  const { plan, staging, ctx, items, onChange, setBlockError } = deps;
+  const viewPlan = staging.viewPlan();
+  const isBuffer = day.is_buffer;
+  const isPinned = !!day.pinned;
+  const hasItems = items.some(i => i.item_date === day.date);
+
+  const menu = el('ul', { class: 'context-menu', role: 'menu' });
+  const items_ = [
+    { label: isPinned ? 'Unpin day' : 'Pin day',
+      enabled: true,
+      action: () => {
+        stageDayMetaUpdate({ day, pinned: !isPinned, plan, staging, ctx, onChange });
+        closeDayContextMenu();
+      }},
+    { label: 'Rename',
+      enabled: true,
+      action: () => {
+        closeDayContextMenu();
+        const newLabel = prompt('Day label:', day.label.replace(/^📌 /, ''));
+        if (newLabel != null && newLabel.trim()) {
+          stageDayMetaUpdate({ day, pinned: isPinned, label: newLabel.trim(), plan, staging, ctx, onChange });
+        }
+      }},
+    { label: 'Duplicate (copy all items to buffer)',
+      enabled: hasItems,
+      action: () => {
+        duplicateDay(day, { plan, staging, ctx, items, onChange });
+        closeDayContextMenu();
+      }},
+    { sep: true },
+    { label: 'Add buffer day before',
+      enabled: true,
+      action: () => {
+        stageBufferAdd({ plan: viewPlan, staging, ctx });
+        if (onChange) onChange();
+        closeDayContextMenu();
+      }},
+    { label: 'Add buffer day after',
+      enabled: true,
+      action: () => {
+        stageBufferAdd({ plan: viewPlan, staging, ctx });
+        if (onChange) onChange();
+        closeDayContextMenu();
+      }},
+  ];
+  // Remove day: only available for buffer days with no items.
+  if (isBuffer) {
+    items_.push(
+      { sep: true },
+      { label: 'Remove day',
+        enabled: !hasItems,
+        danger: true,
+        action: () => {
+          stageBufferRemove(day.date, { plan: viewPlan, staging, ctx, items, setBlockError });
+          if (onChange) onChange();
+          closeDayContextMenu();
+        }},
+    );
+  } else {
+    items_.push(
+      { sep: true },
+      { label: 'Remove day (trim trip start/end from toolbar)',
+        enabled: false,
+        action: () => { closeDayContextMenu(); }},
+    );
+  }
+
+  for (const it of items_) {
+    if (it.sep) { menu.appendChild(el('li', { class: 'context-menu-sep' })); continue; }
+    const li = el('li', { class: 'context-menu-item' + (it.danger ? ' is-danger' : ''), role: 'menuitem' });
+    const btn = el('button', { type: 'button', text: it.label });
+    btn.disabled = !it.enabled;
+    btn.addEventListener('click', (e) => { e.stopPropagation(); it.action(); });
+    li.appendChild(btn);
+    menu.appendChild(li);
+  }
+
+  document.body.appendChild(menu);
+  let rectW = 240, rectH = 300;
+  try {
+    const rect = menu.getBoundingClientRect();
+    if (rect) { rectW = rect.width || rectW; rectH = rect.height || rectH; }
+  } catch (e) {}
+  const vw = (typeof window !== 'undefined' && window.innerWidth) || 1024;
+  const vh = (typeof window !== 'undefined' && window.innerHeight) || 768;
+  const px = Math.min(x, vw - rectW - 8);
+  const py = Math.min(y, vh - rectH - 8);
+  menu.style.left = `${Math.max(8, px)}px`;
+  menu.style.top  = `${Math.max(8, py)}px`;
+  dayContextMenuEl = menu;
 }
 
 /* Default exports for the lower-level helpers pages may want to call

@@ -172,7 +172,7 @@ def api_create_plan():
 
 
 def _plan_with_buffer_days(plan_id):
-    """Return the plan row joined with its buffer_days as a sorted list."""
+    """Return the plan row joined with its buffer_days and day_meta."""
     db = get_db()
     row = db.execute("SELECT * FROM plans WHERE id = ?", (plan_id,)).fetchone()
     if row is None:
@@ -183,6 +183,18 @@ def _plan_with_buffer_days(plan_id):
         (plan_id,),
     ).fetchall()
     plan["buffer_days"] = [r["date"] for r in buf]
+    meta_rows = db.execute(
+        "SELECT date, pinned, label FROM plan_day_meta WHERE plan_id = ?",
+        (plan_id,),
+    ).fetchall()
+    plan["day_meta"] = {}
+    for r in meta_rows:
+        entry = {}
+        if r["pinned"]:
+            entry["pinned"] = True
+        if r["label"]:
+            entry["label"] = r["label"]
+        plan["day_meta"][r["date"]] = entry
     return plan
 
 
@@ -247,6 +259,32 @@ def api_update_plan(plan_id):
                 db.execute(
                     "DELETE FROM plan_buffer_days WHERE plan_id = ? AND date = ?",
                     (plan_id, d),
+                )
+
+    # Day metadata (pins, custom labels)
+    day_meta_set = data.get("day_meta_set") or []
+    if day_meta_set:
+        if not isinstance(day_meta_set, list):
+            return err("day_meta_set must be a list of objects", 400)
+        for entry in day_meta_set:
+            date = entry.get("date")
+            if not date:
+                continue
+            pinned = 1 if entry.get("pinned") else 0
+            label = entry.get("label")
+            existing = db.execute(
+                "SELECT 1 FROM plan_day_meta WHERE plan_id = ? AND date = ?",
+                (plan_id, date),
+            ).fetchone()
+            if existing:
+                db.execute(
+                    "UPDATE plan_day_meta SET pinned = ?, label = ? WHERE plan_id = ? AND date = ?",
+                    (pinned, label, plan_id, date),
+                )
+            else:
+                db.execute(
+                    "INSERT INTO plan_day_meta (plan_id, date, pinned, label) VALUES (?, ?, ?, ?)",
+                    (plan_id, date, pinned, label),
                 )
     db.commit()
     return jsonify({"plan": _plan_with_buffer_days(plan_id)})

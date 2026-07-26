@@ -142,6 +142,12 @@
   box-shadow: 0 0 0 1px rgba(245, 158, 11, .25);
 }
 
+/* Pinned day indicator */
+.day-buffer .day-title {
+  color: var(--muted, #64748b);
+  font-style: italic;
+}
+
 /* ---------- multi-select: selected card outline ---------- */
 .card.item.card-selected {
   outline: 2px solid var(--accent, #6366f1);

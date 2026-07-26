@@ -22,6 +22,7 @@ import {
 } from '/static/js/clipboard.js';
 import {
   buildDays, isoOf, wirePlanHeader, renderEditBar, makeDayActions,
+  showDayContextMenu,
 } from '/static/js/plan-header.js';
 import { expandHotelEvents } from '/static/js/hotel-events.js';
 
@@ -222,6 +223,17 @@ export async function initItinerary(ctx) {
         dataset: { date: day.date, buffer: day.is_buffer ? '1' : '0' },
       });
       sec.addEventListener('click', () => setFocusedDay(day.date));
+      sec.addEventListener('contextmenu', (e) => {
+        if (ctx.role === 'viewer') return;
+        e.preventDefault();
+        e.stopPropagation();
+        showDayContextMenu(day, e.clientX, e.clientY, {
+          plan, staging, ctx,
+          items: staging.viewItems(),
+          onChange: () => { render(); },
+          setBlockError,
+        });
+      });
       const titleRow = el('div', { class: 'day-title-row' }, [
         el('h3', {
           class: 'day-title',

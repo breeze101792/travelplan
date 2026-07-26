@@ -1,6 +1,6 @@
 import { apiGet, apiPost, apiPatch, apiDel, apiUpload } from '/static/js/api.js';
 const api = { get: apiGet, post: apiPost, patch: apiPatch, del: apiDel, upload: apiUpload };
-import { buildDays, isoOf, wirePlanHeader, renderEditBar } from '/static/js/plan-header.js';
+import { buildDays, isoOf, wirePlanHeader, renderEditBar, showDayContextMenu } from '/static/js/plan-header.js';
 import { Staging, moveItemOp, deleteItemOp, saveItemOp } from '/static/js/staging.js';
 import { el, clear } from '/static/js/util.js';
 import { openItemEditor, openGeoMapPopup } from '/static/js/item-editor.js';
@@ -343,6 +343,16 @@ function renderList() {
       <span class="day-count">${dayItemsFor(i).length}</span>
     `;
     hdr.addEventListener('click', () => toggleDay(i));
+    hdr.addEventListener('contextmenu', (e) => {
+      if (ctx.role === 'viewer') return;
+      e.preventDefault();
+      showDayContextMenu(day, e.clientX, e.clientY, {
+        plan, staging, ctx,
+        items: staging.viewItems(),
+        onChange: () => { renderList(); },
+        setBlockError: () => {},
+      });
+    });
     container.appendChild(hdr);
 
     if (isExpanded) {
