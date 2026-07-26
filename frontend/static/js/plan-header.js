@@ -742,7 +742,7 @@ export function makeDayActions(day, { ctx, staging, setBlockError, onChange } = 
 /* ---- day right-click context menu (shared by board, timeline, map) ---- */
 
 let dayContextMenuEl = null;
-function closeDayContextMenu() {
+function _closeDayContextMenu() {
   if (dayContextMenuEl) {
     if (dayContextMenuEl.remove) dayContextMenuEl.remove();
     else if (dayContextMenuEl.parentNode) dayContextMenuEl.parentNode.removeChild(dayContextMenuEl);
@@ -751,12 +751,12 @@ function closeDayContextMenu() {
 }
 // Close on outside click / Escape.
 document.addEventListener('click', (e) => {
-  if (dayContextMenuEl && !dayContextMenuEl.contains(e.target)) closeDayContextMenu();
+  if (dayContextMenuEl && !dayContextMenuEl.contains(e.target)) _closeDayContextMenu();
 });
 document.addEventListener('keydown', (e) => {
-  if (e.key === 'Escape' && dayContextMenuEl) closeDayContextMenu();
+  if (e.key === 'Escape' && dayContextMenuEl) _closeDayContextMenu();
 });
-document.addEventListener('scroll', closeDayContextMenu, true);
+document.addEventListener('scroll', _closeDayContextMenu, true);
 
 /* Stage a day_meta update (pin or rename). */
 function stageDayMetaUpdate({ day, pinned, label, plan, staging, ctx, onChange }) {
@@ -790,11 +790,20 @@ function duplicateDay(day, { plan, staging, ctx, items, onChange }) {
   if (onChange) onChange();
 }
 
+/* Close the day context menu (exported so pages can close it before
+ * opening an item context menu). */
+export function closeDayContextMenu() {
+  _closeDayContextMenu();
+}
+
 /* Show a right-click context menu for a day. `deps` provides the page's
  * state: { plan, staging, ctx, items, onChange, days, setBlockError }. */
 export function showDayContextMenu(day, x, y, deps) {
   if (deps.ctx && deps.ctx.role === 'viewer') return;
   closeDayContextMenu();
+  // Close any open item context menu by dispatching a click on the
+  // body — each page's document click handler will close its own menu.
+  document.body.click();
   const { plan, staging, ctx, items, onChange, setBlockError } = deps;
   const viewPlan = staging.viewPlan();
   const isBuffer = day.is_buffer;

@@ -22,7 +22,7 @@ import {
 } from '/static/js/clipboard.js';
 import {
   buildDays, isoOf, wirePlanHeader, renderEditBar, makeDayActions,
-  showDayContextMenu,
+  showDayContextMenu, closeDayContextMenu,
 } from '/static/js/plan-header.js';
 import { expandHotelEvents } from '/static/js/hotel-events.js';
 
@@ -699,6 +699,7 @@ export async function initItinerary(ctx) {
     contextMenuEl = null;
   }
   function showContextMenu(x, y) {
+    closeDayContextMenu();
     closeContextMenu();
     const menu = el('ul', { class: 'context-menu', role: 'menu' });
     const sel = selectedItems();

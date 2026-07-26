@@ -1,6 +1,6 @@
 import { apiGet, apiPost, apiPatch, apiDel, apiUpload } from '/static/js/api.js';
 const api = { get: apiGet, post: apiPost, patch: apiPatch, del: apiDel, upload: apiUpload };
-import { buildDays, isoOf, wirePlanHeader, renderEditBar, showDayContextMenu } from '/static/js/plan-header.js';
+import { buildDays, isoOf, wirePlanHeader, renderEditBar, showDayContextMenu, closeDayContextMenu } from '/static/js/plan-header.js';
 import { Staging, moveItemOp, deleteItemOp, saveItemOp } from '/static/js/staging.js';
 import { el, clear } from '/static/js/util.js';
 import { openItemEditor, openGeoMapPopup } from '/static/js/item-editor.js';
@@ -132,6 +132,7 @@ function closeContextMenu() {
 }
 
 function showContextMenu(x, y, item, dayIdx) {
+  closeDayContextMenu();
   closeContextMenu();
 
   // For hotel events, resolve to the parent hotel for relevant actions.
