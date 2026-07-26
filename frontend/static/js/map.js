@@ -350,7 +350,7 @@ function renderList() {
       showDayContextMenu(day, e.clientX, e.clientY, {
         plan, staging, ctx,
         items: staging.viewItems(),
-        onChange: () => { renderList(); },
+        onChange: () => { days = buildDays(plan); renderList(); },
         setBlockError: () => {},
       });
     });
