@@ -74,21 +74,22 @@ export function buildDays(plan) {
   let dayIndex = 0;
   const days = all.map((date) => {
     const meta = dayMeta[date] || {};
+    const isPinned = _pinnedMap.has(date) ? _pinnedMap.get(date) : !!meta.pinned;
     const isBuffer = !tripDates.has(date);
     if (isBuffer) {
-      const label = (meta.pinned ? '📌 ' : '') + (meta.label || 'Buffer');
+      const label = (isPinned ? '📌 ' : '') + (meta.label || 'Buffer');
       return {
         date, is_buffer: true, index: 0, label,
-        pinned: !!meta.pinned,
+        pinned: isPinned,
       };
     }
     dayIndex += 1;
     const dt = new Date(date + 'T00:00:00');
     const autoLabel = `Day ${dayIndex} · ${dayFmt.format(dt)} · ${dateFmt.format(dt)}`;
-    const label = (meta.pinned ? '📌 ' : '') + (meta.label || autoLabel);
+    const label = (isPinned ? '📌 ' : '') + (meta.label || autoLabel);
     return {
       date, is_buffer: false, index: dayIndex, label,
-      pinned: !!meta.pinned,
+      pinned: isPinned,
     };
   });
   // Pinned days first, sorted by date among themselves.
@@ -739,6 +740,21 @@ export function makeDayActions(day, { ctx, staging, setBlockError, onChange } = 
   return btn;
 }
 
+/* Pinned dates are local-only (not sent to the server). Stored in
+ * sessionStorage so they survive page reload but are scoped to the
+ * current tab — other users/editors never see them.
+ * Uses a boolean Map so explicit unpin overrides any server-side pin. */
+const _pinnedMap = new Map(JSON.parse(sessionStorage.getItem('tp_pins') || '[]'));
+
+function _savePins() {
+  sessionStorage.setItem('tp_pins', JSON.stringify([..._pinnedMap]));
+}
+
+export function setPinnedDate(date, pinned) {
+  _pinnedMap.set(date, pinned);
+  _savePins();
+}
+
 /* ---- day right-click context menu (shared by board, timeline, map) ---- */
 
 let dayContextMenuEl = null;
@@ -758,13 +774,10 @@ document.addEventListener('keydown', (e) => {
 });
 document.addEventListener('scroll', _closeDayContextMenu, true);
 
-/* Stage a day_meta update (pin or rename). */
-function stageDayMetaUpdate({ day, pinned, label, plan, staging, ctx, onChange }) {
+/* Stage a rename (custom label). */
+function stageRename({ day, label, staging, ctx, onChange }) {
   staging.add(updateDayMetaOp({
-    planId: ctx.planId,
-    date: day.date,
-    pinned: pinned !== undefined ? pinned : undefined,
-    label: label !== undefined ? label : undefined,
+    planId: ctx.planId, date: day.date, label,
   }));
   if (onChange) onChange();
 }
@@ -815,7 +828,8 @@ export function showDayContextMenu(day, x, y, deps) {
     { label: isPinned ? 'Unpin day' : 'Pin day',
       enabled: true,
       action: () => {
-        stageDayMetaUpdate({ day, pinned: !isPinned, plan, staging, ctx, onChange });
+        setPinnedDate(day.date, !isPinned);
+        if (onChange) onChange();
         closeDayContextMenu();
       }},
     { label: 'Rename',
@@ -824,7 +838,7 @@ export function showDayContextMenu(day, x, y, deps) {
         closeDayContextMenu();
         const newLabel = prompt('Day label:', day.label.replace(/^📌 /, ''));
         if (newLabel != null && newLabel.trim()) {
-          stageDayMetaUpdate({ day, pinned: isPinned, label: newLabel.trim(), plan, staging, ctx, onChange });
+          stageRename({ day, label: newLabel.trim(), staging, ctx, onChange });
         }
       }},
     { label: 'Duplicate (copy all items to buffer)',

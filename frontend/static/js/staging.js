@@ -292,18 +292,15 @@ export function updatePlanDatesOp({ planId, start_date, end_date, prev, sessionI
   };
 }
 
-/* Update per-day metadata (pin state, custom label). Staged so Save must
- * be clicked to persist. The op stores an entry keyed by date in
- * plan.day_meta — e.g. plan.day_meta["2026-07-15"] = {pinned: true, label: "Custom"} */
-export function updateDayMetaOp({ planId, date, pinned, label, sessionId }) {
-  const labelText = label !== undefined ? 'Rename day' : pinned ? 'Pin day' : 'Unpin day';
+/* Update per-day custom label. Staged so Save must be clicked to persist
+ * the label on the server. */
+export function updateDayMetaOp({ planId, date, label, sessionId }) {
   return {
-    id: null, kind: 'UPDATE_DAY_META', label: labelText, sessionId,
+    id: null, kind: 'UPDATE_DAY_META', label: 'Rename day', sessionId,
     apply() { return null; },
     planApply(plan) {
       const meta = Object.assign({}, plan.day_meta || {});
       const cur = Object.assign({}, meta[date] || {});
-      if (pinned !== undefined) cur.pinned = !!pinned;
       if (label !== undefined) cur.label = label;
       if (Object.keys(cur).length === 0) {
         delete meta[date];
@@ -313,10 +310,9 @@ export function updateDayMetaOp({ planId, date, pinned, label, sessionId }) {
       return Object.assign({}, plan, { day_meta: meta });
     },
     async execute(api) {
-      const body = { day_meta_set: [{ date, pinned: !!pinned }] };
-      if (label !== undefined) body.day_meta_set[0].label = label;
-      const res = await api.patch(`/api/plans/${planId}`, body);
-      return { plan: res.plan };
+      await api.patch(`/api/plans/${planId}`, {
+        day_meta_set: [{ date, label }],
+      });
     },
   };
 }
