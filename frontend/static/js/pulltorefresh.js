@@ -2,7 +2,7 @@ const THRESHOLD = 80;
 const MAX_PULL = 120;
 const VISIBLE_HEIGHT = 50;
 
-let state = { pulling: false, startY: 0, currentY: 0, el: null };
+let state = { pulling: false, startY: 0, startX: 0, currentY: 0, el: null };
 
 function init() {
   state.el = document.createElement('div');
@@ -11,22 +11,31 @@ function init() {
   document.body.prepend(state.el);
 
   document.addEventListener('touchstart', onTouchStart, { passive: true });
-  document.addEventListener('touchmove', onTouchMove, { passive: false });
   document.addEventListener('touchend', onTouchEnd, { passive: true });
 }
 
 function onTouchStart(e) {
-  state.pulling = true;
+  state.pulling = false;
   state.startY = e.touches[0].clientY;
+  state.startX = e.touches[0].clientX;
   state.currentY = state.startY;
   state.el.classList.remove('ptr-releasing', 'ptr-refreshing');
+  // Only track pull-to-refresh when at the very top of the page.
+  if (window.scrollY === 0) {
+    state.pulling = true;
+    // Register the non-passive move listener only when pulling is possible.
+    document.addEventListener('touchmove', onTouchMove, { passive: false });
+  }
 }
 
 function onTouchMove(e) {
   if (!state.pulling) return;
   state.currentY = e.touches[0].clientY;
   const dy = state.currentY - state.startY;
-  if (dy <= 0 || window.scrollY > 0) { state.pulling = false; return; }
+  const dx = Math.abs(e.touches[0].clientX - (state.startX || state.startY));
+  // If the gesture is more horizontal than vertical, let it pass.
+  if (dx > Math.abs(dy)) { state.pulling = false; cleanUpMove(); return; }
+  if (dy <= 0 || window.scrollY > 0) { state.pulling = false; cleanUpMove(); return; }
   e.preventDefault();
   const pull = Math.min(dy, MAX_PULL);
   const progress = Math.min(pull / THRESHOLD, 1);
@@ -35,7 +44,12 @@ function onTouchMove(e) {
   state.el.querySelector('#ptr-icon').style.transform = `rotate(${progress * 180}deg)`;
 }
 
+function cleanUpMove() {
+  document.removeEventListener('touchmove', onTouchMove);
+}
+
 function onTouchEnd() {
+  cleanUpMove();
   if (!state.pulling) return;
   state.pulling = false;
   const dy = state.currentY - state.startY;

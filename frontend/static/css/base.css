@@ -498,11 +498,12 @@ tr:last-child td { border-bottom: none; }
   th, td { padding: 8px 8px; }
 
   .plan-header { padding: 14px 0 10px; }
-  .plan-nav-wrap { width: 100%; overflow: hidden; }
+  .plan-nav-wrap { width: 100%; }
   .plan-nav {
     flex-wrap: nowrap;
     overflow-x: auto;
     -webkit-overflow-scrolling: touch;
+    touch-action: pan-x;
     scrollbar-width: none;
     border-radius: 8px;
   }
