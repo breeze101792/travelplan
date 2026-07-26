@@ -295,7 +295,7 @@ function renderDay(day, items, settings, nowFraction, ctx, staging, setBlockErro
     ctx ? makeDayActions(day, { ctx, staging, setBlockError, onChange }) : null,
   ]);
   headEl.addEventListener('contextmenu', (e) => {
-    if (ctx && ctx.role === 'viewer') return;
+    if (ctx && (ctx.role === 'viewer' || 'ontouchstart' in window)) return;
     e.preventDefault();
     showDayContextMenu(day, e.clientX, e.clientY, {
       plan: staging.viewPlan(), staging, ctx,
@@ -1463,7 +1463,7 @@ function wireBarClick({ bar, ctx, getViewItems, onPlainClick, onToggleSelect, on
   }
 
   bar.addEventListener('contextmenu', (e) => {
-    if (ctx.role === 'viewer') return;
+    if (ctx.role === 'viewer' || 'ontouchstart' in window) return;
     e.preventDefault();
     e.stopPropagation();
     if (onContextMenu) onContextMenu(e.clientX, e.clientY);

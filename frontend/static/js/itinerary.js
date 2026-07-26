@@ -222,7 +222,7 @@ export async function initItinerary(ctx) {
       });
       sec.addEventListener('click', () => setFocusedDay(day.date));
       sec.addEventListener('contextmenu', (e) => {
-        if (ctx.role === 'viewer') return;
+        if (ctx.role === 'viewer' || 'ontouchstart' in window) return;
         e.preventDefault();
         e.stopPropagation();
         showDayContextMenu(day, e.clientX, e.clientY, {
@@ -368,7 +368,7 @@ export async function initItinerary(ctx) {
       });
     }
     card.addEventListener('contextmenu', (e) => {
-      if (ctx.role === 'viewer') return;
+      if (ctx.role === 'viewer' || 'ontouchstart' in window) return;
       e.preventDefault();
       e.stopPropagation();
       if (isSelectable(item) && !isSelected(item.id)) {
