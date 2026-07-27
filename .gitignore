@@ -4,6 +4,10 @@ __pycache__/
 .venv/
 .venv_*/
 
+# Test artifacts
+.pytest_cache/
+/travelplan-e2e-server.log
+
 # All user data & config (DB, uploads, secret key) live under data/
 data/travelplan.db
 data/travelplan.db-*

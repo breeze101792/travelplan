@@ -19,13 +19,17 @@ import {
 } from '/static/js/staging.js';
 import { serializeItem } from '/static/js/clipboard.js';
 
-/* Close any open .qa-dropdown when clicking outside it. */
-document.addEventListener('click', (e) => {
-  const dd = document.querySelector('.qa-dropdown');
-  if (dd && dd.hasAttribute('open') && !dd.contains(e.target)) {
-    dd.removeAttribute('open');
-  }
-});
+/* Close any open .qa-dropdown when clicking outside it. Guarded so the
+ * module can be imported in environments without a document (node test
+ * harness); the listener is only registered in a real browser. */
+if (typeof document !== 'undefined') {
+  document.addEventListener('click', (e) => {
+    const dd = document.querySelector('.qa-dropdown');
+    if (dd && dd.hasAttribute('open') && !dd.contains(e.target)) {
+      dd.removeAttribute('open');
+    }
+  });
+}
 
 /* ---- date utilities ------------------------------------------------- */
 
@@ -743,11 +747,18 @@ export function makeDayActions(day, { ctx, staging, setBlockError, onChange } = 
 /* Pinned dates are local-only (not sent to the server). Stored in
  * sessionStorage so they survive page reload but are scoped to the
  * current tab — other users/editors never see them.
- * Uses a boolean Map so explicit unpin overrides any server-side pin. */
-const _pinnedMap = new Map(JSON.parse(sessionStorage.getItem('tp_pins') || '[]'));
+ * Uses a boolean Map so explicit unpin overrides any server-side pin.
+ * Guarded for environments without sessionStorage (node test harness). */
+const _pinnedMap = new Map(
+  (typeof sessionStorage !== 'undefined')
+    ? JSON.parse(sessionStorage.getItem('tp_pins') || '[]')
+    : []
+);
 
 function _savePins() {
-  sessionStorage.setItem('tp_pins', JSON.stringify([..._pinnedMap]));
+  if (typeof sessionStorage !== 'undefined') {
+    sessionStorage.setItem('tp_pins', JSON.stringify([..._pinnedMap]));
+  }
 }
 
 export function setPinnedDate(date, pinned) {
@@ -765,14 +776,17 @@ function _closeDayContextMenu() {
   }
   dayContextMenuEl = null;
 }
-// Close on outside click / Escape.
-document.addEventListener('click', (e) => {
-  if (dayContextMenuEl && !dayContextMenuEl.contains(e.target)) _closeDayContextMenu();
-});
-document.addEventListener('keydown', (e) => {
-  if (e.key === 'Escape' && dayContextMenuEl) _closeDayContextMenu();
-});
-document.addEventListener('scroll', _closeDayContextMenu, true);
+// Close on outside click / Escape. Guarded so the module loads in
+// environments without a document (node test harness).
+if (typeof document !== 'undefined') {
+  document.addEventListener('click', (e) => {
+    if (dayContextMenuEl && !dayContextMenuEl.contains(e.target)) _closeDayContextMenu();
+  });
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && dayContextMenuEl) _closeDayContextMenu();
+  });
+  document.addEventListener('scroll', _closeDayContextMenu, true);
+}
 
 /* Stage a rename (custom label). */
 function stageRename({ day, label, staging, ctx, onChange }) {

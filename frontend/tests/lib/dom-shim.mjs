@@ -47,7 +47,14 @@ export class El {
         return Object.prototype.hasOwnProperty.call(self.attrs, attr);
       },
     });
-    this.style = {};
+    this.style = new Proxy({}, {
+      set(t, k, v) { t[k] = String(v); return true; },
+      get(t, k) {
+        if (k === 'setProperty') return (n, v) => { t[n] = String(v); };
+        if (k === 'removeProperty') return (n) => { delete t[n]; return ''; };
+        return t[k];
+      },
+    });
     this.attrs = {};
     this._listeners = {};
     this._text = '';
@@ -106,6 +113,9 @@ export class El {
   querySelectorAll(sel) { return find(this, sel); }
   contains(n) { let p = n; while (p) { if (p === this) return true; p = p.parentNode; } return false; }
   closest(sel) { let p = this; while (p) { if (matches(p, sel)) return p; p = p.parentNode; } return null; }
+  getBoundingClientRect() { return { x: 0, y: 0, top: 0, left: 0, right: 0, bottom: 0, width: 0, height: 0 }; }
+  scrollTo() {}
+  scrollIntoView() {}
 }
 
 function matchAttr(node, sel) {
@@ -227,10 +237,30 @@ export function installDom({ ids = [] } = {}) {
       for (const fn of (this._listeners[t] || [])) fn(e);
       return e;
     },
+    matchMedia(q) {
+      return { matches: false, media: q, addEventListener() {},
+               removeEventListener() {}, addListener() {}, removeListener() {} };
+    },
+    innerWidth: 1024, innerHeight: 768,
   };
   globalThis.location = { href: 'http://test/plans/1', pathname: '/plans/1', search: '' };
   let blobN = 0;
   globalThis.URL.createObjectURL = () => `blob:mock-${++blobN}`;
   globalThis.URL.revokeObjectURL = () => {};
+  // Minimal sessionStorage / matchMedia shims — plan-header.js reads
+  // sessionStorage at module load (for the pinned-days map) and calls
+  // matchMedia for the draggable-on-wide-screens check.
+  const _store = {};
+  globalThis.sessionStorage = {
+    getItem: (k) => (k in _store ? _store[k] : null),
+    setItem: (k, v) => { _store[k] = String(v); },
+    removeItem: (k) => { delete _store[k]; },
+    clear: () => { for (const k of Object.keys(_store)) delete _store[k]; },
+  };
+  globalThis.localStorage = globalThis.sessionStorage;
+  globalThis.matchMedia = (q) => ({
+    matches: false, media: q, addEventListener() {}, removeEventListener() {},
+    addListener() {}, removeListener() {},
+  });
   return documentShim;
 }

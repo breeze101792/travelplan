@@ -54,7 +54,7 @@ def create_expense(plan_id):
     decimals = int(data.get("decimals", 2 if currency not in ("JPY", "KRW") else 0))
     try:
         total_cents = parse_amount_to_cents(data.get("amount", data.get("total_cents")), decimals)
-    except (ValueError, TypeError):
+    except (ValueError, TypeError, ArithmeticError):
         return jsonify({"error": "invalid amount"}), 400
     method = (data.get("split_method") or "EQUAL").upper()
     if method not in VALID_METHODS:
@@ -117,7 +117,7 @@ def update_expense(expense_id):
     decimals = int(data.get("decimals", 2 if currency not in ("JPY", "KRW") else 0))
     try:
         total_cents = parse_amount_to_cents(data.get("amount", data.get("total_cents")), decimals)
-    except (ValueError, TypeError):
+    except (ValueError, TypeError, ArithmeticError):
         return jsonify({"error": "invalid amount"}), 400
     method = (data.get("split_method") or "EQUAL").upper()
     if method not in VALID_METHODS:

@@ -283,6 +283,8 @@ const HOTEL = (over = {}) => Object.assign({
   eq(s.ops[0].label, 'Extend trip end', 'label says Extend trip end when only end moved forward');
   s.undo();
   eq(s.viewPlan().end_date, '2026-07-03', 'undo restores end_date');
+  s.redo();
+  eq(s.viewPlan().end_date, '2026-07-04', 'redo re-applies end_date');
   // Save issues a PATCH with both dates.
   const { api, calls } = makeApi();
   await s.saveAll(api);

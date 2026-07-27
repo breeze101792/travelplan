@@ -1,7 +1,9 @@
 // api.js — shared fetch wrapper for the TravelPlan JSON API.
 // GET responses are cached in IndexedDB so pages work offline.
-// Mutations (POST/PATCH/DELETE) clear the cache on success.
-import { cacheGet, cacheSet } from '/static/js/cache.js';
+// Mutations (POST/PATCH/DELETE) clear the cache on success so the next
+// GET re-fetches fresh data (otherwise the dashboard would show stale
+// cached lists after creating/editing/deleting a trip or item).
+import { cacheGet, cacheSet, cacheClear } from '/static/js/cache.js';
 
 function redirectLogin() {
   const next = encodeURIComponent(location.pathname + location.search);
@@ -63,6 +65,10 @@ export async function apiPost(path, body) {
     body: body == null ? null : JSON.stringify(body),
   });
   const result = await handle(res);
+  // A successful mutation invalidates every cached GET (the mutation may
+  // have changed any list/detail the browser has cached). Await the clear
+  // so the next apiGet in the same tick doesn't read stale cache.
+  await cacheClear();
   return result;
 }
 
@@ -73,6 +79,7 @@ export async function apiPatch(path, body) {
     body: body == null ? null : JSON.stringify(body),
   });
   const result = await handle(res);
+  await cacheClear();
   return result;
 }
 
@@ -82,6 +89,7 @@ export async function apiDel(path) {
     headers: { 'Accept': 'application/json' },
   });
   const result = await handle(res);
+  await cacheClear();
   return result;
 }
 
@@ -97,5 +105,7 @@ export async function apiUpload(path, file, extraFields = {}) {
     headers: { 'Accept': 'application/json' },
     body: form,
   });
-  return handle(res);
+  const result = await handle(res);
+  await cacheClear();
+  return result;
 }
