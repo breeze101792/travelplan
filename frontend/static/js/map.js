@@ -369,9 +369,15 @@ function renderList() {
           const row = document.createElement('div');
           row.className = 'day-item' + (selectedItemId === it.id ? ' selected' : '');
           row.dataset.itemId = it.id;
+          const isHotelEvent = it._hotelEvent;
+          const typeLabel = isHotelEvent === 'check-in' ? 'Check-in'
+            : isHotelEvent === 'check-out' ? 'Check-out'
+            : it.item_type;
+          const timeStr = (it.details && it.details.time) ? `\u00B7 ${it.details.time}` : '';
+          const displayTitle = isHotelEvent ? it.title.replace(/^Check-(in|out):\s*/i, '') : it.title;
           row.innerHTML = `
-            <span class="di-type">${it.item_type}</span>
-            <span class="di-title">${it.title}</span>
+            <span class="di-type">${typeLabel}</span>
+            <span class="di-title">${displayTitle} ${timeStr}</span>
           `;
           row.addEventListener('click', (e) => {
             container.querySelectorAll('.day-item.selected').forEach(el => el.classList.remove('selected'));
