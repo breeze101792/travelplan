@@ -917,7 +917,8 @@ export async function initItinerary(ctx) {
   /* drag/drop callbacks */
 
   function onMove(itemId, { item_date, before_id, after_id }) {
-    const item = staging.viewItems().find(i => String(i.id) === String(itemId));
+    const allItems = expandHotelEvents(staging.viewItems());
+    const item = allItems.find(i => String(i.id) === String(itemId));
     if (!item) return;
     const sessionId = batchSessionId();
 
