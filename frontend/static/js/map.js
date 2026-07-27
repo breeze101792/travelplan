@@ -373,11 +373,10 @@ function renderList() {
           const typeLabel = isHotelEvent === 'check-in' ? 'Check-in'
             : isHotelEvent === 'check-out' ? 'Check-out'
             : it.item_type;
-          const timeStr = (it.details && it.details.time) ? `\u00B7 ${it.details.time}` : '';
           const displayTitle = isHotelEvent ? it.title.replace(/^Check-(in|out):\s*/i, '') : it.title;
           row.innerHTML = `
             <span class="di-type">${typeLabel}</span>
-            <span class="di-title">${displayTitle} ${timeStr}</span>
+            <span class="di-title">${displayTitle}</span>
           `;
           row.addEventListener('click', (e) => {
             container.querySelectorAll('.day-item.selected').forEach(el => el.classList.remove('selected'));
@@ -414,11 +413,25 @@ function renderList() {
   }
 }
 
+function effectiveTimeSort(item) {
+  const d = item.details || {};
+  const raw = d.depart_time || d.start_time || d.time || d.check_in_time || d.check_out_time;
+  if (!raw) return null;
+  const s = String(raw).replace(/^[^T]+T/, '');
+  const [h, m] = s.split(':').map(Number);
+  if (isNaN(h)) return null;
+  return h + (isNaN(m) ? 0 : m / 60);
+}
+
 function dayItemsFor(dayIndex) {
-  return allItems.filter(it =>
-    it.item_date === days[dayIndex].date &&
-    (it.item_type !== 'hotel' || it._hotelEvent)
-  );
+  return allItems
+    .filter(it => it.item_date === days[dayIndex].date && (it.item_type !== 'hotel' || it._hotelEvent))
+    .sort((a, b) => {
+      const aTime = effectiveTimeSort(a);
+      const bTime = effectiveTimeSort(b);
+      if (aTime !== null && bTime !== null && aTime !== bTime) return aTime - bTime;
+      return (a.sort_key - b.sort_key) || (String(a.id).localeCompare(String(b.id)));
+    });
 }
 
 function showItemGeocodes(itemId, selectGeoIdx) {

@@ -8,6 +8,13 @@
  * left untouched — the caller still sees them in the returned list.
  */
 
+function timeToSortKey(time) {
+  if (!time) return undefined;
+  const [h, m] = String(time).split(':').map(Number);
+  if (isNaN(h)) return undefined;
+  return h + (isNaN(m) ? 0 : m / 60);
+}
+
 export function expandHotelEvents(items) {
   const extra = [];
   for (const item of items) {
@@ -25,6 +32,7 @@ export function expandHotelEvents(items) {
         title: `Check-in: ${hotelLabel}`,
         item_date: item.item_date,
         details: { time: d.check_in_time },
+        sort_key: timeToSortKey(d.check_in_time),
         status: item.status,
       });
     }
@@ -38,6 +46,7 @@ export function expandHotelEvents(items) {
         title: `Check-out: ${hotelLabel}`,
         item_date: item.end_date,
         details: { time: d.check_out_time },
+        sort_key: timeToSortKey(d.check_out_time),
         status: item.status,
       });
     }

@@ -53,6 +53,18 @@ function isSpanningItem(item, settings) {
   return !!(ti && ti.spans_days && item.end_date && item.item_date && item.end_date > item.item_date);
 }
 
+/* Extract a numeric sort value from an item's time fields (HH.MM) so items
+ * sort chronologically within a day. Returns null when no time is set. */
+function effectiveTimeSort(item) {
+  const d = item.details || {};
+  const raw = d.depart_time || d.start_time || d.time || d.check_in_time || d.check_out_time;
+  if (!raw) return null;
+  const s = String(raw).replace(/^[^T]+T/, '');
+  const [h, m] = s.split(':').map(Number);
+  if (isNaN(h)) return null;
+  return h + (isNaN(m) ? 0 : m / 60);
+}
+
 /* Group items into day buckets, preserving API sort order (item_date, sort_key, id).
  * Spanning items (hotels) are always placed last in each day's bucket. */
 function groupByDay(items, days, settings) {
@@ -63,7 +75,12 @@ function groupByDay(items, days, settings) {
     }
   }
   for (const arr of map.values()) {
-    arr.sort((a, b) => (a.sort_key - b.sort_key) || (a.id - b.id));
+    arr.sort((a, b) => {
+      const aTime = effectiveTimeSort(a);
+      const bTime = effectiveTimeSort(b);
+      if (aTime !== null && bTime !== null && aTime !== bTime) return aTime - bTime;
+      return (a.sort_key - b.sort_key) || (a.id - b.id);
+    });
     // Pin spanning items (e.g. hotels) to the bottom of the day — they
     // represent the home/last destination for the night.
     const spanning = arr.filter(it => isSpanningItem(it, settings));
@@ -98,7 +115,10 @@ function detailLines(item, settings) {
   // alone since it has no end.
   const startV = d.depart_time || d.start_time || d.time;
   const endV = d.arrive_time || d.end_time;
-  if (startV && endV) {
+  if (item._hotelEvent && d.time) {
+    const label = item._hotelEvent === 'check-in' ? 'Check-in' : 'Check-out';
+    lines.push(`${label}: ${d.time}`);
+  } else if (startV && endV) {
     // Strip the date prefix — "2026-09-11T19:00" → "19:00". The day
     // column already shows the date.
     const s = String(startV).replace(/^[^T]+T/, '');
@@ -285,12 +305,14 @@ export async function initItinerary(ctx) {
       dataset: { itemId: String(item.id), date: dayDate, end: item.end_date || '',
                  type: item.item_type, spans: isSpanningItem(item, settings) ? '1' : '0' },
     });
-    if (ctx.role !== 'viewer' && (!item._hotelEvent || item._hotelEvent === 'check-out') && !(window.matchMedia && window.matchMedia('(max-width: 640px)').matches)) card.draggable = true;
+    if (ctx.role !== 'viewer' && (!item._hotelEvent || item._hotelEvent === 'check-in' || item._hotelEvent === 'check-out') && !(window.matchMedia && window.matchMedia('(max-width: 640px)').matches)) card.draggable = true;
     if (item.isLocal) card.classList.add('is-local');
     if (item._hotelEvent) card.classList.add('hotel-event', `hotel-event-${item._hotelEvent}`);
 
     card.appendChild(el('div', { class: 'card-head' }, [
-      el('span', { class: 'card-type', text: ti.label }),
+      el('span', { class: 'card-type', text: item._hotelEvent === 'check-in' ? 'Check-in'
+        : item._hotelEvent === 'check-out' ? 'Check-out'
+        : ti.label }),
       (item.details && item.details.is_backup)
         ? el('span', { class: 'card-badge card-badge-alt', text: 'alt', title: 'Backup / alternative plan — shown after the main item on the timeline' })
         : null,
@@ -504,6 +526,9 @@ export async function initItinerary(ctx) {
       if (a.item_date !== b.item_date) {
         return (a.item_date < b.item_date) ? -1 : 1;
       }
+      const aTime = effectiveTimeSort(a);
+      const bTime = effectiveTimeSort(b);
+      if (aTime !== null && bTime !== null && aTime !== bTime) return aTime - bTime;
       if (a.sort_key !== b.sort_key) return a.sort_key - b.sort_key;
       return a.id - b.id;
     });
@@ -894,6 +919,22 @@ export async function initItinerary(ctx) {
   function onMove(itemId, { item_date, before_id, after_id }) {
     const item = staging.viewItems().find(i => String(i.id) === String(itemId));
     if (!item) return;
+    const sessionId = batchSessionId();
+
+    // Hotel event drag: update parent hotel's check-in or check-out date.
+    if (item._hotelEvent) {
+      const parent = staging.viewItems().find(i => String(i.id) === String(item._hotelId));
+      if (!parent) return;
+      const newItemDate = item._hotelEvent === 'check-in' ? item_date : parent.item_date;
+      const newEndDate = item._hotelEvent === 'check-out' ? item_date : parent.end_date;
+      if (newItemDate === parent.item_date && newEndDate === parent.end_date) return;
+      staging.add(moveItemOp({
+        itemId: parent.id, item_date: newItemDate,
+        before_id, after_id, end_date: newEndDate, sessionId,
+      }));
+      return;
+    }
+
     // Drag/drop on a not-yet-saved item: open the editor instead of
     // staging a move, since the move's effect is captured when the user
     // Applies (the editor's snapshot includes the new date).
@@ -901,7 +942,6 @@ export async function initItinerary(ctx) {
       openEditorFor(item);
       return;
     }
-    const sessionId = batchSessionId();
 
     function spanEndDate(it, newDate) {
       const ti = settings.item_types[it.item_type];
@@ -934,11 +974,21 @@ export async function initItinerary(ctx) {
       }
       return;
     }
+
+    // For spanning items (hotels), keep end_date unchanged — reduces the
+    // stay duration instead of shifting the whole block forward.
     const ti = settings.item_types[item.item_type];
-    const end_date = spanEndDate(item, item_date);
-    staging.add(moveItemOp({
-      itemId, item_date, before_id, after_id, end_date,
-    }));
+    if (ti && ti.spans_days && item.end_date) {
+      staging.add(moveItemOp({
+        itemId, item_date, before_id, after_id,
+        end_date: item.end_date, sessionId,
+      }));
+    } else {
+      const end_date = spanEndDate(item, item_date);
+      staging.add(moveItemOp({
+        itemId, item_date, before_id, after_id, end_date,
+      }));
+    }
   }
 
   function onUpload(itemId, file) {
