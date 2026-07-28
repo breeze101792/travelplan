@@ -462,7 +462,13 @@ function showItemGeocodes(itemId, selectGeoIdx) {
   if (!selectedRow) return;
   const it = allItems.find(item => item.id === itemId);
   if (!it) return;
-  const geocodes = it.geocodes || [];
+  // Virtual hotel events (check-in / check-out) store geocodes on the
+  // parent hotel. Resolve to the parent so clicking the event shows
+  // the hotel's map locations.
+  const src = it._hotelEvent
+    ? allItems.find(p => String(p.id) === String(it._hotelId))
+    : it;
+  const geocodes = (src && src.geocodes) || [];
   if (!geocodes.length) return;
   const geoEl = el('div', { class: 'di-geocodes' });
   let selectedGeoIdx = selectGeoIdx != null && selectGeoIdx >= 0 ? selectGeoIdx : -1;
