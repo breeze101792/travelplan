@@ -6,54 +6,16 @@ Read the README first, then this file. Already familiar? Skim the headings.
 ## Tests
 
 `start.sh` no longer runs tests (it just starts the server). All tests live
-under `tests/` and run via `tests/run-tests.sh`:
-
-| Suite                  | Command                              | What it covers                              |
-| ---                    | ---                                  | ---                                         |
-| Backend (pytest)       | `./tests/run-tests.sh --backend`     | auth, plans, items, uploads, expenses, util |
-| Frontend (node)       | `bash frontend/tests/run.sh`         | staging engine, board boot, timeline boot, `fmtDate` |
-| E2E (Playwright)       | `./tests/run-tests.sh --e2e`         | desktop + iPhone browser flows (login, dashboard, board, expenses, members, settings) |
-
-`tests/backend/` is pytest with shared fixtures (`conftest.py`: fresh temp
-data dir per test, `app`/`client`/`admin_client`/`member_client`/`make_user`/
-`make_plan`/`db` query helper). ~150 tests covering every blueprint.
-`tests/e2e/` is Playwright (Python) driving a real Chromium against a
-throwaway Flask server; two device profiles — desktop (1280x800) and
-iPhone 14 (390x664, touch). ~40 tests.
-
-The frontend fixture is skipped (exit 0) if `node` is not on `PATH`; set
-`NODE=/path/to/node` to force a failure in that case.
+under `tests/` and run via `tests/run-tests.sh`. **550 tests total, all
+passing.** The full guide — fixture catalog, how to add a test in each
+layer, debugging gotchas — is in `docs/test.md`.
 
 ## Frontend test fixture: what's there and why
 
-`frontend/tests/` is a zero-dependency test harness — plain node ES
-modules, no `npm install`, no build step. The structure:
-
-```
-frontend/tests/
-  lib/dom-shim.mjs    minimal DOM (elements, classList, events, attribute
-                      selectors, dataset as a Proxy, getBoundingClientRect)
-  lib/fetch-stub.mjs  route-table fetch replacement that records calls
-  lib/t.mjs           assert/eq/summary harness
-  loader.mjs          maps browser-absolute /static/… to the real files
-  register.mjs        module.register hook for the loader
-  itinerary.test.mjs  executes the real initItinerary() under the shim
-  staging.test.mjs    unit tests for the staging engine (view, undo/redo,
-                      save dispatch, error halt, session discard, id
-                      remapping for create+attach+expense)
-  timeline.test.mjs   regression fixture for the timeline view (boot,
-                      day numbering, bar drag/resize math, multi-select,
-                      context menu, buffer days, toolbar, header edit,
-                      beforeunload guard)
-  util.test.mjs       unit tests for fmtDate (matches server fmt_date byte-for-byte)
-  run.sh              runs every *.test.mjs; exits 0 (skip) without node
-```
-
-The point of the page-execution tests (`itinerary.test.mjs`,
-`timeline.test.mjs`) is to catch the *runtime* bugs a syntax check can't
-see — a missing import, a block-scope `const` that escapes its `try`, a
-missing DOM method on a shim element. See the lesson below on the
-blank-board crash.
+The frontend node-test harness structure (shim, loader, page-execution
+tests) and the rationale for catching runtime bugs a syntax check can't
+see are covered in `docs/test.md`. The lesson below on the block-scope
+`const` blank-board crash is the concrete failure that motivated them.
 
 ## Lessons
 
@@ -171,10 +133,6 @@ default to `main` unless the change is big enough to need isolation.
   the Playwright browser tests. A failing test exits non-zero. If the
   runner is green, the codebase is healthy. `start.sh` just starts the
   server (no test gate).
-- The frontend test fixture needs node (any recent LTS; 20+ works).
-  If a machine doesn't have node, `run.sh` skips with exit 0, and
-  `start.sh` carries on. Set `NODE=/path/to/node` if you want a
-  missing-node failure instead of a skip.
 - For per-test debug under node, the `loader.mjs` + `register.mjs`
   pair makes `import '/static/js/...'` resolve to the real files.
   Useful when a test crashes deep in a page module and you want

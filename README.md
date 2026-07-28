@@ -103,7 +103,8 @@ the base currency using a greedy min-cash-flow ("who owes whom") algorithm.
 
 `start.sh` no longer runs the tests (it just starts the server). Tests live
 under `tests/` and are run separately via `tests/run-tests.sh`. **550 tests
-total, all passing.**
+total, all passing.** See `docs/test.md` for the full guide (fixture
+catalog, how to add a test in each layer, debugging gotchas).
 
 - **`tests/backend/`** — pytest, **149 tests** covering every blueprint
   (auth, plans, items, uploads, expenses, util). Fresh temp data dir per
