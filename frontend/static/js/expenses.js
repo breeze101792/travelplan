@@ -133,16 +133,16 @@ export async function initExpenses(ctx) {
   // --- (a) totals by item -------------------------------------------------
   async function renderByItem() {
     const root = document.getElementById('by-item');
-    clear(root);
-    root.append(el('h2', { class: 'section-title', text: 'Totals by item' }));
-
     let data;
     try {
       data = await apiGet(`/api/plans/${planId}/expenses/by-item`);
     } catch (e) {
+      clear(root);
       root.append(el('p', { class: 'error', text: e.message }));
       return;
     }
+    clear(root);
+    root.append(el('h2', { class: 'section-title', text: 'Totals by item' }));
     const rows = data.items || [];
     if (!rows.length) {
       root.append(el('p', { class: 'empty', text: 'No expenses yet.' }));
@@ -188,16 +188,16 @@ export async function initExpenses(ctx) {
   // --- (b) ledger + (c) add form -----------------------------------------
   async function renderLedger() {
     const root = document.getElementById('expense-ledger');
-    clear(root);
-    root.append(el('h2', { class: 'section-title', text: 'Expenses' }));
-
     let res;
     try {
       res = await apiGet(`/api/plans/${planId}/expenses`);
     } catch (e) {
+      clear(root);
       root.append(el('p', { class: 'error', text: e.message }));
       return;
     }
+    clear(root);
+    root.append(el('h2', { class: 'section-title', text: 'Expenses' }));
     const expenses = res.expenses || [];
 
     if (!expenses.length) {

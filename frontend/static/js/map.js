@@ -325,6 +325,7 @@ function findDayHeaderAt(container, clientY) {
 function renderList() {
   const container = document.getElementById('day-list');
   if (!container) return;
+  const savedScrollTop = container.scrollTop;
   clear(container);
   for (let i = 0; i < days.length; i++) {
     const day = days[i];
@@ -411,6 +412,7 @@ function renderList() {
       }
     }
   }
+  if (savedScrollTop > 0) container.scrollTop = savedScrollTop;
 }
 
 function effectiveTimeSort(item) {
