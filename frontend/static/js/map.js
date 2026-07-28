@@ -444,7 +444,13 @@ function dayItemsFor(dayIndex) {
     .sort((a, b) => {
       const aTime = effectiveTimeSort(a);
       const bTime = effectiveTimeSort(b);
-      if (aTime !== null && bTime !== null && aTime !== bTime) return aTime - bTime;
+      if (aTime !== null && bTime !== null) {
+        if (aTime !== bTime) return aTime - bTime;
+      } else if (aTime !== null) {
+        return -1;
+      } else if (bTime !== null) {
+        return 1;
+      }
       return (a.sort_key - b.sort_key) || (String(a.id).localeCompare(String(b.id)));
     });
 }

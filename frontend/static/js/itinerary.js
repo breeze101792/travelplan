@@ -74,7 +74,13 @@ function groupByDay(items, days, settings) {
     arr.sort((a, b) => {
       const aTime = effectiveTimeSort(a);
       const bTime = effectiveTimeSort(b);
-      if (aTime !== null && bTime !== null && aTime !== bTime) return aTime - bTime;
+      if (aTime !== null && bTime !== null) {
+        if (aTime !== bTime) return aTime - bTime;
+      } else if (aTime !== null) {
+        return -1; // timed items before untimed
+      } else if (bTime !== null) {
+        return 1;
+      }
       return (a.sort_key - b.sort_key) || (a.id - b.id);
     });
     // Pin spanning items (e.g. hotels) to the bottom of the day — they
@@ -108,12 +114,15 @@ function detailLines(item, settings) {
   const lines = [];
   if (d.from && d.to) lines.push(`${d.from} → ${d.to}`);
   // Time range line: combine when.start_at and when.end_at into a single
-  // "19:00 → 20:00" line.
+  // "19:00 → 20:00" line. Skip the range for spanning items (e.g. hotels
+  // that cover multiple days) — their start and end times are on different
+  // days so a "15:00 → 11:00" range would be misleading. The per-day
+  // check-in / check-out virtual events carry the correct day-specific time.
   if (item._hotelEvent && when.start_at) {
     const label = item._hotelEvent === 'check-in' ? 'Check-in' : 'Check-out';
     const t = String(when.start_at).replace(/^[^T]+T/, '');
     lines.push(`${label}: ${t}`);
-  } else if (when.start_at && when.end_at) {
+  } else if (!isSpanningItem(item, settings) && when.start_at && when.end_at) {
     // Strip the date prefix — "2026-09-11T19:00" → "19:00". The day
     // column already shows the date. Schedule items always have both
     // start and end (the server defaults end to start + 1h if blank),
