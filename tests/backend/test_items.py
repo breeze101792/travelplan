@@ -20,7 +20,9 @@ class TestItemCreate:
         r = member_client.post(f"/api/plans/{plan_id}/items", json={
             "item_type": "hotel", "title": "Hilton",
             "item_date": "2026-07-01", "end_date": "2026-07-02",
-            "details": {"hotel_name": "Hilton", "address": "Tokyo"},
+            "details": {"hotel_name": "Hilton", "address": "Tokyo",
+                        "when": {"start_at": "2026-07-01T15:00",
+                                 "end_at": "2026-07-02T11:00"}},
         })
         assert r.status_code == 200
         item = r.get_json()["item"]
@@ -28,6 +30,55 @@ class TestItemCreate:
         assert item["item_type"] == "hotel"
         assert item["status"] == "planned"
         assert item["details"]["hotel_name"] == "Hilton"
+        assert item["details"]["when"]["start_at"] == "2026-07-01T15:00"
+        assert item["details"]["when"]["end_at"] == "2026-07-02T11:00"
+
+    def test_create_derives_item_date_from_when(self, member_client, plan_id):
+        """The when object is the source of truth — item_date is computed from it."""
+        r = member_client.post(f"/api/plans/{plan_id}/items", json={
+            "item_type": "activity", "title": "Hike",
+            "details": {"when": {"start_at": "2026-08-15T09:00",
+                                  "end_at": "2026-08-15T12:00"}},
+        })
+        assert r.status_code == 200
+        item = r.get_json()["item"]
+        assert item["item_date"] == "2026-08-15"
+        assert item["details"]["when"]["start_at"] == "2026-08-15T09:00"
+
+    def test_create_accepts_when_with_only_start(self, member_client, plan_id):
+        """When only start_at is given, the server defaults end_at to start+1h.
+
+        Schedule items always have a duration; an end-less schedule
+        item has no useful meaning (a bar with no length on the
+        timeline). The default is enough to keep the UI sensible, and
+        the user can adjust it in the editor.
+        """
+        r = member_client.post(f"/api/plans/{plan_id}/items", json={
+            "item_type": "note", "title": "Reminder",
+            "details": {"when": {"start_at": "2026-08-15T08:00"}, "text": "hi"},
+        })
+        assert r.status_code == 200
+        item = r.get_json()["item"]
+        assert item["details"]["when"]["start_at"] == "2026-08-15T08:00"
+        assert item["details"]["when"]["end_at"] == "2026-08-15T09:00"
+
+    def test_create_strips_when_when_empty(self, member_client, plan_id):
+        r = member_client.post(f"/api/plans/{plan_id}/items", json={
+            "item_type": "note", "title": "Plain",
+            "details": {"when": {}, "text": "hi"},
+        })
+        item = r.get_json()["item"]
+        assert "when" not in item["details"]
+
+    def test_create_when_end_at_explicit_is_preserved(self, member_client, plan_id):
+        r = member_client.post(f"/api/plans/{plan_id}/items", json={
+            "item_type": "activity", "title": "Hike",
+            "details": {"when": {"start_at": "2026-08-15T09:00",
+                                  "end_at": "2026-08-15T13:00"}}},
+        )
+        assert r.status_code == 200
+        item = r.get_json()["item"]
+        assert item["details"]["when"]["end_at"] == "2026-08-15T13:00"
 
     def test_create_item_rejects_bad_type(self, member_client, plan_id):
         r = member_client.post(f"/api/plans/{plan_id}/items", json={
@@ -95,6 +146,37 @@ class TestItemPatchDelete:
         it = r.get_json()["item"]
         assert it["item_date"] == "2026-07-02"
         assert it["end_date"] == "2026-07-03"
+
+    def test_patch_when_derives_date(self, member_client, plan_id):
+        """Sending a new ``when`` should update item_date and end_date."""
+        item = member_client.post(f"/api/plans/{plan_id}/items", json={
+            "item_type": "activity", "title": "A",
+            "details": {"when": {"start_at": "2026-07-01T09:00",
+                                 "end_at": "2026-07-01T11:00"}},
+        }).get_json()["item"]
+        assert item["item_date"] == "2026-07-01"
+        r = member_client.patch(f"/api/items/{item['id']}", json={
+            "details": {"when": {"start_at": "2026-08-15T14:00",
+                                 "end_at": "2026-08-15T16:00"}},
+        })
+        assert r.status_code == 200
+        it = r.get_json()["item"]
+        assert it["item_date"] == "2026-08-15"
+        assert it["details"]["when"]["start_at"] == "2026-08-15T14:00"
+
+    def test_patch_when_with_only_start(self, member_client, plan_id):
+        """When PATCHing a when object, end_at defaults to start_at + 1h."""
+        item = member_client.post(f"/api/plans/{plan_id}/items", json={
+            "item_type": "note", "title": "N",
+            "details": {"when": {"start_at": "2026-07-01T08:00"}},
+        }).get_json()["item"]
+        r = member_client.patch(f"/api/items/{item['id']}", json={
+            "details": {"when": {"start_at": "2026-07-02T09:00"}, "text": "ok"},
+        })
+        assert r.status_code == 200
+        it = r.get_json()["item"]
+        assert it["details"]["when"]["start_at"] == "2026-07-02T09:00"
+        assert it["details"]["when"]["end_at"] == "2026-07-02T10:00"
 
     def test_delete_item(self, member_client, plan_id):
         item = member_client.post(f"/api/plans/{plan_id}/items", json={

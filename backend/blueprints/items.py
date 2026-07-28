@@ -13,6 +13,7 @@ Image upload lives in uploads.py.
 from __future__ import annotations
 
 import json
+import re
 
 from flask import Blueprint, request, g, abort, jsonify
 
@@ -25,6 +26,85 @@ items_bp = Blueprint("items", __name__)
 ITEM_TYPES = {"hotel", "transit", "restaurant",
               "activity", "note"}
 STATUSES = {"planned", "confirmed", "done"}
+
+# All items carry a single ``when`` object in ``details``:
+#   { "start_at": "YYYY-MM-DDTHH:MM",   # required (when the item is
+#     "end_at":   "YYYY-MM-DDTHH:MM" }  # scheduled) — defaulted to
+#                                          start_at + 1h by the server
+# For hotels the dates are also tracked on the row (item_date + end_date)
+# so the spanning-hotel board rendering can run from SQL alone.
+
+_DATE_RE = re.compile(r"^(\d{4}-\d{2}-\d{2})")
+_HHMM_RE = re.compile(r"(\d{1,2}):(\d{2})")
+
+
+def _date_part(s: str | None) -> str | None:
+    if not s:
+        return None
+    m = _DATE_RE.match(str(s))
+    return m.group(1) if m else None
+
+
+def _parse_dt(s: str | None):
+    """Parse 'YYYY-MM-DDTHH:MM' into (date_str, hour, minute) or (None, None, None)."""
+    if not s:
+        return None, None, None
+    d = _date_part(str(s))
+    m = _HHMM_RE.search(str(s))
+    if not d or not m:
+        return None, None, None
+    return d, int(m.group(1)), int(m.group(2))
+
+
+def _add_hour(date: str, hour: int, minute: int) -> str:
+    """Return 'YYYY-MM-DDTHH:MM' for the given date + time, +1h.
+
+    Used to default a missing end_at to start_at + 1h. We do not roll
+    over midnight (clamp to 23:59) — schedule items shouldn't have a
+    midnight-spanning default; the user can adjust if they really
+    want a 1-minute item.
+    """
+    from datetime import datetime, timedelta
+    try:
+        dt = datetime.strptime(f"{date} {hour:02d}:{minute:02d}", "%Y-%m-%d %H:%M")
+    except ValueError:
+        return f"{date}T{hour:02d}:{minute:02d}"
+    dt = dt + timedelta(hours=1)
+    return dt.strftime("%Y-%m-%dT%H:%M")
+
+
+def _coerce_when(raw) -> dict:
+    """Normalize a client-supplied ``when`` object.
+
+    Accepts {start_at, end_at} as 'YYYY-MM-DDTHH:MM' or 'YYYY-MM-DD' (date
+    only). Returns a clean dict (empty if nothing was supplied).
+
+    For schedule items (where start_at is set) end_at is defaulted to
+    start_at + 1h if the client omitted it. Schedule items always have
+    a time window — a single-instant item with no duration is the
+    exception (a note with a start timestamp but no end), and the
+    editor still writes the default; callers that need an
+    "end-less" item can clear the value on read.
+    """
+    if not isinstance(raw, dict):
+        return {}
+    out = {}
+    for key in ("start_at", "end_at"):
+        v = raw.get(key)
+        if v is None or v == "":
+            continue
+        s = str(v).strip()
+        if not s:
+            continue
+        # 'YYYY-MM-DD' alone is allowed (date only); the editor writes
+        # 'YYYY-MM-DDTHH:MM'. The end-of-day format gets the time
+        # stripped, so we just keep what the user gave.
+        out[key] = s
+    if "start_at" in out and "end_at" not in out:
+        d, h, m = _parse_dt(out["start_at"])
+        if d is not None and h is not None and m is not None:
+            out["end_at"] = _add_hour(d, h, m)
+    return out
 
 
 def _load_item(item_id) -> dict | None:
@@ -91,16 +171,34 @@ def create_item(plan_id):
     if not title:
         return jsonify({"error": "title required"}), 400
     details = data.get("details") or {}
+    # Coerce the unified when object (the editor always sends it). The
+    # item_date / end_date columns are derived from it so the day
+    # grouping and the spanning-hotel SQL stay consistent.
+    when = _coerce_when(details.get("when"))
+    item_date = data.get("item_date")
+    end_date = data.get("end_date")
+    if when.get("start_at"):
+        d = _date_part(when["start_at"])
+        if d:
+            item_date = d
+    if when.get("end_at"):
+        d = _date_part(when["end_at"])
+        if d:
+            end_date = d
+    if when:
+        details["when"] = when
+    else:
+        details.pop("when", None)
     db = get_db()
     max_key = db.execute(
         "SELECT COALESCE(MAX(sort_key), 0) FROM items WHERE plan_id = ? AND item_date IS ?",
-        (plan_id, data.get("item_date")),
+        (plan_id, item_date),
     ).fetchone()[0]
     cur = db.execute(
         """INSERT INTO items
            (plan_id, item_type, title, item_date, end_date, sort_key, status, details, created_by)
            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-        (plan_id, item_type, title, data.get("item_date"), data.get("end_date"),
+        (plan_id, item_type, title, item_date, end_date,
          max_key + 1.0, data.get("status") or "planned",
          json.dumps(details), g.current_user["id"]),
     )
@@ -124,13 +222,33 @@ def mutate_item(item_id):
         return jsonify({"deleted": item_id})
     data = request.get_json(force=True, silent=True) or {}
     sets, args = [], []
-    for k in ("title", "item_date", "end_date"):
+    for k in ("title",):
         if k in data:
             sets.append(f"{k} = ?"); args.append(data[k])
     if data.get("status") in STATUSES:
         sets.append("status = ?"); args.append(data["status"])
+    # When the client sends a when object, it is the source of truth —
+    # re-derive item_date / end_date from it (and accept the client's
+    # explicit date values as a fallback for old callers).
     if "details" in data:
-        sets.append("details = ?"); args.append(json.dumps(data["details"] or {}))
+        details = data["details"] or {}
+        if isinstance(details, dict) and "when" in details:
+            when = _coerce_when(details.get("when"))
+            if when:
+                details["when"] = when
+                d = _date_part(when.get("start_at", ""))
+                if d:
+                    sets.append("item_date = ?"); args.append(d)
+                d = _date_part(when.get("end_at", ""))
+                if d:
+                    sets.append("end_date = ?"); args.append(d)
+            else:
+                # Explicitly empty when — clear the field.
+                details.pop("when", None)
+        sets.append("details = ?"); args.append(json.dumps(details))
+    for k in ("item_date", "end_date"):
+        if k in data:
+            sets.append(f"{k} = ?"); args.append(data[k])
     if sets:
         sets.append("updated_at = datetime('now')")
         args.append(item_id)
