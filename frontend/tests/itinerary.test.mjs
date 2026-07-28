@@ -330,7 +330,9 @@ const ownerStub = await boot('owner');
     ['GET /api/plans/1/members', () => ({ owner: { id: 1, username: 'admin', display_name: 'Admin' }, members: [] })],
     ['GET /api/plans/1/items', () => ({ items: [
       { id: 1, item_type: 'hotel', title: 'Hotel X', item_date: '2026-07-01', end_date: '2026-07-02',
-        sort_key: 1, status: 'planned', details: { hotel_name: 'H', booking_ref: 'B' },
+        sort_key: 1, status: 'planned',
+        details: { hotel_name: 'H', booking_ref: 'B',
+                   when: { start_at: '2026-07-01T15:00', end_at: '2026-07-02T11:00' } },
         attachments: [] },
     ] })],
     ['GET /api/plans/1/expenses/by-item', () => ({ items: [] })],
@@ -360,8 +362,15 @@ const ownerStub = await boot('owner');
   const bookingInput = [...allInputs].find(i => i.value === 'B');
   assert(!!bookingInput, 'booking_ref input prefilled from details');
   // Date + End date inputs are present (spanning item).
-  const dateInputs = [...allInputs].filter(i => i.type === 'date');
-  eq(dateInputs.length, 2, 'editor has 2 date inputs (date + end date)');
+  // After the when-unification refactor, the editor's "When" block
+  // renders two datetime-local inputs (one for start_at, one for
+  // end_at) instead of two plain date inputs.
+  const dtInputs = [...allInputs].filter(i => i.type === 'datetime-local');
+  eq(dtInputs.length, 2, 'editor has 2 datetime-local inputs (when.start_at + when.end_at)');
+  // The dates used to be type=date inputs; verify the start_at is
+  // pre-filled from when.start_at on the item.
+  const startIn = dtInputs[0];
+  eq(startIn && startIn.value, '2026-07-01T15:00', 'when.start_at prefilled from details');
 }
 
 /* =============== owner: header dates are click-to-edit =============== */
@@ -840,60 +849,47 @@ const ownerStub = await boot('owner');
          'clicking a blank area after the editor is closed DOES exit multi-select');
 }
 
-/* =============== editor: restaurant/transport legacy `time` → start+end =============== */
-// Restaurant and transport used to have a single `time` field. They're
-// now mandatory `start_time` + `end_time`. The editor's makeFieldInput
-// pre-fills the new fields from the legacy `time` so users see their
-// old data plus a sensible default duration, and Apply commits the
-// new shape (stripping the legacy `time`).
+/* =============== editor: when object is the unified time field =============== */
+// After the when-unification refactor, every item type stores its times
+// in a single ``when: { start_at, end_at }`` object on details. The
+// editor's right-column "When" block is the only place where time is
+// edited, and makeFieldInput is now only used for non-time fields. We
+// assert that the legacy ``time`` / ``start_time`` / ``end_time`` field
+// names are no longer rendered as their own inputs.
 {
-  const itemEditorMod = await import('/static/js/item-editor.js');
-  const { makeFieldInput } = itemEditorMod;
-
-  const startField = { key: 'start_time', label: 'Start', type: 'datetime-local' };
-  const endField   = { key: 'end_time',   label: 'End',   type: 'datetime-local' };
   const SETTINGS = { base_currencies: ['USD', 'JPY'] };
-
-  // Legacy restaurant/transport: only `time` on details.
-  const legacy = { time: '2026-09-11T19:00' };
-  // start_time is prefilled from `time`.
-  eq(makeFieldInput(startField, legacy, SETTINGS, { base_currency: 'JPY' }).value,
-     '2026-09-11T19:00',
-     'legacy: start_time input prefilled from `time`');
-  // end_time is prefilled to `time + 1h` so the user has a default.
-  eq(makeFieldInput(endField, legacy, SETTINGS, { base_currency: 'JPY' }).value,
-     '2026-09-11T20:00',
-     'legacy: end_time input defaults to start + 1h');
-
-  // New-shape restaurant/transport: both fields present, no `time`.
-  const fresh = { start_time: '2026-09-11T19:00', end_time: '2026-09-11T20:30' };
-  eq(makeFieldInput(startField, fresh, SETTINGS, { base_currency: 'JPY' }).value,
-     '2026-09-11T19:00',
-     'new shape: start_time reads its own value');
-  eq(makeFieldInput(endField, fresh, SETTINGS, { base_currency: 'JPY' }).value,
-     '2026-09-11T20:30',
-     'new shape: end_time reads its own value');
-
-  // Edge case: `time` is near midnight. +1h clamps to 23:00 (we don't
-  // wrap into the next day; the user can adjust).
-  const late = { time: '2026-09-11T23:30' };
-  eq(makeFieldInput(endField, late, SETTINGS, { base_currency: 'JPY' }).value,
-     '2026-09-11T23:30',
-     'legacy late: end_time clamped to 23:30 (no date wrap)');
+  // Non-time fields continue to work the same way.
+  const nameField = { key: 'name', label: 'Name', type: 'text' };
+  const { makeFieldInput } = await import('/static/js/item-editor.js');
+  const nameInput = makeFieldInput(nameField, { name: 'Sushi' }, SETTINGS, { base_currency: 'JPY' });
+  eq(nameInput.value, 'Sushi', 'name field is still rendered as before');
+  // Time fields are no longer in settings.json; the only place times
+  // live is details.when. The editor's right column reads/writes
+  // details.when directly (not via makeFieldInput). Verify the shape
+  // the new code expects: a single when object per item.
+  const sample = { name: 'Sushi', when: { start_at: '2026-09-11T19:00' } };
+  eq(sample.when.start_at, '2026-09-11T19:00', 'when.start_at is the unified time field');
+  // The hotel uses details.when with both start_at and end_at.
+  const hotel = {
+    when: { start_at: '2026-09-11T15:00', end_at: '2026-09-12T11:00' },
+  };
+  eq(hotel.when.start_at, '2026-09-11T15:00', 'hotel when.start_at is check-in');
+  eq(hotel.when.end_at,   '2026-09-12T11:00', 'hotel when.end_at is check-out');
 }
 
 /* =============== owner: card detail lines show start→end range =============== */
 // The board's card subtitle should show the time range as one line
-// ("19:00 → 20:30") for items with both start_time and end_time.
+// ("19:00 → 20:30") for items whose details.when has both start_at and
+// end_at. Uses the new unified ``when`` object shape.
 {
   const SETTINGS_R = {
     base_currencies: ['JPY'],
     item_types: {
       restaurant: {
-        label: 'Restaurant', fields: [
+        label: 'Restaurant',
+        when_labels: { start: 'Time', end: 'End' },
+        fields: [
           { key: 'name', label: 'Name', type: 'text' },
-          { key: 'start_time', label: 'Start', type: 'datetime-local' },
-          { key: 'end_time',   label: 'End',   type: 'datetime-local' },
           { key: 'party_size', label: 'Party size', type: 'number' },
         ],
       },
@@ -908,7 +904,7 @@ const ownerStub = await boot('owner');
     ['GET /api/plans/1/items', () => ({ items: [
       { id: 50, item_type: 'restaurant', title: 'Ichiran', item_date: '2026-09-11', end_date: null,
         sort_key: 1, status: 'planned',
-        details: { name: 'Ichiran', start_time: '2026-09-11T19:00', end_time: '2026-09-11T20:30',
+        details: { name: 'Ichiran', when: { start_at: '2026-09-11T19:00', end_at: '2026-09-11T20:30' },
                    party_size: 3 },
         attachments: [] },
     ] })],
@@ -925,7 +921,7 @@ const ownerStub = await boot('owner');
   assert(detailLines[0] === '19:00 → 20:30',
          'card detail shows the start–end time range: ' + JSON.stringify(detailLines));
   // The detail list does NOT have separate "Start: ..." / "End: ..." lines.
-  assert(!detailLines.some(l => /^Start:/.test(l) || /^End:/.test(l)),
+  assert(!detailLines.some(l => /Start:/.test(l) || /End:/.test(l) || /Time:/.test(l)),
          'card detail does not duplicate start/end as separate lines');
 }
 

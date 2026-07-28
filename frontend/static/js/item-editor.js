@@ -24,6 +24,19 @@ import {
   saveItemOp, uploadImageOp, addLinkOp, deleteAttachmentOp, addExpenseOp, updateAttachmentOp,
 } from '/static/js/staging.js';
 
+/* Default an end_at value to start_at + 1h. Used when the user saves
+ * a schedule item without filling the end. Returns null if start is
+ * unparseable. We do not roll over midnight — clamping to 23:59 of
+ * the same day matches the server's default. */
+function defaultEndFor(startAt) {
+  if (!startAt) return null;
+  const m = String(startAt).match(/^(\d{4}-\d{2}-\d{2})T(\d{2}):(\d{2})$/);
+  if (!m) return null;
+  let h = Number(m[2]) + 1;
+  if (h > 23) h = 23; // clamp; user can adjust
+  return `${m[1]}T${String(h).padStart(2, '0')}:${m[3]}`;
+}
+
 export function openItemEditor(ctx, { plan, item, settings, members, staging, sessionId, onApplied, onClose }) {
   const ti = settings.item_types[item.item_type] || { label: item.item_type, fields: [] };
   const readOnly = ctx.role === 'viewer';
@@ -113,7 +126,7 @@ export function openItemEditor(ctx, { plan, item, settings, members, staging, se
     colMain.appendChild(rowEl);
   }
 
-  // status + dates (right col)
+  // status (right col)
   colSide.appendChild(el('label', { class: 'field', text: 'Status' }));
   const statusSel = document.createElement('select');
   statusSel.className = 'input';
@@ -126,34 +139,57 @@ export function openItemEditor(ctx, { plan, item, settings, members, staging, se
   if (readOnly) statusSel.disabled = true;
   colSide.appendChild(statusSel);
 
-  colSide.appendChild(el('label', { class: 'field', text: ti.spans_days ? 'Dates' : 'Date' }));
-  const dateInput = document.createElement('input');
-  dateInput.type = 'date';
-  dateInput.className = 'input';
-  dateInput.value = item.item_date || '';
-  if (readOnly) dateInput.disabled = true;
-
-  let endInput = null;
-  if (ti.spans_days) {
-    endInput = document.createElement('input');
-    endInput.type = 'date';
-    endInput.className = 'input';
-    endInput.value = item.end_date || '';
-    if (readOnly) endInput.disabled = true;
-    const isHotel = item.item_type === 'hotel';
-    colSide.appendChild(el('div', { class: 'field-row' }, [
-      el('div', { class: 'field-group' }, [
-        el('label', { class: 'field', text: isHotel ? 'Check-in' : 'Start' }),
-        dateInput,
-      ]),
-      el('div', { class: 'field-group' }, [
-        el('label', { class: 'field', text: isHotel ? 'Check-out' : 'End' }),
-        endInput,
-      ]),
-    ]));
-  } else {
-    colSide.appendChild(dateInput);
-  }
+  // When (right col, immediately after Status): two datetime-local
+  // inputs (start + end). Every schedule item has a duration, so we
+  // show both inputs side by side. For hotel the dates are also
+  // tracked on the row (item_date / end_date) so the spanning-hotel
+  // board rendering can run from SQL alone; the times live in
+  // details.when. For every other type the start and end are both
+  // inside details.when; the item_date column is derived from
+  // when.start_at on save.
+  const whenLabels = ti.when_labels || { start: 'Start', end: 'End' };
+  const existingWhen = (item.details && item.details.when) || {};
+  colSide.appendChild(el('label', { class: 'field', text: 'When' }));
+  const whenStart = document.createElement('input');
+  whenStart.type = 'datetime-local';
+  whenStart.className = 'input';
+  whenStart.value = existingWhen.start_at || '';
+  if (readOnly) whenStart.disabled = true;
+  const whenEnd = document.createElement('input');
+  whenEnd.type = 'datetime-local';
+  whenEnd.className = 'input';
+  whenEnd.value = existingWhen.end_at || '';
+  if (readOnly) whenEnd.disabled = true;
+  // When the user fills the start, auto-fill the end with start + 1h
+  // if end is empty (or empty after a user-clear). This keeps the
+  // form complete so the user never sees a "missing end" state — the
+  // server also defaults it, but auto-filling client-side makes the
+  // what-they-see-is-what-they-save contract obvious.
+  whenStart.addEventListener('change', () => {
+    if (!whenStart.value) return;
+    const def = defaultEndFor(whenStart.value);
+    if (def && !whenEnd.value) whenEnd.value = def;
+  });
+  whenEnd.addEventListener('change', () => {
+    // If the user clears the end, fill it back in immediately so the
+    // form never shows a blank end. (The server would also default it
+    // on save, but a blank end in the UI is confusing.)
+    if (!whenEnd.value && whenStart.value) {
+      whenEnd.value = defaultEndFor(whenStart.value);
+    }
+  });
+  const whenBlock = el('div', { class: 'when-block' });
+  whenBlock.appendChild(el('div', { class: 'field-row' }, [
+    el('div', { class: 'field-group' }, [
+      el('label', { class: 'field', text: whenLabels.start || 'Start' }),
+      whenStart,
+    ]),
+    el('div', { class: 'field-group' }, [
+      el('label', { class: 'field', text: whenLabels.end || 'End' }),
+      whenEnd,
+    ]),
+  ]));
+  colSide.appendChild(whenBlock);
 
   // todo list (right col, after dates)
   const todos = (item.details && item.details.todos) || [];
@@ -547,23 +583,39 @@ export function openItemEditor(ctx, { plan, item, settings, members, staging, se
     } else {
       delete details.todos;
     }
-    // Clean up the legacy `time` field for restaurant/transport once the
-    // new start_time + end_time shape is in place — otherwise the item
-    // would carry two ways of saying the same thing.
-    if (details.start_time && (item.item_type === 'restaurant' || item.item_type === 'transport' || item.item_type === 'transit')) {
-      delete details.time;
+    // The unified when object. The server derives item_date / end_date
+    // from these values on save, so the client doesn't need to compute
+    // them — but we still pass them as a fallback for types whose day
+    // grouping the user might want to override (the server trusts the
+    // explicit value if present and the when object if not).
+    // Schedule items always have a duration: if the user leaves the
+    // end blank, default to start + 1h so the saved when object is
+    // complete (the server also enforces this; doing it client-side
+    // too means the input shows the real value the user is about to
+    // save). The start must be set — if it's not, omit the whole
+    // when object so the user keeps a shape-less item.
+    const when = {};
+    if (whenStart.value) {
+      when.start_at = whenStart.value;
+      if (whenEnd.value) {
+        when.end_at = whenEnd.value;
+      } else {
+        when.end_at = defaultEndFor(whenStart.value);
+      }
     }
+    if (Object.keys(when).length) details.when = when;
+    else delete details.when;
     const snapshot = {
       id: item.id,
       item_type: item.item_type,
       title: titleInput.value.trim() || item.title || '(Untitled)',
-      item_date: dateInput.value || null,
-      end_date: endInput ? (endInput.value || null) : (item.end_date || null),
+      // item_date / end_date are derived on the server from details.when
+      // (preserved here for backward compat with the old API shape).
+      item_date: item.item_date || null,
+      end_date: item.end_date || null,
       status: statusSel.value,
       details,
       geocodes: selectedGeocodes,
-      // Include the up-to-date attachment list so the staged view shows the
-      // editor's additions and the SAVE_ITEM.apply re-derives correctly.
       attachments: attachments.slice(),
     };
     // For non-new items, also propagate the type (the backend may need it
@@ -1036,30 +1088,12 @@ export function openGeoMapPopup(geocode, onUpdate) {
  * `plan` is used to pre-fill a currency field with the plan's base currency
  * when the item doesn't already have one — a value the app already knows.
  *
- * Backward-compat: types whose settings.json used to define a single
- * `time` field (restaurant, transport) now define `start_time` and
- * `end_time`. Items saved under the old shape still only have `time`.
- * For these legacy items, the editor pre-fills the new start_time input
- * with the legacy value and the new end_time with `time + 1h` so the
- * user sees their old data plus a sensible default duration. The next
- * Apply commits both fields in the new shape. */
+ * Note: time fields used to live here (check_in_time, start_time, etc.)
+ * but are now consolidated into the editor's "When" block on the right
+ * side; settings.json no longer declares time fields. The remaining
+ * inputs are text / number / select / textarea / currency. */
 export function makeFieldInput(f, details, settings, plan) {
-  let val = details && details[f.key] != null ? details[f.key] : '';
-  if (!val && f.key === 'start_time' && details && details.time) {
-    val = details.time;
-  } else if (!val && f.key === 'end_time' && details && details.time) {
-    // Default the end to start + 1h. If the legacy `time` somehow
-    // already encodes an end-time like 19:00 the user can adjust.
-    const t = String(details.time);
-    const m = t.match(/T?(\d{1,2}):(\d{2})/);
-    if (m) {
-      let h = Number(m[1]) + 1;
-      const datePart = t.match(/^([^T]+)/);
-      const dateStr = datePart ? datePart[1] : '';
-      if (h > 23) h = 23; // clamp; we can't go past midnight
-      val = `${dateStr}T${String(h).padStart(2, '0')}:${m[2]}`;
-    }
-  }
+  const val = details && details[f.key] != null ? details[f.key] : '';
   if (f.type === 'textarea') {
     const t = document.createElement('textarea');
     t.className = 'input'; t.rows = 5; t.value = val;

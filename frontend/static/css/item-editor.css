@@ -78,6 +78,12 @@
 .modal.item-editor .field { display: block; font-size: .85rem; font-weight: 600; color: var(--muted, #475569); margin: 14px 0 5px; }
 .modal.item-editor .field:first-child { margin-top: 0; }
 
+/* When block: two datetime-local inputs side by side, with their own
+ * labels. Mirrors the right-column date block in the old editor but
+ * consolidates time and date into a single set of inputs per type. */
+.modal.item-editor .when-block .field-row .field-group { min-width: 0; }
+.modal.item-editor .when-block input[type="datetime-local"] { width: 100%; }
+
 /* Row of fields side-by-side. Each child (.field-group) gets equal width
  * inside a row. Single-element rows (e.g. a long Address) just look like a
  * full-width input because the row has only one child. */

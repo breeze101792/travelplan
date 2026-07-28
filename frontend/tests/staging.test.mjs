@@ -157,6 +157,51 @@ const HOTEL = (over = {}) => Object.assign({
   eq(s.viewPlan().title, 'A', 'title still A');
 }
 
+/* ---------- session discard: regression for the redoable-tail wipe bug ----------
+ * When the user did an editor Apply (which stages a sessionId-tagged
+ * saveItemOp), then dragged a bar (non-session op), then Undo'd the
+ * drag (creating a redoable tail), then opened the editor again and
+ * did another Apply — the new Apply truncated the redoable tail and
+ * the old add() implementation wiped the *entire* sessionOps map.
+ * The first saveItemOp's index was lost from tracking, so when the
+ * user then clicked Cancel in the editor, discardSession() only
+ * removed the second saveItemOp, leaving the first behind. The
+ * editor's Cancel button then failed to roll back the original edit.
+ *
+ * The fix is to truncate sessionOps entries by index (keep indices <
+ * the cut point) instead of clearing the whole map. */
+{
+  const baseItem = {
+    id: 1, item_type: 'activity', title: 'Original',
+    item_date: '2026-09-11', sort_key: 1, status: 'planned',
+    details: { when: { start_at: '2026-09-11T09:00', end_at: '2026-09-11T11:00' } },
+    attachments: [],
+  };
+  const s = new Staging({ baseItems: [baseItem], basePlan: { id: 99, title: 'P' } });
+  // 1. Editor Apply 1
+  s.add(saveItemOp({ planId: 99, item: { ...baseItem, title: 'Edit 1' },
+                     isNew: false, sideEffects: [], sessionId: 'sess-A' }));
+  // 2. Drag bar (non-session op)
+  s.add(updateItemOp({ planId: 99, item: { ...baseItem, id: 1,
+                       details: { when: { start_at: '2026-09-11T10:00', end_at: '2026-09-11T12:00' } } } }));
+  // 3. Undo the drag (creates redoable tail)
+  s.undo();
+  // 4. Editor Apply 2 — truncates the redoable tail
+  s.add(saveItemOp({ planId: 99, item: { ...baseItem, title: 'Edit 2' },
+                     isNew: false, sideEffects: [], sessionId: 'sess-A' }));
+  // sessionOps['sess-A'] should now track BOTH the original Apply at
+  // index 0 AND the new Apply at index 1.
+  const sessIdxs = s.sessionOps.get('sess-A') || [];
+  eq(sessIdxs.length, 2, 'sessionOps keeps BOTH session ops after a truncated re-apply');
+  eq(sessIdxs[0], 0, 'first session op is at index 0 (preserved across truncation)');
+  eq(sessIdxs[1], 1, 'second session op is at index 1');
+  // 5. User clicks Cancel in the editor.
+  s.discardSession('sess-A');
+  eq(s.ops.length, 0, 'discardSession removes ALL session ops, not just the latest');
+  eq(s.pointer, 0, 'pointer rewound to 0');
+  eq(s.viewItems()[0].title, 'Original', 'view reverts to base after session discard');
+}
+
 /* ---------- composite create + link + image + expense ---------- */
 {
   const s = new Staging({ baseItems: [], basePlan: { id: 99, title: 'P' } });

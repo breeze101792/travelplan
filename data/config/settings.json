@@ -6,17 +6,18 @@
       "label": "Hotel",
       "icon": "bed",
       "spans_days": true,
+      "when_labels": {
+        "start": "Check-in",
+        "end": "Check-out"
+      },
       "fields": [
         {"key": "hotel_name", "label": "Hotel name", "type": "text"},
         {"key": "address", "label": "Address", "type": "text"},
-        {"key": "check_in_time", "label": "Check-in", "type": "time"},
-        {"key": "check_out_time", "label": "Check-out", "type": "time"},
         {"key": "booking_ref", "label": "Booking ref", "type": "text"},
         {"key": "note", "label": "Note", "type": "textarea"}
       ],
       "rows": [
         ["hotel_name", "booking_ref"],
-        ["check_in_time", "check_out_time"],
         ["address"],
         ["note"]
       ]
@@ -25,14 +26,16 @@
       "label": "Transit",
       "icon": "plane",
       "spans_days": false,
+      "when_labels": {
+        "start": "Depart",
+        "end": "Arrive"
+      },
       "fields": [
         {"key": "mode", "label": "Type", "type": "select", "options": ["Flight", "Train", "Bus", "Ferry", "Taxi", "Rental car"]},
         {"key": "provider", "label": "Provider / airline", "type": "text"},
         {"key": "ref_no", "label": "Ref / flight no.", "type": "text"},
         {"key": "from", "label": "From", "type": "text"},
         {"key": "to", "label": "To", "type": "text"},
-        {"key": "depart_time", "label": "Depart", "type": "datetime-local"},
-        {"key": "arrive_time", "label": "Arrive", "type": "datetime-local"},
         {"key": "seat", "label": "Seat / car", "type": "text"},
         {"key": "confirmation", "label": "Confirmation", "type": "text"},
         {"key": "note", "label": "Note", "type": "textarea"}
@@ -41,7 +44,6 @@
         ["mode", "provider"],
         ["ref_no", "confirmation"],
         ["from", "to"],
-        ["depart_time", "arrive_time"],
         ["seat"],
         ["note"]
       ]
@@ -50,16 +52,17 @@
       "label": "Activity",
       "icon": "compass",
       "spans_days": false,
+      "when_labels": {
+        "start": "Start",
+        "end": "End"
+      },
       "fields": [
         {"key": "name", "label": "Name", "type": "text"},
         {"key": "location", "label": "Location / Venue", "type": "text"},
-        {"key": "start_time", "label": "Start", "type": "datetime-local"},
-        {"key": "end_time", "label": "End", "type": "datetime-local"},
         {"key": "note", "label": "Note", "type": "textarea"}
       ],
       "rows": [
         ["name", "location"],
-        ["start_time", "end_time"],
         ["note"]
       ]
     },
@@ -67,17 +70,19 @@
       "label": "Restaurant",
       "icon": "restaurant",
       "spans_days": false,
+      "when_labels": {
+        "start": "Time",
+        "end": "End"
+      },
       "fields": [
         {"key": "name", "label": "Restaurant name", "type": "text"},
         {"key": "address", "label": "Address", "type": "text"},
-        {"key": "start_time", "label": "Time", "type": "datetime-local"},
         {"key": "party_size", "label": "Party size", "type": "number"},
         {"key": "note", "label": "Note", "type": "textarea"}
       ],
       "rows": [
-        ["name", "start_time"],
+        ["name", "party_size"],
         ["address"],
-        ["party_size"],
         ["note"]
       ]
     },
@@ -85,6 +90,10 @@
       "label": "Note",
       "icon": "note",
       "spans_days": false,
+      "when_labels": {
+        "start": "At",
+        "end": "Until"
+      },
       "fields": [
         {"key": "text", "label": "Note", "type": "textarea"}
       ],
