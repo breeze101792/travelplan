@@ -106,9 +106,36 @@ export async function initSettlement(ctx, { plan, users }) {
   }
 
   async function render() {
-    clear(root);
-    root.append(el('h2', { class: 'section-title', text: 'Settlement' }));
-    root.append(el('p', { class: 'muted',
+    // Fetch all data first — old DOM stays visible during loading so the
+    // page doesn't collapse and scroll to top. After all data is in hand,
+    // build the new DOM and swap it in one synchronous clear+append.
+    let st, paymentsEl;
+    try {
+      const params = new URLSearchParams();
+      params.set('mode', currentMode);
+      if (currentMode === 'single') params.set('currency', currentCurrency);
+      [st, paymentsEl] = await Promise.all([
+        apiGet(`/api/plans/${planId}/settlement?${params.toString()}`),
+        renderPayments(),
+      ]);
+    } catch (e) {
+      clear(root);
+      root.append(el('p', { class: 'error', text: e.message }));
+      root.append(refreshBtn());
+      return;
+    }
+
+    const present = st.currencies_present || [];
+    const missing = st.missing_currencies || [];
+    const rates = st.rates || {};
+    const rateCurrencies = Array.from(new Set([...present, ...missing])).sort()
+      .filter(c => c !== baseCurrency);
+
+    // Build all new DOM nodes while old content is still visible.
+    const els = [];
+
+    els.push(el('h2', { class: 'section-title', text: 'Settlement' }));
+    els.push(el('p', { class: 'muted',
       text: `Base currency: ${baseCurrency}. Exchange rates are user-supplied and saved on this plan.` }));
 
     // --- mode / currency selector ---
@@ -138,26 +165,7 @@ export async function initSettlement(ctx, { plan, users }) {
       currencyGroup
     );
     currencyGroup.style.display = currentMode === 'single' ? '' : 'none';
-    root.append(controls);
-
-    // --- fetch settlement data ---
-    let st;
-    try {
-      const params = new URLSearchParams();
-      params.set('mode', currentMode);
-      if (currentMode === 'single') params.set('currency', currentCurrency);
-      st = await apiGet(`/api/plans/${planId}/settlement?${params.toString()}`);
-    } catch (e) {
-      root.append(el('p', { class: 'error', text: e.message }));
-      root.append(refreshBtn());
-      return;
-    }
-
-    const present = st.currencies_present || [];
-    const missing = st.missing_currencies || [];
-    const rates = st.rates || {};
-    const rateCurrencies = Array.from(new Set([...present, ...missing])).sort()
-      .filter(c => c !== baseCurrency);
+    els.push(controls);
 
     // --- rate editor ---
     const ratePanel = el('div', { class: 'rate-panel' });
@@ -188,7 +196,7 @@ export async function initSettlement(ctx, { plan, users }) {
       ratePanel.append(el('p', { class: 'muted',
         text: 'All expenses use the base currency.' }));
     }
-    root.append(ratePanel);
+    els.push(ratePanel);
 
     function saveRates() {
       const ratesBody = {};
@@ -206,13 +214,13 @@ export async function initSettlement(ctx, { plan, users }) {
       const pc = st.per_currency || {};
       const curKeys = Object.keys(pc).sort();
       if (!curKeys.length) {
-        root.append(el('p', { class: 'muted',
+        els.push(el('p', { class: 'muted',
           text: 'No expenses to settle.' }));
       }
       curKeys.forEach(cur => {
         const data = pc[cur];
         const d = data.decimals != null ? data.decimals : decimalsFor(cur);
-        root.append(renderSettlementPanel(
+        els.push(renderSettlementPanel(
           `${cur}`,
           data.balances || [],
           data.proposed_settlement || [],
@@ -222,10 +230,13 @@ export async function initSettlement(ctx, { plan, users }) {
       });
 
       if (!readOnly) {
-        root.append(renderPaymentForm());
+        els.push(renderPaymentForm());
       }
-      root.append(await renderPayments());
-      root.append(refreshBtn());
+      els.push(paymentsEl);
+      els.push(refreshBtn());
+
+      clear(root);
+      for (const el of els) root.append(el);
       return;
     }
 
@@ -235,13 +246,16 @@ export async function initSettlement(ctx, { plan, users }) {
 
     // If rates are missing, stop here (form shown, balances hidden).
     if (missing.length) {
-      root.append(el('p', { class: 'muted',
+      els.push(el('p', { class: 'muted',
         text: 'Balances and who-pays-whom will appear once rates are saved for all currencies.' }));
-      root.append(refreshBtn());
+      els.push(refreshBtn());
+
+      clear(root);
+      for (const el of els) root.append(el);
       return;
     }
 
-    root.append(renderSettlementPanel(
+    els.push(renderSettlementPanel(
       `All amounts in ${settleCur}`,
       st.balances_base || [],
       st.proposed_settlement || [],
@@ -251,13 +265,15 @@ export async function initSettlement(ctx, { plan, users }) {
 
     // --- record payment form ---
     if (!readOnly) {
-      root.append(renderPaymentForm());
+      els.push(renderPaymentForm());
     }
 
     // --- recorded payments ---
-    root.append(await renderPayments());
+    els.push(paymentsEl);
+    els.push(refreshBtn());
 
-    root.append(refreshBtn());
+    clear(root);
+    for (const el of els) root.append(el);
   }
 
   function renderPaymentForm() {
