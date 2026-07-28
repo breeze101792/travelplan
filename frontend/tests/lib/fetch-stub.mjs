@@ -56,11 +56,17 @@ export function installFetch(routes) {
 }
 
 function jsonResponse(data) {
+  let status = 200;
+  let body = data;
+  if (Array.isArray(data)) {
+    status = data[1]?.status || 200;
+    body = data[0];
+  }
   return {
-    ok: true, status: 200,
+    ok: status >= 200 && status < 300, status,
     headers: { get: (k) => (k === 'content-type' ? 'application/json' : null) },
-    json: async () => data,
-    text: async () => JSON.stringify(data),
+    json: async () => body,
+    text: async () => JSON.stringify(body),
   };
 }
 

@@ -283,10 +283,13 @@ tr:last-child td { border-bottom: none; }
   border-bottom: 1px solid var(--line);
   background: var(--card);
 }
-.plan-head-main { min-width: 220px; }
+.plan-head-main { min-width: 220px; display: flex; align-items: center; gap: 8px; }
 .plan-title { margin: 0; font-size: 1.6rem; line-height: 1.2; color: var(--ink); }
 .plan-title.editable { cursor: text; outline: 1px dashed transparent; border-radius: 4px; padding: 2px 4px; }
 .plan-title.editable:hover { outline-color: var(--line); background: rgba(0,0,0,.02); }
+.plan-refresh-btn { background: none; border: 1px solid var(--line, #e5e7eb); border-radius: 4px; cursor: pointer; font-size: 1.1rem; line-height: 1; padding: 2px 6px; color: var(--muted); flex-shrink: 0; }
+.plan-refresh-btn:hover { background: var(--bg-hover, #f3f4f6); color: var(--ink); }
+.plan-refresh-btn:active { transform: rotate(45deg); }
 .title-edit { font-size: 1.6rem; font-weight: 600; padding: 2px 4px; width: 100%; max-width: 420px; }
 .plan-dates { margin: 4px 0 0; color: var(--muted); font-size: .95rem; }
 .plan-dates.editable { cursor: text; outline: 1px dashed transparent; border-radius: 4px; padding: 1px 4px; display: inline-block; }

@@ -80,6 +80,19 @@ function initShell(context) {
   document.querySelector('.plan-nav')?.addEventListener('click', handleNavClick);
   window.addEventListener('popstate', handlePopState);
 
+  document.getElementById('plan-refresh-btn')?.addEventListener('click', async () => {
+    const btn = document.getElementById('plan-refresh-btn');
+    btn.disabled = true;
+    btn.textContent = '⟳';
+    try {
+      const { refresh } = await import('/static/js/plan-store.js');
+      await refresh(['plan', 'item', 'member', 'expense']);
+    } finally {
+      btn.disabled = false;
+      btn.textContent = '↻';
+    }
+  });
+
   const initialView = document.getElementById('plan-view')?.dataset?.view || 'board';
   navigate(initialView, false);
 }
