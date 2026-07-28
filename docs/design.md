@@ -52,20 +52,30 @@ the same ops the other page would stage.
 
 ## Data model
 
-`item.details` is a JSON column with one shape per `item_type`. For
-every timed type the shape is mandatory:
+`item.details` is a JSON column. For every timed type the time
+information is in a single `when` object:
 
 ```
-transit:    { depart_time, arrive_time, ... }
-activity:   { start_time,  end_time,     ... }
-restaurant: { start_time,  end_time,     ... }   (was { time } before)
-hotel:      { hotel_name, check_in_time, check_out_time, end_date on item, ... }
+transit:    { when: { start_at, end_at }, ... }   // start_at = depart, end_at = arrive
+activity:   { when: { start_at, end_at }, ... }
+restaurant: { when: { start_at, end_at }, ... }
+hotel:      { when: { start_at, end_at }, ... }   // start_at = check-in, end_at = check-out
+note:       { when: { start_at, end_at }, ... }
 ```
 
-The `time` field on legacy rows is read by the timeline as a 1h bar
-fallback; the next save writes `start_time` + `end_time` back so the
-new shape is persisted (see `itemTimeWindow()` in `timeline.js` and
-`makeFieldInput()` in `item-editor.js`).
+`start_at` and `end_at` are `YYYY-MM-DDTHH:MM` (the same shape as
+`datetime-local` inputs). The server derives `item.item_date` from
+`when.start_at` and `item.end_date` from `when.end_at` on save, so the
+day columns and the spanning-hotel logic stay in sync with the
+time-of-day data.
+
+**Schedule items always have both a start and an end.** If the user
+leaves the end blank, the server defaults `end_at` to `start_at + 1h`
+(clamped to 23:59 of the same day). The bar then has a real length on
+the timeline, the multi-drag math has a duration to work with, and
+the data shape is uniform across types — no "is this item scheduled
+or instantaneous?" branches in the renderer. To make a truly
+instant event, set start and end to the same value.
 
 `plan.buffer_days` is a list of `YYYY-MM-DD` strings that live on a
 "scratchpad calendar" (year 9999) so they can never collide with a
@@ -169,8 +179,8 @@ Map. The map's day-list sidebar uses HTML5 drag-and-drop in
 long-press (same 500ms hold pattern).
 
 Both pages call into the same `timeEditItemOp` (defined in
-`staging.js`) which PATCHes `item_date` + `details.start_time` +
-`details.end_time` in one server call.
+`staging.js`) which PATCHes `item_date` + `details.when` (with the new
+`start_at` / `end_at`) in one server call.
 
 ## Multi-select and context menu
 

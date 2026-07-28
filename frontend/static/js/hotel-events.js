@@ -2,10 +2,11 @@
  * data so they appear alongside regular items on every view (board, timeline,
  * navigation, map).
  *
- * Each hotel that has a check_in_time / check_out_time produces two single-day
- * virtual items with `_hotelEvent` set to `'check-in'` or `'check-out'` and
- * `_hotelId` pointing back to the parent hotel.  Real (spanning) hotels are
- * left untouched — the caller still sees them in the returned list.
+ * Each hotel that has a ``when.start_at`` / ``when.end_at`` produces two
+ * single-day virtual items with `_hotelEvent` set to `'check-in'` or
+ * `'check-out'` and `_hotelId` pointing back to the parent hotel. Real
+ * (spanning) hotels are left untouched — the caller still sees them in the
+ * returned list.
  */
 
 function timeToSortKey(time) {
@@ -21,9 +22,10 @@ export function expandHotelEvents(items) {
     if (item.item_type !== 'hotel') continue;
     if (!item.end_date) continue;
     const d = item.details || {};
+    const when = d.when || {};
     const hotelLabel = d.hotel_name || item.title || 'Hotel';
 
-    if (d.check_in_time) {
+    if (when.start_at) {
       extra.push({
         id: `_checkin_${item.id}`,
         _hotelId: item.id,
@@ -31,13 +33,13 @@ export function expandHotelEvents(items) {
         item_type: 'hotel',
         title: `Check-in: ${hotelLabel}`,
         item_date: item.item_date,
-        details: { time: d.check_in_time },
-        sort_key: timeToSortKey(d.check_in_time),
+        details: { time: when.start_at },
+        sort_key: timeToSortKey(when.start_at),
         status: item.status,
       });
     }
 
-    if (d.check_out_time) {
+    if (when.end_at) {
       extra.push({
         id: `_checkout_${item.id}`,
         _hotelId: item.id,
@@ -45,8 +47,8 @@ export function expandHotelEvents(items) {
         item_type: 'hotel',
         title: `Check-out: ${hotelLabel}`,
         item_date: item.end_date,
-        details: { time: d.check_out_time },
-        sort_key: timeToSortKey(d.check_out_time),
+        details: { time: when.end_at },
+        sort_key: timeToSortKey(when.end_at),
         status: item.status,
       });
     }

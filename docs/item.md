@@ -52,29 +52,60 @@ CREATE INDEX IF NOT EXISTS idx_items_plan ON items(plan_id, item_date);
 Defined in `data/config/settings.json` (served to the frontend via
 `GET /api/settings`) and validated against the hardcoded `ITEM_TYPES` set in
 `backend/blueprints/items.py`. Each type has a `label`, `icon` (for UI),
-`spans_days` flag, and a typed field list that drives the editor form.
+`spans_days` flag, an optional `when_labels` map (labels for the right-
+column "When" inputs), and a typed field list that drives the editor form.
+
+### Time & dates — the unified `when` object
+
+Every item carries its time in a single `details.when` object:
+
+```json
+{ "start_at": "2026-09-11T15:00",
+  "end_at":   "2026-09-12T11:00" }
+```
+
+`start_at` and `end_at` are `YYYY-MM-DDTHH:MM` (the same shape as
+`datetime-local` inputs). The editor's right column has a "When" block
+with one or two `datetime-local` inputs (labels vary by type — see
+`when_labels` below). The server derives the `item_date` and `end_date`
+columns from `when.start_at` / `when.end_at` on save, so the board's day
+grouping and the hotel's spanning logic both stay consistent with the
+time-of-day data.
+
+**Schedule items always have both a start and an end.** If the user
+leaves the end blank, the server defaults `end_at` to
+`start_at + 1h` (clamped to 23:59 of the same day). The bar then has a
+real length on the timeline, the multi-drag math has a duration to
+work with, and the data shape is uniform across types — no
+"is this item scheduled or instantaneous?" branches in the renderer.
+To make a truly instant event, set start and end to the same value.
 
 ### hotel
 - **spans_days:** `true` — renders across `[item_date, end_date)`
-- `hotel_name`, `address`, `check_in_time`, `check_out_time`, `booking_ref`, `note`
+- **when_labels:** `start = "Check-in"`, `end = "Check-out"`
+- `hotel_name`, `address`, `booking_ref`, `note`
 
 ### transit
 - **spans_days:** `false`
+- **when_labels:** `start = "Depart"`, `end = "Arrive"`
 - A unified type for flights, trains, buses, ferries, taxis, and rental cars.
   The `mode` field (select) distinguishes the sub-type at entry time.
 - `mode` (Flight/Train/Bus/Ferry/Taxi/Rental car), `provider`, `ref_no`,
-  `from`, `to`, `depart_time`, `arrive_time`, `seat`, `confirmation`, `note`
+  `from`, `to`, `seat`, `confirmation`, `note`
 
 ### activity
 - **spans_days:** `false`
-- `name`, `location`, `start_time`, `end_time`, `note`
+- **when_labels:** `start = "Start"`, `end = "End"`
+- `name`, `location`, `note`
 
 ### restaurant
 - **spans_days:** `false`
-- `name`, `address`, `start_time`, `end_time`, `party_size`, `note`
+- **when_labels:** `start = "Time"`, `end = "End"`
+- `name`, `address`, `party_size`, `note`
 
 ### note
 - **spans_days:** `false`
+- **when_labels:** `start = "At"`, `end = "Until"`
 - `text`
 
 ---
@@ -174,6 +205,30 @@ Items also link to `expenses` (0+ per item) via `expenses.item_id`.
 
 1. **No ORM / no class** — items are plain dicts everywhere. The Python backend uses `sqlite3.Row` + `dict()` conversion. The JS frontend uses plain objects.
 2. **Type-specific fields go in `details` JSON** — the core schema stays generic; type-specific UI fields are driven purely by `settings.json`.
-3. **`spans_days`** — only `hotel` currently spans days. The item renders on every day in `[item_date, end_date)`.
-4. **`sort_key`** — fractional indexing (similar to jira) to avoid reindexing siblings on every drag. Recalculated by the staging engine.
-5. **Two-phase save** — items can exist as local drafts (`isLocal`, `isNew`) before being committed to the server via the staging/pending bar.
+3. **Unified `when` object** — every item's time-of-day is in `details.when.start_at` / `details.when.end_at`. The board, timeline, and editor all read from this single source; the server derives `item_date` / `end_date` from it on save. Schedule items always have both fields — `end_at` defaults to `start_at + 1h` if the user leaves it blank.
+4. **`spans_days`** — only `hotel` currently spans days. The item renders on every day in `[item_date, end_date)`. The hotel's `end_date` is derived from `when.end_at`.
+5. **`sort_key`** — fractional indexing (similar to jira) to avoid reindexing siblings on every drag. Recalculated by the staging engine.
+6. **Two-phase save** — items can exist as local drafts (`isLocal`, `isNew`) before being committed to the server via the staging/pending bar.
+
+## Database Migrations
+
+Database schema changes are applied by a small framework in
+`backend/migrations/`. Each migration is a Python file in that directory
+named `NNN_short_name.py` that exports a unique `id` and a `run(conn)`
+function. On startup `init_db()` calls `run_pending(conn)`, which
+applies any unapplied migrations in order, wrapping each in a savepoint
+so a single bad migration doesn't roll back earlier successful ones.
+The `migrations` table tracks which migrations have been applied.
+
+Current migrations:
+
+- `001_plans_status` — add the `plans.status` column
+- `002_transit_unify` — merge flight/train/transport into the unified `transit` type
+- `003_details_cleanup` — move `link` from `details` to the `attachments` table, rename `venue`→`location`, strip legacy `qty`/`price`
+- `004_unify_when` — rewrite all time fields into the unified `details.when` object
+
+To add a new migration: create a new `NNN_name.py` file in
+`backend/migrations/`, export `id` and `run(conn)`, and it will be
+discovered and applied in order on the next startup. The framework is
+idempotent — re-running `run_pending` is a no-op once a migration is
+recorded.

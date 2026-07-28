@@ -65,6 +65,31 @@ db_mod.DB_PATH = data / "travelplan.db"
 app = create_app({...})
 ```
 
+### Adding a database migration
+
+Database schema changes go in `backend/migrations/`. Each migration is
+a Python file named `NNN_short_name.py` that exports `id` (a unique
+string) and a `run(conn)` function. The framework discovers them
+alphabetically (by the numeric prefix) and applies any that aren't
+already recorded in the `migrations` table. Each migration runs in its
+own savepoint, so a single bad migration doesn't roll back earlier
+ones — the user just fixes the file and restarts.
+
+To add a migration:
+
+1. Create `backend/migrations/005_my_change.py`:
+   ```python
+   id = "005_my_change"
+   def run(conn):
+       conn.execute("ALTER TABLE ...")
+   ```
+2. On the next startup, `init_db()` calls `run_pending(conn)` which
+   picks up the new file and applies it. The `migrations` row is
+   written after `run` returns, so a partial failure doesn't pollute
+   the table.
+3. Add a test in `tests/backend/test_migrations.py` that asserts the
+   post-migration state.
+
 ### `/auth/logout` is GET-only
 
 The topbar uses `<a href="/auth/logout">`, so the route is `GET`. A test
