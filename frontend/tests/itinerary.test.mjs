@@ -925,6 +925,96 @@ const ownerStub = await boot('owner');
          'card detail does not duplicate start/end as separate lines');
 }
 
+/* =============== hotel check-in / check-out virtual events on board =============== */
+// The board must render virtual check-in and check-out events for hotels
+// whose details.when has start_at / end_at set. The virtual events show
+// the check-in/check-out time as a detail line and sort by time within
+// the day (before untimed items). The spanning hotel card must NOT show
+// a misleading time range since the times live on different days.
+{
+  const SETTINGS_VH = {
+    base_currencies: ['USD', 'JPY'],
+    item_types: {
+      hotel: { label: 'Hotel', spans_days: true, fields: [] },
+      restaurant: { label: 'Restaurant', fields: [] },
+      activity: { label: 'Activity', fields: [] },
+    },
+  };
+  const VH_PLAN = { id: 2, title: 'VH', start_date: '2026-07-01', end_date: '2026-07-04', base_currency: 'USD' };
+  installDom({ ids: PAGE_IDS });
+  installFetch([
+    ['GET /api/settings', () => SETTINGS_VH],
+    ['GET /api/plans/2', () => ({ plan: VH_PLAN })],
+    ['GET /api/plans/2/members', () => ({ owner: { id: 1, username: 'admin', display_name: 'Admin' }, members: [] })],
+    ['GET /api/plans/2/items', () => ({ items: [
+      { id: 50, item_type: 'hotel', title: 'Grand Hotel', item_date: '2026-07-01', end_date: '2026-07-04',
+        sort_key: 1, status: 'planned',
+        details: { hotel_name: 'Grand Hotel',
+                   when: { start_at: '2026-07-01T15:00', end_at: '2026-07-04T11:00' } },
+        attachments: [] },
+      // A timed item on the check-out day to verify check-out sorts by time.
+      { id: 51, item_type: 'restaurant', title: 'Breakfast', item_date: '2026-07-04', end_date: null,
+        sort_key: 1, status: 'planned',
+        details: { when: { start_at: '2026-07-04T09:00', end_at: '2026-07-04T10:00' } },
+        attachments: [] },
+    ] })],
+    ['GET /api/plans/2/expenses/by-item', () => ({ items: [] })],
+  ]);
+  const { resetSettingsCache } = await import('/static/js/util.js');
+  resetSettingsCache();
+  const { initItinerary } = await import('/static/js/itinerary.js');
+  await initItinerary({ planId: 2, role: 'owner' });
+  const board = document.getElementById('board');
+  const days = daySections();
+  eq(days.length, 4, 'board renders 4 day sections for a 4-night plan');
+
+  // Day 1 (07-01) — check-in day: spanning hotel + check-in virtual event
+  const d1Cards = days[0].querySelectorAll('.card');
+  const d1Titles = [...d1Cards].map(c => c.querySelector('.card-title').textContent);
+  assert(d1Titles.includes('Check-in: Grand Hotel'), 'day 1 has check-in virtual event');
+  assert(d1Titles.includes('Grand Hotel'), 'day 1 has spanning hotel card');
+  eq(d1Titles[d1Titles.length - 1], 'Grand Hotel', 'spanning hotel pinned to bottom of day 1');
+
+  // Day 1: verify check-in card shows its time in detail lines
+  const checkInCard = [...d1Cards].find(c => c.querySelector('.card-title').textContent === 'Check-in: Grand Hotel');
+  const checkInLines = [...checkInCard.querySelectorAll('.card-details li')].map(li => li.textContent);
+  assert(checkInLines.some(l => l === 'Check-in: 15:00'),
+         'check-in card detail shows the check-in time: ' + JSON.stringify(checkInLines));
+
+  // Day 2–3 (07-02, 07-03) — middle nights: only spanning hotel, no virtual events
+  for (let di = 1; di <= 2; di++) {
+    const titles = [...days[di].querySelectorAll('.card .card-title')].map(n => n.textContent);
+    assert(titles.includes('Grand Hotel'), 'day ' + (di + 1) + ' shows spanning hotel');
+    assert(!titles.some(t => t.startsWith('Check-in')), 'day ' + (di + 1) + ' has no check-in');
+    assert(!titles.some(t => t.startsWith('Check-out')), 'day ' + (di + 1) + ' has no check-out');
+  }
+
+  // Day 4 (07-04) — check-out day: restaurant (09:00) then check-out (11:00) then no spanning hotel
+  const d4Cards = days[3].querySelectorAll('.card');
+  const d4Titles = [...d4Cards].map(c => c.querySelector('.card-title').textContent);
+  assert(d4Titles.includes('Check-out: Grand Hotel'), 'day 4 has check-out virtual event');
+  assert(d4Titles.includes('Breakfast'), 'day 4 has the restaurant');
+  assert(!d4Titles.includes('Grand Hotel'), 'spanning hotel does not spill onto check-out day (end_date exclusive)');
+
+  // Check-out card must sort AFTER Breakfast (09:00) but BEFORE untimed items
+  const sortIdx = d4Titles.indexOf('Check-out: Grand Hotel');
+  const bfastIdx = d4Titles.indexOf('Breakfast');
+  assert(bfastIdx >= 0 && sortIdx > bfastIdx,
+         'check-out sorts after timed restaurant (09:00 < 11:00): breakfast=' + bfastIdx + ' checkout=' + sortIdx);
+
+  // Check-out card shows its time in detail lines
+  const checkOutCard = [...d4Cards].find(c => c.querySelector('.card-title').textContent === 'Check-out: Grand Hotel');
+  const checkOutLines = [...checkOutCard.querySelectorAll('.card-details li')].map(li => li.textContent);
+  assert(checkOutLines.some(l => l === 'Check-out: 11:00'),
+         'check-out card detail shows the check-out time: ' + JSON.stringify(checkOutLines));
+
+  // Verify spanning hotel card does NOT show a time range (it's a multi-day span)
+  const spanningCard = [...d1Cards].find(c => c.querySelector('.card-title').textContent === 'Grand Hotel');
+  const spanningLines = [...spanningCard.querySelectorAll('.card-details li')].map(li => li.textContent);
+  assert(!spanningLines.some(l => /\d{2}:\d{2}\s*→/.test(l)),
+         'spanning hotel card must NOT show a time range: ' + JSON.stringify(spanningLines));
+}
+
 /* =============== viewer: bar hidden, board renders =============== */
 {
   const stub = await boot('viewer');
