@@ -688,20 +688,19 @@ function staging_pendingCount() {
 
 /* =============== edit-bar: range + buffer + quick add =============== */
 // The shared renderEditBar() mounts the same chrome the board uses:
-// +/- day-range buttons, + Buffer day, and a Quick add type picker.
+// a ±Day/Buffer dropdown, and a Quick add type picker.
 // The owner should see all of it; the viewer should see none of it.
 {
   await boot('owner');
   const eb = document.getElementById('edit-bar');
   assert(!!eb, 'edit-bar exists in the DOM');
-  const rangeLabels = [...eb.querySelectorAll('button.toolbar-btn')].map(b => b.textContent);
-  // Range buttons (in order: extend-start, trim-start, trim-end, extend-end).
-  assert(rangeLabels.includes('‹ +1 day'),  'edit-bar has extend-start button');
-  assert(rangeLabels.includes('−1 day ›'),  'edit-bar has trim-start button');
-  assert(rangeLabels.includes('‹ −1 day'),  'edit-bar has trim-end button');
-  assert(rangeLabels.includes('+1 day ›'),  'edit-bar has extend-end button');
-  // Buffer + quick add.
-  assert(rangeLabels.includes('+ Buffer day'), 'edit-bar has + Buffer day button');
+  // Range + buffer now live inside a single .rb-dropdown.
+  const rbLabels = [...eb.querySelectorAll('.rb-dropdown .rb-item')].map(b => b.textContent);
+  assert(rbLabels.includes('Add day at start'),       'edit-bar has Add day at start');
+  assert(rbLabels.includes('Remove day from start'),  'edit-bar has Remove day from start');
+  assert(rbLabels.includes('Add day at end'),         'edit-bar has Add day at end');
+  assert(rbLabels.includes('Remove day from end'),    'edit-bar has Remove day from end');
+  assert(rbLabels.includes('Add buffer day'),         'edit-bar has Add buffer day');
   // Quick add buttons are inside the .qa-dropdown.
   const qaLabels = [...eb.querySelectorAll('.qa-item')].map(b => b.textContent);
   for (const ti of Object.values(SETTINGS.item_types)) {

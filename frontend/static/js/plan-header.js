@@ -19,14 +19,14 @@ import {
 } from '/static/js/staging.js';
 import { serializeItem } from '/static/js/clipboard.js';
 
-/* Close any open .qa-dropdown when clicking outside it. Guarded so the
- * module can be imported in environments without a document (node test
- * harness); the listener is only registered in a real browser. */
+/* Close any open .qa-dropdown / .rb-dropdown when clicking outside it.
+ * Guarded so the module can be imported in environments without a
+ * document (node test harness); the listener is only registered in a
+ * real browser. */
 if (typeof document !== 'undefined') {
   document.addEventListener('click', (e) => {
-    const dd = document.querySelector('.qa-dropdown');
-    if (dd && dd.hasAttribute('open') && !dd.contains(e.target)) {
-      dd.removeAttribute('open');
+    for (const dd of document.querySelectorAll('.qa-dropdown[open], .rb-dropdown[open]')) {
+      if (!dd.contains(e.target)) dd.removeAttribute('open');
     }
   });
 }
@@ -598,29 +598,43 @@ export function renderEditBar({ days, settings, staging, ctx, setBlockError, get
   const canTrimEnd = hasEnd && (!hasStart || view.start_date < view.end_date);
   const opts = { plan: view, staging, ctx, items, setBlockError };
 
-  // ---- range controls ----
-  const mkRangeBtn = (text, title, action, onClick, disabled) => el('button', {
-    type: 'button', class: 'toolbar-btn toolbar-range', text, title,
-    dataset: { action },
-    disabled: !!disabled, onclick: onClick,
+  // ---- trip-days dropdown (extend/trim edges + buffer) ----
+  const rbDrop = el('details', { class: 'rb-dropdown' });
+  const rbSummary = el('summary', {
+    class: 'rb-summary',
+    text: 'Trip days',
+    title: 'Add/remove days at the edges of the trip or add a buffer day',
   });
-  const startGroup = el('span', { class: 'toolbar-range-group' }, [
-    mkRangeBtn('\u2039 +1 day', 'Add one day to the start of the trip (new day on the left)', 'extend-start',
-               () => { extendStartBy(-1, opts); if (onChange) onChange(); }, !hasStart),
-    mkRangeBtn('\u22121 day \u203A', 'Remove the first day of the trip', 'trim-start',
-               () => { extendStartBy(+1, opts); if (onChange) onChange(); }, !canTrimStart),
-  ]);
-  const endGroup = el('span', { class: 'toolbar-range-group' }, [
-    mkRangeBtn('\u2039 \u22121 day', 'Remove the last day of the trip', 'trim-end',
-               () => { extendEndBy(-1, opts); if (onChange) onChange(); }, !canTrimEnd),
-    mkRangeBtn('+1 day \u203A', 'Add one day to the end of the trip (new day on the right)', 'extend-end',
-               () => { extendEndBy(+1, opts); if (onChange) onChange(); }, !hasEnd),
-  ]);
-  bar.appendChild(startGroup);
-  bar.appendChild(endGroup);
+  rbDrop.appendChild(rbSummary);
 
-  // ---- + Buffer day ----
-  bar.appendChild(makeBufferAddButton({ plan: view, staging, ctx, onChange }));
+  const rbMenu = el('div', { class: 'rb-menu' });
+  const rangeItems = [
+    { text: 'Add day at start', title: 'Add one day to the start of the trip', disabled: !hasStart, fn: () => extendStartBy(-1, opts) },
+    { text: 'Remove day from start', title: 'Remove the first day of the trip', disabled: !canTrimStart, fn: () => extendStartBy(+1, opts) },
+    { text: 'Add day at end', title: 'Add one day to the end of the trip', disabled: !hasEnd, fn: () => extendEndBy(+1, opts) },
+    { text: 'Remove day from end', title: 'Remove the last day of the trip', disabled: !canTrimEnd, fn: () => extendEndBy(-1, opts) },
+  ];
+  for (const ri of rangeItems) {
+    const b = el('button', { type: 'button', class: 'rb-item', text: ri.text, title: ri.title, disabled: ri.disabled });
+    b.addEventListener('click', () => {
+      rbDrop.removeAttribute('open');
+      ri.fn();
+      if (onChange) onChange();
+    });
+    rbMenu.appendChild(b);
+  }
+  // separator
+  rbMenu.appendChild(el('div', { class: 'rb-sep' }));
+  // buffer day
+  const bufBtn = el('button', { type: 'button', class: 'rb-item', text: 'Add buffer day', title: 'Add a buffer day to the board (planning scratchpad for items you\'re not sure about)' });
+  bufBtn.addEventListener('click', () => {
+    rbDrop.removeAttribute('open');
+    stageBufferAdd({ plan: view, staging, ctx });
+    if (onChange) onChange();
+  });
+  rbMenu.appendChild(bufBtn);
+  rbDrop.appendChild(rbMenu);
+  bar.appendChild(rbDrop);
 
   // ---- quick-add dropdown ----
   const focusedDay = getFocusedDay ? getFocusedDay() : (days[0] && days[0].date);

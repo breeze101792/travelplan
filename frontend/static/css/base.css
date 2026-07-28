@@ -431,6 +431,40 @@ tr:last-child td { border-bottom: none; }
 }
 .qa-item:hover { background: var(--surface-2, #f1f5f9); }
 
+/* Trip-days dropdown — consolidates the "Add/remove day at start/end"
+ * controls and the "Add buffer day" button into a single dropdown to
+ * save space. Mirrors the .qa-dropdown look so the toolbar stays
+ * consistent. */
+.rb-dropdown { position: relative; display: inline-block; }
+.rb-summary {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 5px 11px; border-radius: 999px; border: 1px solid var(--border, #cbd5e1);
+  background: var(--surface, #fff); color: var(--text, #1f2937);
+  font-size: .82rem; font-weight: 500; cursor: pointer;
+  list-style: none; user-select: none;
+}
+.rb-summary::-webkit-details-marker { display: none; }
+.rb-summary::after { content: '▾'; margin-left: 2px; font-size: .7rem; }
+.rb-dropdown[open] .rb-summary::after { content: '▴'; }
+.rb-dropdown[open] .rb-summary { background: var(--surface-2, #f1f5f9); border-color: var(--accent, #6366f1); }
+.rb-menu {
+  position: absolute; top: calc(100% + 4px); left: 0; z-index: 10;
+  display: flex; flex-direction: column; gap: 2px;
+  min-width: 200px; padding: 4px;
+  background: var(--surface, #fff);
+  border: 1px solid var(--border, #cbd5e1); border-radius: 8px;
+  box-shadow: 0 6px 18px rgba(15,23,42,.12);
+}
+.rb-item {
+  display: block; width: 100%; text-align: left;
+  padding: 7px 10px; border: 0; border-radius: 4px;
+  background: transparent; color: var(--text, #1f2937);
+  font: inherit; font-size: .85rem; cursor: pointer;
+}
+.rb-item:hover:not(:disabled) { background: var(--surface-2, #f1f5f9); }
+.rb-item:disabled { opacity: .45; cursor: not-allowed; }
+.rb-sep { height: 1px; margin: 4px 2px; background: var(--border, #e5e7eb); }
+
 /* Per-day action chip (× close button on buffer days) ------------------
  * Shared by Board / Timeline. Buffer days get a small round × chip in
  * their day-head; the shared `makeDayActions()` helper in

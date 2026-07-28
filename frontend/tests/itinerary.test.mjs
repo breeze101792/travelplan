@@ -387,9 +387,14 @@ const ownerStub = await boot('owner');
   const board = document.getElementById('board');
   const bar = document.getElementById('edit-bar');
   const tb = document.getElementById('edit-bar');
-  // Find the +1-day-at-end button (data-action="extend-end").
-  const endExtend = tb.querySelector('.toolbar-range[data-action="extend-end"]');
-  assert(!!endExtend, 'toolbar exposes a +1 day end-extend button');
+  // The range/buffer controls now live inside a single .rb-dropdown.
+  // Open it so the menu items are addressable from the test.
+  const rbDrop = tb.querySelector('.rb-dropdown');
+  rbDrop.setAttribute('open', '');
+  // Find the "Add day at end" item (= "extend end").
+  const endExtend = [...rbDrop.querySelectorAll('.rb-item')]
+    .find(b => b.textContent === 'Add day at end');
+  assert(!!endExtend, 'toolbar exposes an "Add day at end" item');
   const beforeCount = daySections().length;
   endExtend.click();
   // One pending op; the staged plan now has a new end_date.
@@ -405,9 +410,11 @@ const ownerStub = await boot('owner');
   const undoBtn = [...bar.querySelectorAll('button.pb-btn')].find(b => b.textContent.includes('Revert'));
   undoBtn.click();
   eq(daySections().length, beforeCount, 'Revert removes the added day');
-  // The trim-end button is enabled when the range has at least 2 days.
-  const endTrim = tb.querySelector('.toolbar-range[data-action="trim-end"]');
-  assert(!!endTrim && !endTrim.disabled, '−1 day end-trim is enabled');
+  // The "Remove day from end" item is enabled when the range has at least 2 days.
+  rbDrop.setAttribute('open', '');
+  const endTrim = [...rbDrop.querySelectorAll('.rb-item')]
+    .find(b => b.textContent === 'Remove day from end');
+  assert(!!endTrim && !endTrim.disabled, '"Remove day from end" is enabled');
 }
 
 /* =============== owner: buffer day toolbar control =============== */
@@ -416,17 +423,19 @@ const ownerStub = await boot('owner');
   const board = document.getElementById('board');
   const bar = document.getElementById('edit-bar');
   const tb = document.getElementById('edit-bar');
-  // Trip days don't have a buffer chip; the toolbar's "+ Buffer day" button
+  // Trip days don't have a buffer chip; the toolbar's "+ Buffer day" item
   // adds a new buffer column with a single click (no date picker).
   const tripDayChip = daySections()[0].querySelector('.day-action');
   assert(!tripDayChip, 'trip days do not show a per-day buffer chip');
-  const bufBtn = [...tb.querySelectorAll('.toolbar-btn')]
-    .find(b => b.textContent === '+ Buffer day');
-  assert(!!bufBtn, 'toolbar exposes a + Buffer day button');
+  const rbDrop = tb.querySelector('.rb-dropdown');
+  rbDrop.setAttribute('open', '');
+  const bufBtn = [...rbDrop.querySelectorAll('.rb-item')]
+    .find(b => b.textContent === 'Add buffer day');
+  assert(!!bufBtn, 'toolbar exposes an "Add buffer day" item');
   const beforeCount = daySections().length;
   bufBtn.click();
   assert(bar.querySelector('.pb-status').textContent.includes('1 pending change'),
-         'bar shows 1 pending after + Buffer day click');
+         'bar shows 1 pending after Add buffer day click');
   // A new buffer column appears on the board.
   let days = daySections();
   eq(days.length, beforeCount + 1, '+1 buffer day adds a new column');
@@ -505,8 +514,9 @@ const ownerStub = await boot('owner');
   // Before the action: status is "All changes saved".
   assert(bar.querySelector('.pb-status').textContent.includes('All changes saved'),
          'starts in saved state');
-  const trimStart = tb.querySelector('.toolbar-range[data-action="trim-start"]');
-  assert(!!trimStart, 'trim-start button exists');
+  const trimStart = [...tb.querySelectorAll('.rb-dropdown .rb-item')]
+    .find(b => b.textContent === 'Remove day from start');
+  assert(!!trimStart, '"Remove day from start" item exists');
   trimStart.click();
   // Status now shows a block error, NOT a pending change.
   const status = bar.querySelector('.pb-status');
