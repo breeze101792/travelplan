@@ -724,8 +724,26 @@ export class Staging {
   add(op) {
     if (this.saving) return;
     if (this.pointer < this.ops.length) {
-      this.ops.length = this.pointer;
-      this.sessionOps.clear();
+      // Truncate the redoable tail. We must also clean up sessionOps:
+      // any index >= pointer is about to be gone, so remove those. The
+      // indices < pointer (the live history) keep their tracking.
+      //
+      // Earlier code did `sessionOps.clear()` here, which was a bug:
+      // if an earlier op belonged to a still-active session (e.g. the
+      // editor's first saveItemOp), that session's tracking was wiped
+      // even though its op survived. The next `discardSession()` for
+      // that session would then leave the op behind, so the editor's
+      // Cancel button failed to roll back its first edit.
+      const cutPoint = this.pointer;
+      this.ops.length = cutPoint;
+      for (const [sid, idxs] of this.sessionOps) {
+        const surviving = idxs.filter(i => i < cutPoint);
+        if (surviving.length) {
+          this.sessionOps.set(sid, surviving);
+        } else {
+          this.sessionOps.delete(sid);
+        }
+      }
     }
     op.id = this.ops.length + 1;
     const idx = this.ops.length;
