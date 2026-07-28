@@ -167,6 +167,7 @@ export async function initItinerary(ctx) {
   // multi-select). The editor sets this flag right before it closes; the
   // next document click consumes it and skips the clear.
   let suppressClearOnce = false;
+  let savedScrollLeft = 0;
 
   try {
     let planRes, memRes;
@@ -280,6 +281,7 @@ export async function initItinerary(ctx) {
     }
 
     const scrollWrap = el('div', { class: 'board-scroll' });
+    scrollWrap.addEventListener('scroll', () => { savedScrollLeft = scrollWrap.scrollLeft; }, { passive: true });
     let todaySec = null;
     for (const day of unpinnedDays) {
       const sec = buildDaySection(day);
@@ -291,7 +293,9 @@ export async function initItinerary(ctx) {
     renderHeaderChrome();
     renderEditBarCtl();
 
-    if (todaySec && window.matchMedia('(max-width: 640px)').matches) {
+    if (savedScrollLeft > 0) {
+      requestAnimationFrame(() => { scrollWrap.scrollLeft = savedScrollLeft; });
+    } else if (todaySec && window.matchMedia('(max-width: 640px)').matches) {
       requestAnimationFrame(() => {
         scrollWrap.scrollLeft = todaySec.offsetLeft - 16;
       });

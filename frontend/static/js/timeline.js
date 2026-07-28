@@ -834,6 +834,7 @@ export async function initTimeline(ctx) {
 
   // Blocked-action status (e.g. "trim would orphan an item"). Shown in
   // the edit bar's status text.
+  let savedScrollLeft = 0;
   let blockError = null;
   function setBlockError(msg) {
     blockError = msg || null;
@@ -1165,6 +1166,7 @@ export async function initTimeline(ctx) {
     }
 
     const scrollWrap = el('div', { class: 'timeline-scroll' });
+    scrollWrap.addEventListener('scroll', () => { savedScrollLeft = scrollWrap.scrollLeft; }, { passive: true });
     let todayNode = null;
     for (const day of unpinnedDays) {
       try {
@@ -1243,7 +1245,9 @@ export async function initTimeline(ctx) {
     renderEditBarCtl();
 
     // On small devices, snap the timeline horizontally to today's column.
-    if (todayNode && window.matchMedia('(max-width: 640px)').matches) {
+    if (savedScrollLeft > 0) {
+      requestAnimationFrame(() => { scrollWrap.scrollLeft = savedScrollLeft; });
+    } else if (todayNode && window.matchMedia('(max-width: 640px)').matches) {
       requestAnimationFrame(() => {
         scrollWrap.scrollLeft = todayNode.offsetLeft - scrollWrap.offsetLeft - 16;
       });
