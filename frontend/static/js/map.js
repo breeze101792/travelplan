@@ -150,12 +150,10 @@ function showContextMenu(x, y, item, dayIdx) {
       clipboardSet({ items: [item], action: 'cut' });
       staging.add(deleteItemOp({ itemId: item.id, label: `Cut ${item.title || 'item'}`, sessionId: 'cut-' + item.id }));
       closeContextMenu();
-      reloadAll();
     }},
     { label: 'Delete', shortcut: 'Del', enabled: !isEvent, danger: true, action: () => {
       staging.add(deleteItemOp({ itemId: item.id, label: `Delete ${item.title || 'item'}` }));
       closeContextMenu();
-      reloadAll();
     }},
     { sep: true },
     { label: 'Center on map', enabled: hasGeo, action: () => {
@@ -171,7 +169,6 @@ function showContextMenu(x, y, item, dayIdx) {
       closeContextMenu();
       openItemEditor(ctx, {
         plan, item: realItem, settings, members: [], staging, sessionId: 'map-' + realItem.id,
-        onApplied: () => { reloadAll(); },
       });
     }},
   ];
@@ -207,6 +204,22 @@ document.addEventListener('keydown', (e) => {
 document.addEventListener('scroll', closeContextMenu, { capture: true, passive: true });
 
 /* ---------- drag helpers ---------- */
+
+function refreshFromStaging() {
+  selectedItemId = null;
+  allItems = expandHotelEvents(staging.viewItems());
+  dayCoords = buildDayCoords();
+  const center = map.getCenter();
+  const zoom = map.getZoom();
+  for (const idx in dayLayers) removeDay(Number(idx));
+  dayLayers = {};
+  renderList();
+  if (expIndex !== null) {
+    const coords = dayCoords[expIndex] || [];
+    if (coords.length) drawDay(expIndex, coords, pickColor(expIndex));
+  }
+  map.setView(center, zoom, { animate: false });
+}
 
 function wireItemDrag(el, itemId) {
   el.draggable = true;
@@ -272,8 +285,6 @@ function wireItemDrag(el, itemId) {
         staging.add(moveItemOp({
           planId: plan.id, itemId: Number(ds.itemId), item_date: targetDate,
         }));
-        item.item_date = targetDate;
-        await reloadAll();
       }
     }
     delete el._tdrag;
@@ -305,8 +316,6 @@ function enableDropZone(container) {
     staging.add(moveItemOp({
       planId: plan.id, itemId: Number(itemId), item_date: targetDate,
     }));
-    item.item_date = targetDate;
-    await reloadAll();
   });
 }
 
@@ -393,7 +402,6 @@ function renderList() {
             openItemEditor(ctx, {
               plan, item: target, settings, members: [], staging,
               sessionId: 'map-detail-' + target.id,
-              onApplied: () => { reloadAll(); },
             });
           });
           row.addEventListener('contextmenu', (e) => {
@@ -552,7 +560,6 @@ function updateItemGeocodes(itemId, geocodes) {
   }
   renderList();
   if (selectedItemId) showItemGeocodes(selectedItemId);
-  renderPendingBar();
 }
 
 function buildDayCoords() {
@@ -597,23 +604,6 @@ function toggleDay(index) {
   if (hdr) hdr.scrollIntoView({ block: 'nearest' });
 }
 
-/* ---------- reload ---------- */
-
-async function reloadAll() {
-  selectedItemId = null;
-  const res = await apiGet(`/api/plans/${plan.id}/items`);
-  allItems = expandHotelEvents(res.items || []);
-  dayCoords = buildDayCoords();
-  for (const idx in dayLayers) removeDay(Number(idx));
-  dayLayers = {};
-  renderList();
-  if (expIndex !== null) {
-    const coords = dayCoords[expIndex] || [];
-    if (coords.length) drawDay(expIndex, coords, pickColor(expIndex));
-  }
-  renderPendingBar();
-}
-
 /* ---------- init ---------- */
 
 export async function initMap(c) {
@@ -636,7 +626,14 @@ export async function initMap(c) {
   const itemsRes = await apiGet(`/api/plans/${ctx.planId}/items`);
   allItems = expandHotelEvents(itemsRes.items || []);
 
-  staging = new Staging({ baseItems: itemsRes.items, basePlan: plan });
+  staging = new Staging({
+    baseItems: itemsRes.items,
+    basePlan: plan,
+    onChange: () => {
+      refreshFromStaging();
+      renderEditBarCtl();
+    },
+  });
 
   let blockError = null;
   function setBlockError(msg) { blockError = msg || null; renderEditBarCtl(); }
@@ -679,11 +676,11 @@ export async function initMap(c) {
         // Creating items on the map is not directly supported; log a warning.
         console.warn('[map] item creation not directly supported from the edit bar');
       },
-      onChange: () => { renderEditBarCtl(); reloadAll(); },
+      onChange: () => { renderEditBarCtl(); },
       doSave: async (stg) => {
         await stg.saveAll(api);
         renderEditBarCtl();
-        reloadAll();
+        refreshFromStaging();
       },
       blockError,
     });
