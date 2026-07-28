@@ -6,7 +6,7 @@ Read the README first, then this file. Already familiar? Skim the headings.
 ## Tests
 
 `start.sh` no longer runs tests (it just starts the server). All tests live
-under `tests/` and run via `tests/run-tests.sh`. **550 tests total, all
+under `tests/` and run via `tests/run-tests.sh`. **724 tests total, all
 passing.** The full guide — fixture catalog, how to add a test in each
 layer, debugging gotchas — is in `docs/test.md`.
 

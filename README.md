@@ -102,7 +102,7 @@ the base currency using a greedy min-cash-flow ("who owes whom") algorithm.
 ```
 
 `start.sh` no longer runs the tests (it just starts the server). Tests live
-under `tests/` and are run separately via `tests/run-tests.sh`. **550 tests
+under `tests/` and are run separately via `tests/run-tests.sh`. **724 tests
 total, all passing.** See `docs/test.md` for the full guide (fixture
 catalog, how to add a test in each layer, debugging gotchas).
 
@@ -110,19 +110,23 @@ catalog, how to add a test in each layer, debugging gotchas).
   (auth, plans, items, uploads, expenses, util). Fresh temp data dir per
   test; no shared state. Run alone with `./tests/run-tests.sh --backend`
   or `.venv_$(hostname)/bin/python -m pytest tests/backend -c pytest.ini`.
-- **`tests/e2e/`** — Playwright (Python) browser tests, **42 tests** on a
+- **`tests/e2e/`** — Playwright (Python) browser tests, **71 tests** on a
   real Chromium against a throwaway Flask server. Two device profiles:
   desktop (1280x800, mouse) and iPhone 14 (390x664, touch). Covers setup,
   login, dashboard create/edit/delete, board add/edit/drag/revert items,
-  right-click context menu, expenses, members, settings. Needs `playwright`
-  installed (`pip install playwright`) and a chromium binary; on NixOS set
-  `CHROMIUM=/nix/store/.../bin/chromium` (the conftest tries a default
-  path). Run with `./tests/run-tests.sh --e2e`.
-- **`frontend/tests/`** — the original node ES-module tests, **359 tests**
-  (itinerary 134, staging 89, timeline 118, util 18). Plain node, no npm.
-  Skipped automatically when node is not installed.
+  right-click context menu, map sidebar, navigation day bar + swipe,
+  timeline day columns + quick-add, expenses, members, settings.
+  Needs `playwright` installed (`pip install playwright`) and a chromium
+  binary; on NixOS set `CHROMIUM=/nix/store/.../bin/chromium` (the
+  conftest tries a default path). Run with `./tests/run-tests.sh --e2e`.
+- **`frontend/tests/`** — the original node ES-module tests, **504 tests**
+  (itinerary 151, timeline 143, staging 95, navigation 46, map 28,
+  page-utils 23, util 18). Plain node, no npm. Skipped automatically when
+  node is not installed.
 
 The frontend fixtures under `frontend/tests/` run the staging engine's unit
-tests, execute `initItinerary()` and `initTimeline()` against a DOM shim +
-stubbed fetch, and verify `fmtDate()` matches the server's `fmt_date()`
-(no browser, no npm install — plain node ES modules).
+tests, execute `initItinerary()`, `initTimeline()`, `initNavigation()`, and
+`initMap()` against a DOM shim + stubbed fetch, and verify `fmtDate()`
+matches the server's `fmt_date()` (no browser, no npm install — plain node
+ES modules). The map page's Leaflet dependency is replaced with a minimal
+stub (`lib/map-shim.mjs`).

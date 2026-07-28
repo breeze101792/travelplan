@@ -5,15 +5,15 @@ flake, start here.
 
 ## What's covered
 
-550 tests, split across three layers. Every layer catches a different
+724 tests, split across three layers. Every layer catches a different
 class of bug; you usually want all three to pass before declaring a
 change done.
 
 | Layer | Path | Count | What it catches |
 | --- | --- | --- | --- |
 | Backend | `tests/backend/` | 149 | route handlers, auth, plan/item/expense/upload logic, util, access control. Hits Flask over the test client with a real DB in a temp dir. |
-| Frontend node | `frontend/tests/` | 359 | staging engine ops, itinerary/timeline page boot under a DOM shim, `fmtDate` parity with the server. No browser, no npm. |
-| E2E browser | `tests/e2e/` | 42 | what the user actually sees: setup, login, dashboard, board, expenses, members, settings, touch long-press on iPhone. Real Chromium via Playwright. |
+| Frontend node | `frontend/tests/` | 504 | staging engine ops, itinerary/timeline/navigation/map page boot under a DOM shim, viewport-responsive rendering, touch swipe, `fmtDate` parity with the server. No browser, no npm. |
+| E2E browser | `tests/e2e/` | 71 | what the user actually sees: setup, login, dashboard, board, timeline, map sidebar, navigation day bar + swipe, expenses, members, settings, touch long-press on iPhone. Real Chromium via Playwright. |
 
 ## Run
 
@@ -90,11 +90,23 @@ When adding a test:
 
 1. Re-use the `boot(role)` helper where possible. It calls
    `installDom` (fresh DOM), installs the stub fetch, resets the
-   settings cache, then boots `initItinerary` or `initTimeline`.
+   settings cache, then boots the page's init function
+   (`initItinerary` / `initTimeline` / `initNavigation` / `initMap`).
 2. For a custom fixture (different plan/items/settings), copy the
-   `installDom` + `installFetch` + `resetSettingsCache` + `initItinerary`
+   `installDom` + `installFetch` + `resetSettingsCache` + `initXxx`
    sequence. Re-fetch card elements after re-renders — `click()` /
    `dispatch()` can detach the node you held a reference to.
+3. For `initMap` tests, also import `lib/map-shim.mjs` before importing
+   the page module — it provides a minimal `L` (Leaflet) stub that
+   replaces `L.map`, `L.circleMarker`, `L.polyline`, etc.
+4. Screen-size testing: pass `viewport: { width: 390, height: 664 }`
+   to `installDom()` to simulate an iPhone 14 viewport. The dom-shim's
+   `matchMedia` queries `(max-width: …)` / `(min-width: …)` against the
+   current width automatically.
+5. Touch events: dispatch `touchstart` / `touchend` with `touches` and
+   `changedTouches` arrays. The navigation page's swipe handler reads
+   `e.touches[0].clientX` and `e.changedTouches[0].clientX`, which the
+   shim forwards as-is from the event object.
 3. Editor opens on **double-click**, not single-click. A single click
    selects. Use `card.dispatch('dblclick', { detail: 2 })`.
 4. Hotel span bars carry `tl-item-hotel`; check-in/out event bars
@@ -144,6 +156,14 @@ When adding an E2E test:
 4. Selectors: `button[type=submit]` (not `text=Sign in`, which also
    matches the page tagline), `.day` for day columns, `.card.item`
    for item cards, `.pb-btn` for pending-bar buttons.
+5. Map page navigate to `/plans/{id}/map`. The `.day-header` and
+   `.day-item` selectors work the same as the board's day list.
+   Avoid testing the Leaflet map canvas itself — it needs a WebGL
+   compositor. Test the sidebar DOM.
+6. Navigation page navigate to `/plans/{id}/navigation`. Touch swipe
+   can be simulated with `p.mouse.move → down → move → up`.
+   `.nav-card`, `.nav-hotel-banner`, `.nav-day-arrow` are the main
+   selectors.
 
 ## How a fix moves through all three layers
 

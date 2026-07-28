@@ -83,6 +83,19 @@ export class El {
   set innerHTML(v) { this._text = String(v); this.children = []; }
   get innerHTML() { return this._text; }
   appendChild(n) { this.children.push(n); n.parentNode = this; return n; }
+  after(...ns) {
+    if (!this.parentNode) return;
+    const i = this.parentNode.children.indexOf(this);
+    if (i < 0) return;
+    for (const n of ns) this.parentNode.insertBefore(n, this.parentNode.children[i + 1]);
+  }
+  insertBefore(n, ref) {
+    const i = this.children.indexOf(ref);
+    if (i < 0) this.children.push(n);
+    else this.children.splice(i, 0, n);
+    n.parentNode = this;
+    return n;
+  }
   append(...ns) { for (const n of ns) this.appendChild(n && n.nodeType ? n : document.createTextNode(String(n))); }
   replaceChildren() { this.children = []; }
   remove() {
@@ -218,11 +231,24 @@ function find(root, sel) {
 }
 
 /**
+ * Convenience: parse a CSS media query like "(max-width: 640px)" or
+ * "(min-width: 1024px)" and return the bound and comparison direction.
+ * Returns { dir: 'min'|'max', val: number } or null if unparseable.
+ */
+function parseMediaQuery(q) {
+  const m = q.trim().match(/^\(?\s*(min|max)-(width|height)\s*:\s*(\d+)\s*(px)?\s*\)?$/i);
+  if (!m) return null;
+  return { dir: m[1].toLowerCase(), val: Number(m[3]) };
+}
+
+/**
  * Install a fresh fake page. `ids` are pre-created <div> elements the module
  * under test looks up (e.g. 'board', 'pending-bar', 'plan-title').
+ * `viewport` sets the initial window dimensions (default 1024×768).
  * Returns the document shim.
  */
-export function installDom({ ids = [] } = {}) {
+export function installDom({ ids = [], viewport } = {}) {
+  const vp = Object.assign({ width: 1024, height: 768 }, viewport);
   const documentShim = {
     body: null,
     _listeners: {},
@@ -247,8 +273,9 @@ export function installDom({ ids = [] } = {}) {
     documentShim.body.appendChild(n);
   }
   globalThis.document = documentShim;
-  globalThis.window = {
+  const windowShim = {
     _listeners: {},
+    _vp: { width: vp.width, height: vp.height },
     addEventListener(t, fn) { (this._listeners[t] = this._listeners[t] || []).push(fn); },
     removeEventListener(t, fn) {
       const l = this._listeners[t];
@@ -260,11 +287,28 @@ export function installDom({ ids = [] } = {}) {
       return e;
     },
     matchMedia(q) {
-      return { matches: false, media: q, addEventListener() {},
+      const parsed = parseMediaQuery(q);
+      let matches = false;
+      if (parsed) {
+        const actual = parsed.dir === 'min'
+          ? (parsed.val <= this._vp[parsed.dir === 'min' ? 'width' : 'width'])
+          : (parsed.val >= this._vp.width);
+        // use height if needed
+        matches = parsed.dir === 'min'
+          ? this._vp.width >= parsed.val
+          : this._vp.width <= parsed.val;
+      }
+      return { matches, media: q, addEventListener() {},
                removeEventListener() {}, addListener() {}, removeListener() {} };
     },
-    innerWidth: 1024, innerHeight: 768,
+    get innerWidth() { return this._vp.width; },
+    set innerWidth(v) { this._vp.width = v; },
+    get innerHeight() { return this._vp.height; },
+    set innerHeight(v) { this._vp.height = v; },
+    /** Utility: change viewport for responsive testing */
+    setViewport(w, h) { this._vp.width = w; this._vp.height = h; },
   };
+  globalThis.window = windowShim;
   globalThis.location = { href: 'http://test/plans/1', pathname: '/plans/1', search: '' };
   let blobN = 0;
   globalThis.URL.createObjectURL = () => `blob:mock-${++blobN}`;

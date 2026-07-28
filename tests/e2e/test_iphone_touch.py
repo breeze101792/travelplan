@@ -358,3 +358,93 @@ def test_iphone_modal_close_releases_body_lock(iphone, server):
     # the lock to be released.
     assert overflow in ("", "visible", "auto", None), \
         f"modal closed: body overflow is restored (got {overflow!r})"
+
+
+# ---------------------------------------------------------------------------
+# Timeline on iPhone
+# ---------------------------------------------------------------------------
+
+
+def test_iphone_timeline_quick_add(iphone, server):
+    """The timeline's quick-add flow works on a 390px-wide screen."""
+    p = iphone
+    pid = _create_trip_api(server, start="2026-09-10", end="2026-09-12")
+    p.goto(server["base_url"] + f"/plans/{pid}/timeline")
+    p.wait_for_selector(".day")
+    p.locator(".qa-summary").first.tap()
+    p.wait_for_selector(".qa-item", timeout=5000)
+    p.locator(".qa-item", has_text="Note").first.tap()
+    p.wait_for_selector(".item-editor .input", timeout=10000)
+    p.locator(".item-editor .input").first.fill("Timeline note on iPhone")
+    p.tap('.item-editor button:has-text("Apply")')
+    p.wait_for_selector('.pb-save:not([disabled])', timeout=5000)
+    assert p.locator(".tl-item").count() >= 1, \
+        "iPhone timeline: tl-item visible after quick-add"
+
+
+def test_iphone_timeline_day_columns_narrow(iphone, server):
+    """All day columns render on iPhone (horizontal scroll)."""
+    p = iphone
+    pid = _create_trip_api(server, start="2026-09-10", end="2026-09-14")
+    p.goto(server["base_url"] + f"/plans/{pid}/timeline")
+    p.wait_for_selector(".day")
+    # A 5-day trip renders 5 day columns.
+    assert p.locator(".day").count() == 5, \
+        f"iPhone timeline: expected 5 day columns, got {p.locator('.day').count()}"
+
+
+# ---------------------------------------------------------------------------
+# Navigation on iPhone
+# ---------------------------------------------------------------------------
+
+
+def test_iphone_navigation_swipe(iphone, server):
+    """Swipe left/right on the navigation page to switch days."""
+    p = iphone
+    pid = _create_trip_api(server, start="2026-09-10", end="2026-09-12")
+    import urllib.request, json, urllib.parse, http.cookiejar
+    cj = http.cookiejar.CookieJar()
+    opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(cj))
+    form = urllib.parse.urlencode({
+        "username": "admin", "password": server["admin"]["password"],
+    }).encode()
+    opener.open(urllib.request.Request(
+        server["base_url"] + "/auth/login", data=form, method="POST"))
+    for day, title in [("2026-09-10", "Swipe day 1"),
+                       ("2026-09-11", "Swipe day 2")]:
+        opener.open(urllib.request.Request(
+            server["base_url"] + f"/api/plans/{pid}/items",
+            data=json.dumps({"item_type": "note", "title": title,
+                             "item_date": day}).encode(),
+            headers={"Content-Type": "application/json"}, method="POST"))
+    p.goto(server["base_url"] + f"/plans/{pid}/navigation")
+    p.wait_for_selector(".nav-card")
+    assert "Swipe day 1" in p.text_content("#nav-page"), \
+        "iPhone nav: starts on day 1 with Swipe day 1"
+    # Swipe left using drag (Playwright's mouse.drag_to triggers the
+    # touchstart/touchend handlers on touch-enabled devices).
+    nav_page = p.locator("#nav-page")
+    box = nav_page.bounding_box()
+    assert box is not None, "nav-page has bounding box"
+    cx = box["x"] + box["width"] / 2
+    cy = box["y"] + box["height"] / 2
+    p.mouse.move(cx, cy)
+    p.mouse.down()
+    p.mouse.move(cx - 150, cy, steps=10)
+    p.mouse.up()
+    p.wait_for_timeout(500)
+    assert "Swipe day 2" in p.text_content("#nav-page"), \
+        "iPhone nav: after swipe left, shows Swipe day 2"
+
+
+def test_iphone_navigation_day_bar_narrow(iphone, server):
+    """The day bar select and buttons render correctly on iPhone."""
+    p = iphone
+    pid = _create_trip_api(server, start="2026-09-10", end="2026-09-12")
+    p.goto(server["base_url"] + f"/plans/{pid}/navigation")
+    p.wait_for_selector("#nav-day-bar")
+    assert p.locator(".nav-day-arrow").count() == 2, \
+        "iPhone nav: prev/next arrows visible"
+    opts = p.locator("#nav-day-bar option").all()
+    assert len(opts) == 3, \
+        f"iPhone nav: expected 3 day options, got {len(opts)}"
