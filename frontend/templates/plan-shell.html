@@ -1,0 +1,27 @@
+{% extends "layout.html" %}
+{% block title %}{{ plan.title }} — TravelPlan{% endblock %}
+{% block page %}plan-shell{% endblock %}
+
+{% block styles %}
+<link rel="stylesheet" href="/static/css/board.css?v={{ static_version }}">
+<link rel="stylesheet" href="/static/css/timeline.css?v={{ static_version }}">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="">
+<link rel="stylesheet" href="/static/css/map.css?v={{ static_version }}">
+<link rel="stylesheet" href="/static/css/navigation.css?v={{ static_version }}">
+<link rel="stylesheet" href="/static/css/expenses.css?v={{ static_version }}">
+<link rel="stylesheet" href="/static/css/overview.css?v={{ static_version }}">
+<link rel="stylesheet" href="/static/css/item-editor.css?v={{ static_version }}">
+{% endblock %}
+
+{% block content %}
+{% include "_plan_header.html" %}
+
+<div id="edit-bar" class="edit-bar" hidden></div>
+<div id="plan-view" data-view="{{ plan_active_page }}"></div>
+{% endblock %}
+
+{% block scripts %}
+<script>window.__CONTEXT__ = { planId: {{ plan.id }}, role: {{ plan_role|tojson|safe }} };</script>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
+<script type="module" src="/static/js/plan-shell.js?v={{ static_version }}"></script>
+{% endblock %}

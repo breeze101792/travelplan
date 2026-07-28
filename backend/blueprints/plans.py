@@ -18,7 +18,8 @@ from flask import (Blueprint, render_template, request, redirect, url_for,
 
 from ..auth import login_required, admin_required, plan_access
 from ..db import get_db
-from ..util import ok, err
+from ..util import ok, err, check_version
+from ..sse import publish_event, plan_event_stream
 from pathlib import Path
 import json
 import urllib.request, urllib.parse
@@ -50,43 +51,51 @@ def dashboard():
 @plans_bp.route("/plans/<int:plan_id>")
 @plan_access()
 def view_plan(plan_id):
-    return render_template("plan.html", plan=g.plan, plan_role=g.plan_role)
+    return render_template("plan-shell.html", plan=g.plan, plan_role=g.plan_role, plan_active_page='board')
 
 
 @plans_bp.route("/plans/<int:plan_id>/expenses")
 @plan_access()
 def expenses_page(plan_id):
-    return render_template("expenses.html", plan=g.plan, plan_role=g.plan_role)
+    return render_template("plan-shell.html", plan=g.plan, plan_role=g.plan_role, plan_active_page='expenses')
 
 
 @plans_bp.route("/plans/<int:plan_id>/timeline")
 @plan_access()
 def timeline_page(plan_id):
-    return render_template("timeline.html", plan=g.plan, plan_role=g.plan_role)
+    return render_template("plan-shell.html", plan=g.plan, plan_role=g.plan_role, plan_active_page='timeline')
 
 
 @plans_bp.route("/plans/<int:plan_id>/members")
 @plan_access()
 def members_page(plan_id):
-    return render_template("plan-members.html", plan=g.plan, plan_role=g.plan_role)
+    return render_template("plan-shell.html", plan=g.plan, plan_role=g.plan_role, plan_active_page='members')
 
 
 @plans_bp.route("/plans/<int:plan_id>/map")
 @plan_access()
 def map_page(plan_id):
-    return render_template("plan-map.html", plan=g.plan, plan_role=g.plan_role)
+    return render_template("plan-shell.html", plan=g.plan, plan_role=g.plan_role, plan_active_page='map')
 
 
 @plans_bp.route("/plans/<int:plan_id>/navigation")
 @plan_access()
 def plan_navigation(plan_id):
-    return render_template("navigation.html", plan=g.plan, plan_role=g.plan_role)
+    return render_template("plan-shell.html", plan=g.plan, plan_role=g.plan_role, plan_active_page='navigation')
 
 
 @plans_bp.route("/plans/<int:plan_id>/overview")
 @plan_access()
 def overview_page(plan_id):
-    return render_template("overview.html", plan=g.plan, plan_role=g.plan_role)
+    return render_template("plan-shell.html", plan=g.plan, plan_role=g.plan_role, plan_active_page='overview')
+
+
+@plans_bp.route("/api/plans/<int:plan_id>/events")
+@plan_access()
+def plan_events(plan_id):
+    """SSE endpoint: yields real-time events for this plan."""
+    from flask import Response
+    return Response(plan_event_stream(plan_id), mimetype='text/event-stream')
 
 
 # ------------------------------------------------------------------ API
@@ -210,6 +219,9 @@ def api_update_plan(plan_id):
     if g.plan_role == "viewer":
         abort(403)
     data = request.get_json(force=True, silent=True) or {}
+    conflict = check_version(g.plan, data)
+    if conflict:
+        return jsonify(conflict), 409
     allowed = ("title", "description", "start_date", "end_date", "base_currency", "cover_image", "status")
     sets = []
     args = []
@@ -287,6 +299,7 @@ def api_update_plan(plan_id):
                     (plan_id, date, pinned, label),
                 )
     db.commit()
+    publish_event(plan_id, {"type": "plan.updated", "entity_id": plan_id})
     return jsonify({"plan": _plan_with_buffer_days(plan_id)})
 
 

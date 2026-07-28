@@ -20,6 +20,8 @@ from flask import Blueprint, request, g, abort, jsonify
 from ..auth import (login_required, plan_access, check_plan_access,
                     check_item_access, check_attachment_access)
 from ..db import get_db
+from ..util import check_version
+from ..sse import publish_event
 
 items_bp = Blueprint("items", __name__)
 
@@ -204,6 +206,7 @@ def create_item(plan_id):
     )
     db.commit()
     _save_geocodes(cur.lastrowid, data.get("geocodes"))
+    publish_event(plan_id, {"type": "item.created", "entity_id": cur.lastrowid})
     return jsonify({"item": _attach(_load_item(cur.lastrowid))})
 
 
@@ -217,10 +220,17 @@ def mutate_item(item_id):
         abort(404)
     db = get_db()
     if request.method == "DELETE":
+        conflict = check_version(item, request.get_json(force=True, silent=True) or {})
+        if conflict:
+            return jsonify(conflict), 409
         db.execute("DELETE FROM items WHERE id = ?", (item_id,))
         db.commit()
+        publish_event(item["plan_id"], {"type": "item.deleted", "entity_id": item_id})
         return jsonify({"deleted": item_id})
     data = request.get_json(force=True, silent=True) or {}
+    conflict = check_version(item, data)
+    if conflict:
+        return jsonify(conflict), 409
     sets, args = [], []
     for k in ("title",):
         if k in data:
@@ -256,6 +266,7 @@ def mutate_item(item_id):
         db.commit()
     if "geocodes" in data:
         _save_geocodes(item_id, data["geocodes"] or [])
+    publish_event(item["plan_id"], {"type": "item.updated", "entity_id": item_id})
     return jsonify({"item": _attach(_load_item(item_id))})
 
 
@@ -269,6 +280,9 @@ def move_item(item_id):
     if not item:
         abort(404)
     data = request.get_json(force=True, silent=True) or {}
+    conflict = check_version(item, data)
+    if conflict:
+        return jsonify(conflict), 409
     item_date = data.get("item_date", item["item_date"])
     end_date = data.get("end_date", item["end_date"])
     before_id = data.get("before_id")
@@ -296,6 +310,7 @@ def move_item(item_id):
         "UPDATE items SET item_date = ?, end_date = ?, sort_key = ?, updated_at = datetime('now') WHERE id = ?",
         (item_date, end_date, new_key, item_id))
     db.commit()
+    publish_event(item["plan_id"], {"type": "item.moved", "entity_id": item_id})
     return jsonify({"item": _attach(_load_item(item_id))})
 
 

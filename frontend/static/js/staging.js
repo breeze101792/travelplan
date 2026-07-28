@@ -239,7 +239,7 @@ export function timeEditItemOp({ planId, itemId, item_date, end_date, details, t
       return patchItem(items, itemId, next);
     },
     planApply() { return null; },
-    async execute(api) {
+    async execute(api, _base) {
       if (isLocalId(itemId)) {
         return { skipped: true };
       }
@@ -248,6 +248,8 @@ export function timeEditItemOp({ planId, itemId, item_date, end_date, details, t
         details: details || {},
       };
       if (end_date !== undefined) body.end_date = end_date;
+      const baseItem = _base?.baseItems?.find(i => i.id === itemId);
+      if (baseItem?.updated_at) body.expected_updated_at = baseItem.updated_at;
       const res = await api.patch(`/api/items/${itemId}`, body);
       return { updatedItem: res.item };
     },
@@ -259,8 +261,10 @@ export function updatePlanTitleOp({ planId, title, sessionId }) {
     id: null, kind: 'UPDATE_PLAN_TITLE', label: 'Rename plan', sessionId,
     apply() { return null; },
     planApply(plan) { return Object.assign({}, plan, { title }); },
-    async execute(api) {
-      const res = await api.patch(`/api/plans/${planId}`, { title });
+    async execute(api, _base) {
+      const body = { title };
+      if (_base?.basePlan?.updated_at) body.expected_updated_at = _base.basePlan.updated_at;
+      const res = await api.patch(`/api/plans/${planId}`, body);
       return { plan: res.plan };
     },
   };
@@ -284,9 +288,10 @@ export function updatePlanDatesOp({ planId, start_date, end_date, prev, sessionI
     id: null, kind: 'UPDATE_PLAN_DATES', label, sessionId,
     apply() { return null; },
     planApply(plan) { return Object.assign({}, plan, { start_date, end_date }); },
-    async execute(api) {
-      const res = await api.patch(`/api/plans/${planId}`,
-        { start_date, end_date });
+    async execute(api, _base) {
+      const body = { start_date, end_date };
+      if (_base?.basePlan?.updated_at) body.expected_updated_at = _base.basePlan.updated_at;
+      const res = await api.patch(`/api/plans/${planId}`, body);
       return { plan: res.plan };
     },
   };
@@ -338,10 +343,11 @@ export function updatePlanBufferDaysOp({ planId, add, remove, sessionId }) {
       const next = Object.assign({}, plan, { buffer_days: [...cur].sort() });
       return next;
     },
-    async execute(api) {
+    async execute(api, _base) {
       const body = {};
       if (add.length) body.buffer_days_add = add;
       if (remove.length) body.buffer_days_remove = remove;
+      if (_base?.basePlan?.updated_at) body.expected_updated_at = _base.basePlan.updated_at;
       const res = await api.patch(`/api/plans/${planId}`, body);
       return { plan: res.plan };
     },
@@ -810,7 +816,7 @@ export class Staging {
         const op = this.ops[i];
         if (onProgress) onProgress(i + 1, this.pointer);
         try {
-          const result = await op.execute(api, { items: this.viewItems(), plan: this.viewPlan() });
+          const result = await op.execute(api, { items: this.viewItems(), plan: this.viewPlan(), baseItems: this.base.items, basePlan: this.base.plan });
           this._lastResults[i] = result || null;
         } catch (e) {
           this.failedOpIndex = i;

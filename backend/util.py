@@ -46,6 +46,22 @@ def err(message: str, status: int = 400, **extra):
     return jsonify({"error": message, **extra}), status
 
 
+def check_version(row: dict | None, data: dict) -> dict | None:
+    """If the client sent `expected_updated_at`, verify it matches the
+    current row's `updated_at`. Return a 409 response dict on mismatch,
+    or None if the version is acceptable (or not checked)."""
+    if not row:
+        return None
+    expected = data.get("expected_updated_at")
+    if expected and row.get("updated_at") and row["updated_at"] != expected:
+        return {
+            "error": "conflict",
+            "message": "This data was modified by another user. Reload and try again.",
+            "current": row,
+        }
+    return None
+
+
 def parse_amount_to_cents(amount, decimals: int = 2) -> int:
     """Accept an int (cents), a numeric string (units, e.g. '120.00'), or a float.
     Returns integer cents in the currency's smallest unit."""

@@ -15,7 +15,7 @@ from flask import Blueprint, request, g, abort, jsonify
 
 from ..auth import plan_access, login_required, check_item_access, check_expense_access, check_payment_access
 from ..db import get_db
-from ..util import parse_amount_to_cents, format_cents
+from ..util import parse_amount_to_cents, format_cents, check_version
 from .. import expense as ex
 
 expenses_bp = Blueprint("expenses", __name__)
@@ -112,6 +112,11 @@ def update_expense(expense_id):
     """Update an existing expense (full replace body, same schema as create)."""
     check_expense_access(expense_id, write=True)
     data = request.get_json(force=True, silent=True) or {}
+    from ..db import get_db
+    row = get_db().execute("SELECT * FROM expenses WHERE id = ?", (expense_id,)).fetchone()
+    conflict = check_version(dict(row) if row else None, data)
+    if conflict:
+        return jsonify(conflict), 409
     description = (data.get("description") or "").strip()
     currency = (data.get("currency") or "USD").upper()
     decimals = int(data.get("decimals", 2 if currency not in ("JPY", "KRW") else 0))
