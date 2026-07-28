@@ -124,6 +124,35 @@ both. (The fix is in `board.css` `.modal.item-editor` with explicit
 `max-width: min(90vw, 1800px)` plus `padding` and `margin` so the
 wide layout is fully self-styled.)
 
+### Modals on iPhone — three locks for one bug
+
+iOS Safari's elastic overscroll used to leak modal scrolls into the
+page behind the modal, which in turn triggered the page-level
+pull-to-refresh (`location.reload()` in `pulltorefresh.js`).
+The user was kicked out of any open modal with a full reload,
+losing unsaved changes. The fix uses three locks together:
+
+1. **CSS** `overscroll-behavior: contain` on `.modal-backdrop` and
+   the modal body. The longhand `overscroll-behavior-y` is included
+   for older Safari builds that don't yet accept the shorthand.
+2. **Body scroll lock** via `lockBodyScroll()` / `unlockBodyScroll()`
+   in `page-utils.js`. Sets `body { overflow: hidden }` while any
+   modal is open, freezes `window.scrollY`, and adds the
+   `has-open-modal` class to `document.body`. The lock uses a
+   counter so multiple stacked modals (item editor opens a geo
+   popup, etc.) unlock only when the last one closes.
+3. **`pulltorefresh.js` checks `has-open-modal`** in its
+   `onTouchStart` handler. The touchstart still reaches the
+   document-level listener (no `stopPropagation`); the class check
+   is the gate.
+
+Every modal in the codebase (item editor, expense form, geo
+search, geo map popup, attachment modal, plan edit, overview
+edit, confirm delete) calls `lockBodyScroll()` on open and
+`unlockBodyScroll()` on every close path — close button, Cancel
+button, click-outside, and the post-submit cleanup. The
+`test_iphone_modal_*` e2e tests pin the contract.
+
 ### `/auth/settings` is self-serve only
 
 Don't put admin user management on the settings page. The legacy

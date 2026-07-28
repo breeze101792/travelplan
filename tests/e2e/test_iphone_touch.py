@@ -170,3 +170,191 @@ def test_iphone_board_long_press_card_does_not_open_editor(iphone, server):
 def test_iphone_viewport_is_narrow(iphone):
     # The iPhone 14 profile is 390 css px wide.
     assert iphone.viewport_size["width"] == 390
+
+
+# ---------------------------------------------------------------------------
+# Modal scroll containment (iPhone regression)
+#
+# iOS Safari's elastic overscroll used to leak modal scrolls into the page
+# behind the modal, which in turn triggered the page-level pull-to-refresh
+# (`location.reload()` in pulltorefresh.js). The user was kicked out of any
+# open modal with a full reload, losing unsaved changes. The fix:
+#   - CSS `overscroll-behavior: contain` on the modal backdrop and body
+#   - body scroll lock + `has-open-modal` class while a modal is open
+#   - pulltorefresh.js checks `has-open-modal` and bails out
+#
+# These tests pin down the contract: while a modal is open on iPhone,
+#   1. the body scroll is locked
+#   2. a pull-down gesture inside the modal does NOT fire
+#      `location.reload()`
+#   3. the modal is still open after the gesture
+# ---------------------------------------------------------------------------
+
+
+def _create_trip_with_long_note(iphone, server, *, title="Scroll lock trip",
+                                start="2026-09-10", end="2026-09-12",
+                                note="x" * 1200):
+    """Create a plan + a single note whose body is long enough to force
+    the item editor's modal body to scroll. The iPhone 14 viewport
+    (390px wide, ~664px tall) can't show 1.2KB of note text without
+    overflow, so the .modal-body element has overflow-y: auto — the
+    path the regression used to break."""
+    import urllib.request, urllib.parse, http.cookiejar, json as _json
+    cj = http.cookiejar.CookieJar()
+    op = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(cj))
+    op.open(urllib.request.Request(
+        server["base_url"] + "/auth/login",
+        data=urllib.parse.urlencode(
+            {"username": "admin", "password": server["admin"]["password"]}
+        ).encode(),
+        method="POST"))
+    pid = _json.loads(op.open(urllib.request.Request(
+        server["base_url"] + "/api/plans",
+        data=_json.dumps({"title": title, "start_date": start,
+                          "end_date": end}).encode(),
+        headers={"Content-Type": "application/json"},
+        method="POST")).read())["plan"]["id"]
+    op.open(urllib.request.Request(
+        server["base_url"] + f"/api/plans/{pid}/items",
+        data=_json.dumps({"item_type": "note", "title": "Long note",
+                          "item_date": start,
+                          "details": {"text": note}}).encode(),
+        headers={"Content-Type": "application/json"},
+        method="POST"))
+    return pid
+
+
+def test_iphone_modal_locks_body_scroll(iphone, server):
+    """While the item editor is open on iPhone, the body scroll must
+    be locked and the `has-open-modal` class must be set. The pull-to-
+    refresh handler reads that class to decide whether to ignore the
+    touchstart."""
+    p = iphone
+    pid = _create_trip_with_long_note(p, server)
+    p.goto(server["base_url"] + f"/plans/{pid}")
+    p.wait_for_selector(".card.item")
+    # Open the editor via double-tap (the iPhone way).
+    card = p.locator(".card.item").first
+    card.tap()
+    p.wait_for_timeout(50)
+    card.tap()
+    p.wait_for_selector(".item-editor", timeout=5000)
+    # Body scroll is locked and the class is set.
+    assert "has-open-modal" in (p.evaluate("document.body.className") or ""), \
+        "body has has-open-modal class while editor is open"
+    overflow = p.evaluate("document.body.style.overflow")
+    assert overflow == "hidden", \
+        f"body overflow is hidden while editor is open (got {overflow!r})"
+
+
+def test_iphone_modal_pull_down_does_not_reload(iphone, server):
+    """A pull-down gesture inside an open modal must NOT trigger
+    location.reload() — the page-level pull-to-refresh should ignore
+    the gesture because the body has `has-open-modal`. Regression for
+    the iOS bug where the user was kicked out of any modal with a
+    full reload on a touch scroll-bleed-through.
+
+    We dispatch raw TouchEvents on `document` because that's what
+    `pulltorefresh.js` listens for (its onTouchStart handler is on
+    `document`, not on individual elements). Playwright's `mouse.*`
+    helpers would fire MouseEvents which the handler ignores, so the
+    test would pass even with the original bug — the real iPhone
+    sends TouchEvents, and the test must do the same.
+    """
+    p = iphone
+    pid = _create_trip_with_long_note(p, server)
+    p.goto(server["base_url"] + f"/plans/{pid}")
+    p.wait_for_selector(".card.item")
+    card = p.locator(".card.item").first
+    card.tap()
+    p.wait_for_timeout(50)
+    card.tap()
+    p.wait_for_selector(".item-editor", timeout=5000)
+    # Install a hook that flags any location.reload() call. The hook
+    # itself uses a fresh XHR to the server: the test polls the flag
+    # below, and the navigation that location.reload() would cause
+    # would tear down the page before the poll could see the flag.
+    p.evaluate("""() => {
+        window.__reloadCalled = false;
+        window.location.reload = function() {
+            window.__reloadCalled = true;
+            // Don't actually reload — we want the test to continue
+            // and assert that the modal is still open afterwards.
+        };
+    }""")
+    # Dispatch raw touch events on the document. The y start point is
+    # near the top of the modal body (10px below the body top), and
+    # the move drags down 120px (well past pulltorefresh's 80px
+    # THRESHOLD).
+    editor = p.locator(".item-editor .modal-body")
+    box = editor.bounding_box()
+    assert box is not None, "modal body has a bounding box"
+    sx = box["x"] + box["width"] / 2
+    sy = box["y"] + 10
+    p.evaluate("""(args) => {
+        const makeTouch = (x, y) => new Touch({
+            identifier: 1, target: document.elementFromPoint(x, y) || document.body,
+            clientX: x, clientY: y,
+        });
+        const ts = new TouchEvent('touchstart', {
+            bubbles: true, cancelable: true,
+            touches: [makeTouch(args.sx, args.sy)],
+            targetTouches: [makeTouch(args.sx, args.sy)],
+            changedTouches: [makeTouch(args.sx, args.sy)],
+        });
+        document.dispatchEvent(ts);
+        const tm = new TouchEvent('touchmove', {
+            bubbles: true, cancelable: true,
+            touches: [makeTouch(args.sx, args.sy + 120)],
+            targetTouches: [makeTouch(args.sx, args.sy + 120)],
+            changedTouches: [makeTouch(args.sx, args.sy + 120)],
+        });
+        document.dispatchEvent(tm);
+        const te = new TouchEvent('touchend', {
+            bubbles: true, cancelable: true,
+            touches: [],
+            targetTouches: [],
+            changedTouches: [makeTouch(args.sx, args.sy + 120)],
+        });
+        document.dispatchEvent(te);
+    }""", {"sx": sx, "sy": sy})
+    p.wait_for_timeout(300)
+    # The reload must NOT have been called.
+    reload_called = p.evaluate("window.__reloadCalled")
+    assert reload_called is False, \
+        "pull-to-refresh fired location.reload() while a modal was open"
+    # The modal must still be open.
+    assert p.locator(".item-editor").count() == 1, \
+        "item-editor is still open after the pull-down gesture"
+    # And the body's modal class is still set (the lock survived the
+    # gesture without being released).
+    assert "has-open-modal" in (p.evaluate("document.body.className") or ""), \
+        "body still has has-open-modal class after the gesture"
+
+
+def test_iphone_modal_close_releases_body_lock(iphone, server):
+    """Closing the modal releases the body scroll lock. Otherwise a
+    closed modal would leave the page un-scrollable until reload —
+    a separate class of bug from the regression above."""
+    p = iphone
+    pid = _create_trip_with_long_note(p, server)
+    p.goto(server["base_url"] + f"/plans/{pid}")
+    p.wait_for_selector(".card.item")
+    card = p.locator(".card.item").first
+    card.tap()
+    p.wait_for_timeout(50)
+    card.tap()
+    p.wait_for_selector(".item-editor", timeout=5000)
+    assert "has-open-modal" in (p.evaluate("document.body.className") or ""), \
+        "modal open: has-open-modal is set"
+    # Cancel the editor (the X / Cancel button).
+    p.locator(".item-editor button:has-text('Cancel')").first.click()
+    p.wait_for_timeout(300)
+    # The class is gone and the body overflow is back to normal.
+    assert "has-open-modal" not in (p.evaluate("document.body.className") or ""), \
+        "modal closed: has-open-modal class is removed"
+    overflow = p.evaluate("document.body.style.overflow")
+    # The dom shim / browser normalises '' for unset; we just need
+    # the lock to be released.
+    assert overflow in ("", "visible", "auto", None), \
+        f"modal closed: body overflow is restored (got {overflow!r})"
