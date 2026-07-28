@@ -19,7 +19,7 @@ import { buildDays, isoOf, wirePlanHeader, renderEditBar, makeDayActions,
         showDayContextMenu, closeDayContextMenu } from '/static/js/plan-header.js';
 import { expandHotelEvents } from '/static/js/hotel-events.js';
 import { createMultiSelect } from '/static/js/multi-select.js';
-import { doSave as sharedSave, showToast } from '/static/js/page-utils.js';
+import { doSave as sharedSave, showToast, batchSessionId } from '/static/js/page-utils.js';
 
 /* JPY/KRW have 0 minor units; everything else uses 2. Matches backend. */
 function decimalsFor(cur) {
@@ -48,11 +48,12 @@ function isSpanningItem(item, settings) {
   return !!(ti && ti.spans_days && item.end_date && item.item_date && item.end_date > item.item_date);
 }
 
-/* Extract a numeric sort value from an item's time fields (HH.MM) so items
+/* Extract a numeric sort value from an item's when.start_at (HH.MM) so items
  * sort chronologically within a day. Returns null when no time is set. */
 function effectiveTimeSort(item) {
   const d = item.details || {};
-  const raw = d.depart_time || d.start_time || d.time || d.check_in_time || d.check_out_time;
+  const when = d.when || {};
+  const raw = when.start_at;
   if (!raw) return null;
   const s = String(raw).replace(/^[^T]+T/, '');
   const [h, m] = s.split(':').map(Number);
@@ -94,44 +95,42 @@ function firstImage(item) {
 }
 
 /* A few human-readable detail lines for a card. The first line is a
- * special-cased "time range" for any item that has both `start_time` and
- * `end_time` (every timed type now does, including restaurant and
- * transport — see timeline.js TIME_FIELDS). We render them as one
- * "19:00 → 20:00" line instead of two separate "Start: ..." and "End:
- * ..." lines, which is what the user actually wants to see on the card.
- * Other fields fall through to the type-defined labels. */
+ * special-cased "time range" for any item that has both when.start_at
+ * and when.end_at (every timed type does — see settings.json). We
+ * render them as one "19:00 → 20:00" line instead of two separate
+ * "Start: ..." and "End: ..." lines, which is what the user actually
+ * wants to see on the card. Other fields fall through to the
+ * type-defined labels. */
 function detailLines(item, settings) {
   const ti = settings.item_types[item.item_type];
   const d = item.details || {};
+  const when = d.when || {};
   const lines = [];
   if (d.from && d.to) lines.push(`${d.from} → ${d.to}`);
-  // Time range line: combine depart_time + arrive_time (transit) or
-  // start_time + end_time (everything else). Legacy `time` is shown
-  // alone since it has no end.
-  const startV = d.depart_time || d.start_time || d.time;
-  const endV = d.arrive_time || d.end_time;
-  if (item._hotelEvent && d.time) {
+  // Time range line: combine when.start_at and when.end_at into a single
+  // "19:00 → 20:00" line.
+  if (item._hotelEvent && when.start_at) {
     const label = item._hotelEvent === 'check-in' ? 'Check-in' : 'Check-out';
-    lines.push(`${label}: ${d.time}`);
-  } else if (startV && endV) {
+    const t = String(when.start_at).replace(/^[^T]+T/, '');
+    lines.push(`${label}: ${t}`);
+  } else if (when.start_at && when.end_at) {
     // Strip the date prefix — "2026-09-11T19:00" → "19:00". The day
-    // column already shows the date.
-    const s = String(startV).replace(/^[^T]+T/, '');
-    const e = String(endV).replace(/^[^T]+T/, '');
+    // column already shows the date. Schedule items always have both
+    // start and end (the server defaults end to start + 1h if blank),
+    // so this branch is the common case.
+    const s = String(when.start_at).replace(/^[^T]+T/, '');
+    const e = String(when.end_at).replace(/^[^T]+T/, '');
     lines.push(`${s} → ${e}`);
-  } else if (startV) {
-    const s = String(startV).replace(/^[^T]+T/, '');
+  } else if (when.start_at) {
+    // Defensive: legacy data without end_at. Show just the start.
+    const s = String(when.start_at).replace(/^[^T]+T/, '');
     lines.push(s);
   }
   const fields = ti ? ti.fields : [];
   for (const f of fields) {
     if (f.key === 'from' || f.key === 'to') continue;
-    // Skip start_time/end_time/time/depart_time/arrive_time — already
-    // covered above (or they're the only time field, shown as a single value).
-    if (f.key === 'start_time' || f.key === 'end_time' || f.key === 'time' ||
-        f.key === 'depart_time' || f.key === 'arrive_time') continue;
-    // Skip link — handled by the "Add link" button on the editor's right panel.
-    if (f.key === 'link') continue;
+    // Skip when (the unified time field), link — handled elsewhere.
+    if (f.key === 'when' || f.key === 'link') continue;
     const v = d[f.key];
     if (v !== undefined && v !== null && String(v).trim() !== '') {
       lines.push(`${f.label}: ${v}`);

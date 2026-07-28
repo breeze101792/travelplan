@@ -52,22 +52,17 @@ function timeOfDay(v) {
 // Field name to read for an item type's "start time of day".
 // (Single-source so adding a new type only needs one edit.)
 //
-// Every timed item type has BOTH a start and an end field on its
-// details. restaurant and transport used to have only `time` (a point
-// in time), which made the resize handles write to nothing; both have
-// been moved to start_time + end_time so they share the same
-// drag/resize contract as activity/ticket/flight/train. The
-// default-fill in itemTimeWindow() below handles existing rows that
-// only have `time`.
+// Every timed item type stores its times in the unified
+// ``details.when: { start_at, end_at }`` object. The render layer
+// always reads from there. This constant only encodes a fallback
+// display label for the bar's "type: time" header (kept so adding a
+// new type only needs one edit).
 const TIME_FIELDS = {
-  hotel:      { start: 'time',      end: 'time'       },
-  transit:    { start: 'depart_time', end: 'arrive_time', label: 'transit' },
-  flight:     { start: 'depart_time', end: 'arrive_time', label: 'flight' },
-  train:      { start: 'depart_time', end: 'arrive_time', label: 'train' },
-  ticket:     { start: 'start_time',  end: 'end_time'    },
-  restaurant: { start: 'start_time',  end: 'end_time'    },
-  activity:   { start: 'start_time',  end: 'end_time'    },
-  transport:  { start: 'start_time',  end: 'end_time'    },
+  hotel:      { start: 'start_at', end: 'end_at', label: 'hotel' },
+  transit:    { start: 'start_at', end: 'end_at', label: 'transit' },
+  activity:   { start: 'start_at', end: 'end_at', label: 'activity' },
+  restaurant: { start: 'start_at', end: 'end_at', label: 'restaurant' },
+  note:       { start: 'start_at', end: 'end_at', label: 'note' },
 };
 
 /* Does this item type have a real `end` field on its details, or is the
@@ -82,34 +77,24 @@ function typeHasEndField(itemType) {
 
 // For a given item, return { start: hours, end: hours } on the item's date,
 // or null if no time info is available.
-//
-// Backward compat: items that pre-date the restaurant/transport →
-// start_time + end_time migration still have only a `time` field. We
-// treat that as a 1h bar (start = time, end = start + 1h) so the bar
-// still renders, just with a default duration. The next save writes
-// both start_time and end_time back so the new shape persists.
 function itemTimeWindow(item) {
   const d = item.details || {};
+  const when = d.when || {};
   if (item.item_type === 'hotel') {
     if (item._hotelEvent) {
       // Check-in / check-out events — render as timed bars.
-      const time = timeOfDay(d.time);
-      if (time != null) return { start: time, end: time + 1 };
+      const t = timeOfDay(when.start_at);
+      if (t != null) return { start: t, end: t + 1 };
       return null;
     }
     // Regular spanning hotels are handled by renderHotelStays() below.
     return null;
   }
-  const f = TIME_FIELDS[item.item_type];
-  if (!f) return null;
-  // Try the new shape first, then the legacy `time` field. The legacy
-  // fallback keeps pre-migration data rendering correctly without
-  // forcing a server-side rewrite.
-  const start = timeOfDay(d[f.start] || d.time);
+  const start = timeOfDay(when.start_at);
   if (start == null) return null;
-  let end = f.end ? timeOfDay(d[f.end]) : null;
-  if (end == null) end = start + 1; // 1-hour default for legacy single-time data
-  if (end < start) end = start + 0.5; // arrive before depart => treat as instant
+  let end = timeOfDay(when.end_at);
+  if (end == null) end = start + 1; // 1-hour default when no end
+  if (end < start) end = start + 0.5; // end before start => treat as instant
   return { start, end };
 }
 
@@ -248,11 +233,13 @@ function makeBar({ kind, top, end, totalCols, col, title, time, titleText, extra
     }
   }
   if (draggable && item && (kind !== 'hotel' || item._hotelEvent)) {
-    const f = TIME_FIELDS[item.item_type] || {};
+    // The bar's drag handler reads / writes the unified
+    // details.when object; we just need to record the kind of event
+    // for hotel check-in / check-out drags (which only update one
+    // side of the when object).
     const timeFields = item._hotelEvent
-      ? { start: item._hotelEvent === 'check-in' ? 'check_in_time' : 'check_out_time',
-           end:  item._hotelEvent === 'check-in' ? 'check_in_time' : 'check_out_time' }
-      : { start: f.start || 'start_time', end: f.end || 'end_time' };
+      ? { kind: 'hotel-event', event: item._hotelEvent }
+      : { kind: 'when' };
     node.dataset.timeField = JSON.stringify(timeFields);
     if (day) node.dataset.day = day;
     node.dataset.start = String(top);
@@ -339,19 +326,28 @@ function renderDay(day, items, settings, nowFraction, ctx, staging, setBlockErro
     const hotelsHere = items.filter((i) => i.item_type === 'hotel' && hotelPosition(i, day.date));
     for (const h of hotelsHere) {
       const d = h.details || {};
+      const when = d.when || {};
       const position = hotelPosition(h, day.date);
       const nights = hotelNights(h).length;
       const label = d.hotel_name || h.title || tiHotel.label;
+      // Times used to be in check_in_time / check_out_time; the
+      // when-unification refactor moved them into when.start_at /
+      // when.end_at. Default to 15:00 / 11:00 if the user never set
+      // them, matching common hotel norms.
+      const checkInTime = when.start_at ? (String(when.start_at).match(/T(\d{2}:\d{2})/) || [])[1] : null;
+      const checkOutTime = when.end_at ? (String(when.end_at).match(/T(\d{2}:\d{2})/) || [])[1] : null;
+      const displayIn = checkInTime || '15:00';
+      const displayOut = checkOutTime || '11:00';
       let time, titleText;
       if (position === 'only') {
-        time = `check-in ${d.check_in_time || '15:00'} → check-out ${d.check_out_time || '11:00'}`;
-        titleText = `Hotel: ${label} (single night — check in ${d.check_in_time || '15:00'}, check out ${d.check_out_time || '11:00'})`;
+        time = `check-in ${displayIn} → check-out ${displayOut}`;
+        titleText = `Hotel: ${label} (single night — check in ${displayIn}, check out ${displayOut})`;
       } else if (position === 'first') {
-        time = `check-in ${d.check_in_time || '15:00'} · ${nights} night${nights > 1 ? 's' : ''}`;
-        titleText = `Hotel: ${label} — check in ${d.check_in_time || '15:00'}, ${nights} nights`;
+        time = `check-in ${displayIn} · ${nights} night${nights > 1 ? 's' : ''}`;
+        titleText = `Hotel: ${label} — check in ${displayIn}, ${nights} nights`;
       } else if (position === 'last') {
-        time = `check-out ${d.check_out_time || '11:00'}`;
-        titleText = `Hotel: ${label} — check out ${d.check_out_time || '11:00'}`;
+        time = `check-out ${displayOut}`;
+        titleText = `Hotel: ${label} — check out ${displayOut}`;
       } else {
         const nightIdx = hotelNights(h).indexOf(day.date) + 1;
         time = `night ${nightIdx} of ${nights}`;
@@ -388,16 +384,24 @@ function renderDay(day, items, settings, nowFraction, ctx, staging, setBlockErro
     const it = s.item;
     const ti = settings.item_types[it.item_type] || { label: it.item_type };
     const d = it.details || {};
-    const f = TIME_FIELDS[it.item_type] || {};
-    // Render the time range. For legacy items that still have only
-    // `time` (restaurant/transport created before the start+end
-    // migration), fall back to that field so the bar's subtitle
-    // shows the time the user actually entered.
-    const startTxt = f.start ? (d[f.start] || (d.time || '').replace('T', ' ')).replace('T', ' ') : '';
-    const endTxt   = f.end   ? (d[f.end]   || '').replace('T', ' ') : '';
+    const when = d.when || {};
+    // Render the time range. Strip the date prefix from the ISO
+    // datetimes so the bar reads "19:00 → 20:00" instead of
+    // "2026-09-11T19:00". Schedule items always have both start and
+    // end (the server defaults end to start + 1h if blank), so the
+    // range is the common case.
+    const startTxt = when.start_at ? String(when.start_at).replace('T', ' ').replace(/^\S+ /, '') : '';
+    const endTxt   = when.end_at   ? String(when.end_at).replace('T', ' ').replace(/^\S+ /, '') : '';
     const isBackup = s.isBackup;
     const durationHrs = s.end - s.start;
-    const barTime = durationHrs > 1.5 ? (startTxt + (endTxt ? ' → ' + endTxt.split(' ').pop() : '')) : '';
+    // Show the range whenever both times are known. The 1.5h threshold
+    // existed to skip the subtitle on short bars (it was visually
+    // busy), but with the new unified shape the range is informative
+    // even at 1h. Use a 0.5h floor so a near-instant bar still hides
+    // the time.
+    const barTime = (durationHrs >= 0.5 && startTxt)
+      ? (startTxt + (endTxt ? ' → ' + endTxt.split(' ').pop() : ''))
+      : '';
     const extraClass = (isBackup ? ' tl-item-backup' : '') + (s.unscheduled ? ' tl-item-unscheduled' : '');
     grid.appendChild(makeBar({
       kind: it.item_type,
@@ -553,7 +557,7 @@ function wireBarDrag({ bar, staging, getViewItems, getSelection, onMultiDrag, ct
     const dayIso = bar.dataset.day;
     const startH = Number(bar.dataset.start);
     const endH = Number(bar.dataset.end);
-    if (!fields.start) return;             // no time fields to edit
+    if (!bar.dataset.timeField) return;       // no time fields to edit
 
     // Resize = mousedown landed on a .tl-resize handle; move = body.
     const resizeEdge = e.target && e.target.dataset && e.target.dataset.resize;
@@ -677,22 +681,35 @@ function wireBarDrag({ bar, staging, getViewItems, getSelection, onMultiDrag, ct
         }
       }
 
-      const newDetails = Object.assign({}, it.details || {});
+      // Build a fresh details object so the live drag doesn't mutate
+      // the underlying item. The staging's `viewItems()` returns
+      // `base.items` directly when the pointer is 0 (no ops applied),
+      // so a shallow copy here would share `details.when` with the
+      // base — a Cancel all would then re-render the bar at the
+      // dragged position, even though the underlying data is supposed
+      // to be intact. Deep-cloning here keeps the base clean.
+      const srcDetails = it.details || {};
+      const newDetails = JSON.parse(JSON.stringify(srcDetails));
       // The onMove handler populated _pendingStart and _pendingEnd with
       // the user's new values (already snapped + clamped). We commit
-      // both as the new start_time + end_time, which is the unified
-      // shape every timed item type now uses. This also auto-migrates
-      // any legacy items that only had a single `time` field.
-      newDetails[fields.start] = combineDateHour(hoverDayIso, newStartH);
-      if (fields.end && fields.end !== fields.start) newDetails[fields.end] = combineDateHour(hoverDayIso, newEndH);
-      // Clear the legacy `time` field once the new shape is in place,
-      // so the item doesn't carry two ways of saying the same thing.
-      if (newDetails.time && (it.item_type === 'restaurant' || it.item_type === 'transport' || it.item_type === 'transit')) {
-        delete newDetails.time;
-      }
+      // them as the unified details.when.start_at / when.end_at.
+      newDetails.when = newDetails.when || {};
+      newDetails.when.start_at = combineDateHour(hoverDayIso, newStartH);
+      newDetails.when.end_at = combineDateHour(hoverDayIso, newEndH);
+      // Drop any legacy time fields so the item doesn't carry two
+      // different ways of saying the same thing.
+      delete newDetails.time;
+      delete newDetails.start_time;
+      delete newDetails.end_time;
+      delete newDetails.depart_time;
+      delete newDetails.arrive_time;
+      delete newDetails.check_in_time;
+      delete newDetails.check_out_time;
 
-      // For hotel events, map the drag correctly to the parent hotel's fields:
-      // check-in drag → update item_date, check-out drag → update end_date.
+      // For hotel events, map the drag correctly to the parent hotel's
+      // date columns: check-in drag → update item_date, check-out drag
+      // → update end_date. The when object carries the times; the
+      // server derives item_date / end_date from it on save.
       const hotelEvent = bar.dataset.hotelEvent;
       const itemDate = hotelEvent === 'check-out' ? (it.item_date || dayIso) : hoverDayIso;
       const endDate = hotelEvent === 'check-out' ? hoverDayIso : undefined;
@@ -831,6 +848,15 @@ export async function initTimeline(ctx) {
     basePlan: planBase,
     onChange: () => { render(); },
   });
+  // The edit bar's buttons (Revert / Redo / Cancel all / Save) report
+  // their disabled state from the staging's pointer — without a
+  // subscription they keep whatever state they had when the bar was
+  // last rendered, so a bar that opened with no pending changes would
+  // stay "Cancel all" disabled even after the user dragged a bar and
+  // staged a TIME_EDIT. The board wires this subscription explicitly
+  // (itinerary.js); the timeline needs the same so resize / drag
+  // gestures on the timeline actually surface in the pending bar.
+  staging.subscribe(() => renderEditBarCtl());
 
   // Blocked-action status (e.g. "trim would orphan an item"). Shown in
   // the edit bar's status text.
@@ -855,9 +881,11 @@ export async function initTimeline(ctx) {
   function renderEditBarCtl() {
     // The "focused day" is the first item in the multi-selection, so
     // Quick add lands on the same day as whatever the user was looking
-    // at. Falls back to the first day.
+    // at. Falls back to the first day. The bar's setFocusedDay callback
+    // updates this (e.g. when the user clicks a day's "Quick add"
+    // button on a different day), so it has to be a `let`, not a const.
     const sel = selectedItems();
-    const focusedDate = (sel[0] && sel[0].item_date) || (days[0] && days[0].date);
+    let focusedDate = (sel[0] && sel[0].item_date) || (days[0] && days[0].date);
     renderEditBar({
       days, settings, staging, ctx,
       setBlockError,
@@ -1267,32 +1295,30 @@ export async function initTimeline(ctx) {
     }
     const sessionId = batchSessionId();
     for (const it of items) {
-      const f = TIME_FIELDS[it.item_type];
-      if (!f || !f.start) continue;
+      if (!TIME_FIELDS[it.item_type]) continue;
       const d = it.details || {};
-      // For legacy items that only have `time` (restaurant/transport
-      // pre-migration), read from that field instead of the new
-      // start_time. The new end will be derived from the user's
-      // gesture plus the item's existing duration.
-      const startSrc = d[f.start] || d.time;
-      const startH = timeOfDay(startSrc);
+      // Read the current start from the unified when object.
+      const when = d.when || {};
+      const startH = timeOfDay(when.start_at);
       if (startH == null) continue;
       const newStartH = snapHalfHour(startH + deltaH);
-      // Same duration, clamped to the [0, 24] window.
-      const endSrc = f.end ? (d[f.end] || d.time) : null;
-      const endH = f.end ? timeOfDay(endSrc) : null;
+      // Same duration as the original, clamped to the [0, 24] window.
+      const endH = timeOfDay(when.end_at);
       const newEndH = endH != null ? Math.max(newStartH + 0.5, Math.min(24, endH + deltaH)) : null;
       const newDetails = Object.assign({}, d);
-      // Always write start_time and end_time. This both fixes the
-      // broken pre-migration items (which only had `time`) and
-      // normalizes the data shape for new items.
-      newDetails[f.start] = combineDateHour(item_date, newStartH);
-      if (f.end && newEndH != null) newDetails[f.end] = combineDateHour(item_date, newEndH);
-      // Clear the legacy field if it was there so the item doesn't
-      // carry two different ways of saying the same thing.
-      if (d.time && (it.item_type === 'restaurant' || it.item_type === 'transport' || it.item_type === 'transit')) {
-        delete newDetails.time;
-      }
+      newDetails.when = Object.assign({}, when, {
+        start_at: combineDateHour(item_date, newStartH),
+        end_at: newEndH != null ? combineDateHour(item_date, newEndH) : when.end_at,
+      });
+      // Drop any legacy time fields so the item doesn't carry two
+      // different ways of saying the same thing.
+      delete newDetails.time;
+      delete newDetails.start_time;
+      delete newDetails.end_time;
+      delete newDetails.depart_time;
+      delete newDetails.arrive_time;
+      delete newDetails.check_in_time;
+      delete newDetails.check_out_time;
       staging.add(timeEditItemOp({
         planId: ctx.planId,
         itemId: it.id,

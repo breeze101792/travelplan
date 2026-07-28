@@ -198,8 +198,12 @@ def test_board_add_hotel_item_with_dates(desktop, server):
     p.locator(".add-menu .add-type", has_text="Hotel").first.click()
     p.wait_for_selector(".item-editor .input")
     p.locator(".item-editor .input").first.fill("Hilton Tokyo")
-    p.locator('input[type=date]').first.fill("2026-09-10")
-    p.locator('input[type=date]').nth(1).fill("2026-09-12")
+    # After the when-unification refactor, the editor renders two
+    # datetime-local inputs in the "When" block (Check-in / Check-out)
+    # for hotels. The day is part of the datetime value.
+    when_inputs = p.locator('.item-editor input[type=datetime-local]')
+    when_inputs.nth(0).fill("2026-09-10T15:00")
+    when_inputs.nth(1).fill("2026-09-12T11:00")
     p.click('.item-editor button:has-text("Apply")')
     p.wait_for_selector('.pb-save:not([disabled])', timeout=5000)
     p.click(".pb-save")
@@ -279,6 +283,21 @@ def test_board_context_menu_has_cut_copy_paste(desktop, server):
 
 
 def test_board_drag_item_between_days(desktop, server):
+    """Drag a card from day 1 to day 2.
+
+    Regression for a pre-existing bug where the drag handler referenced
+    `batchSessionId` without importing it, throwing a ReferenceError
+    that silently aborted the move. The earlier version of this test
+    was too loose (the assertion `count() >= 1` passed even if the
+    drag silently failed, because the card was still on its source
+    day). Now we explicitly verify the card is on the target day AND
+    no longer on the source day, AND that the edit bar's Save button
+    became enabled (i.e. a real op was staged).
+
+    Also pins the test data: the card starts on day 1 with a known
+    date, so the assertion can compare against the source day, not
+    just `count() >= 1`.
+    """
     p = desktop
     pid = _create_plan_api(server, start_date="2026-09-10", end_date="2026-09-12")
     op = _api_client(server)
@@ -289,13 +308,24 @@ def test_board_drag_item_between_days(desktop, server):
         headers={"Content-Type": "application/json"}, method="POST"))
     p.goto(server["base_url"] + f"/plans/{pid}")
     p.wait_for_selector(".card.item")
+    # Sanity: card is on day 1 (2026-09-10) before the drag.
+    assert p.locator('.day-items[data-date="2026-09-10"] .card.item').count() == 1, \
+        "sanity: card starts on day 1"
     card = p.locator(".card.item").first
     target_day = p.locator(".day-items").nth(1)
     target_date = target_day.evaluate("el => el.dataset.date")
+    assert target_date == "2026-09-11", "sanity: target day is 2026-09-11"
     card.drag_to(target_day)
     p.wait_for_timeout(1500)
-    moved = p.locator(f'.day-items[data-date="{target_date}"] .card.item')
-    assert moved.count() >= 1
+    # The card moved to day 2.
+    assert p.locator(f'.day-items[data-date="{target_date}"] .card.item').count() == 1, \
+        "after drag: card is on the target day"
+    # And is no longer on day 1.
+    assert p.locator('.day-items[data-date="2026-09-10"] .card.item').count() == 0, \
+        "after drag: card is no longer on the source day"
+    # A real MOVE_ITEM op was staged (the Save button is enabled).
+    assert not p.locator(".pb-save").is_disabled(), \
+        "after drag: Save is enabled (a real op was staged)"
 
 
 def test_board_revert_pending_change(desktop, server):

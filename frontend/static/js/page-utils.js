@@ -137,3 +137,16 @@ export function onBeforeUnload(staging, e) {
     return '';
   }
 }
+
+/**
+ * Build a stable session id for batched ops (drag, paste, delete) so a
+ * single Cancel discards them together. The format matches the
+ * convention used by the editor (`sess-` + base36 timestamp + random).
+ * Exported here because both itinerary.js (onMove) and timeline.js
+ * (multi-drag, paste) need it, and the multi-select module keeps its
+ * own copy for internal use. If you're tempted to make a third copy,
+ * use this one instead.
+ */
+export function batchSessionId() {
+  return 'sess-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 8);
+}
