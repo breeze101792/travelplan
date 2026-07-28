@@ -425,7 +425,12 @@ function renderList() {
 
 function effectiveTimeSort(item) {
   const d = item.details || {};
-  const raw = d.depart_time || d.start_time || d.time || d.check_in_time || d.check_out_time;
+  const when = d.when || {};
+  // Use the unified when object — every timed item stores its time
+  // in when.start_at (transit: depart; activity/restaurant/note:
+  // start; hotel virtual events: both check-in and check-out use
+  // start_at after the when-unification refactor in hotel-events.js).
+  const raw = when.start_at;
   if (!raw) return null;
   const s = String(raw).replace(/^[^T]+T/, '');
   const [h, m] = s.split(':').map(Number);

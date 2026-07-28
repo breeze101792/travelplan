@@ -121,6 +121,35 @@ await boot('owner');
        'hotel bar has no resize handles');
   }
 
+  /* =============== regression: check-in / check-out event bars are at the
+   *                actual time, not at 00:00 =============== */
+  // The hotel in this fixture is HOTEL (check-in 15:00 on 2026-09-10,
+  // check-out 11:00 on 2026-09-12). Hotel-events.js generates two
+  // virtual items on those days. An earlier version of hotel-events
+  // emitted them with the time in `details.time` (an ISO datetime),
+  // but the timeline reads `details.when.start_at` / `end_at` — so the
+  // check-in / check-out bars fell back to 00:00, hiding the actual
+  // check-in (15:00) and check-out (11:00) times from the user.
+  //
+  // This test pins the data attributes (which the drag handler reads
+  // back to commit a TIME_EDIT): the check-in bar's start must be 15
+  // (not 0), and the check-out bar's start must be 11. It would have
+  // caught the original bug (start=0 / end=0.5) the moment the data
+  // shape was changed. We don't check style.top because the DOM shim
+  // doesn't model CSS — the data attributes are what feed makeBar. */
+  const checkInBar = document.querySelector(".tl-item.hotel[data-item-id^='_checkin_']");
+  const checkOutBar = document.querySelector(".tl-item.hotel[data-item-id^='_checkout_']");
+  assert(checkInBar !== null, 'check-in event bar exists');
+  assert(checkOutBar !== null, 'check-out event bar exists');
+  if (checkInBar) {
+    eq(Number(checkInBar.dataset.start), 15, 'check-in bar start = 15:00 (the actual check-in time)');
+    eq(Number(checkInBar.dataset.end),   16, 'check-in bar end = 16:00 (start + 1h default duration)');
+  }
+  if (checkOutBar) {
+    eq(Number(checkOutBar.dataset.start), 11, 'check-out bar start = 11:00 (the actual check-out time)');
+    eq(Number(checkOutBar.dataset.end),   12, 'check-out bar end = 12:00 (start + 1h default duration)');
+  }
+
   // The edit bar is visible (owner can edit) and the drag-only
   // buttons (Revert/Redo/Save) are wired. There is no "Add" button —
   // the timeline doesn't create items.

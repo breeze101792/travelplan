@@ -241,16 +241,23 @@ function renderHotelBanners(hotels, dateStr) {
   const section = el('div', { class: 'nav-hotels' });
   for (const hotel of hotels) {
     const d = hotel.details || {};
+    const when = d.when || {};
+    // Extract the HH:MM portion of when.start_at / when.end_at for
+    // the "Check-in today at 15:00 · Check-out tomorrow at 11:00" banner.
+    // The unified when shape stores full ISO datetimes ("2026-09-10T15:00");
+    // we want just the time-of-day for the banner.
+    const checkInTime = when.start_at ? extractTime(when.start_at) : '';
+    const checkOutTime = when.end_at ? extractTime(when.end_at) : '';
     const isCheckIn = dateStr === hotel.item_date;
     const isLastNight = addDaysIso(dateStr, 1) === hotel.end_date;
 
     let stayInfo;
     if (isCheckIn && isLastNight) {
-      stayInfo = `Check-in today${d.check_in_time ? ' at ' + d.check_in_time : ''} \u00B7 Check-out tomorrow${d.check_out_time ? ' at ' + d.check_out_time : ''}`;
+      stayInfo = `Check-in today${checkInTime ? ' at ' + checkInTime : ''} \u00B7 Check-out tomorrow${checkOutTime ? ' at ' + checkOutTime : ''}`;
     } else if (isCheckIn) {
-      stayInfo = `Check-in today${d.check_in_time ? ' at ' + d.check_in_time : ''}`;
+      stayInfo = `Check-in today${checkInTime ? ' at ' + checkInTime : ''}`;
     } else if (isLastNight) {
-      stayInfo = `Check-out tomorrow${d.check_out_time ? ' at ' + d.check_out_time : ''}`;
+      stayInfo = `Check-out tomorrow${checkOutTime ? ' at ' + checkOutTime : ''}`;
     } else {
       stayInfo = 'Overnight stay';
     }
@@ -464,16 +471,20 @@ function openEditorFor(item) {
 
 function itemTimeWindow(item) {
   const d = item.details || {};
+  const when = d.when || {};
   let start = null, end = null;
   if (item._hotelEvent) {
-    start = timeOfDay(d.time);
+    // Virtual hotel events carry the time in details.when.start_at
+    // (hotel-events.js emits { when: { start_at: … } } for both
+    // check-in and check-out after the when-unification refactor).
+    start = timeOfDay(when.start_at);
     end = start !== null ? start + 1 : null;
   } else if (item.item_type === 'transit') {
-    start = timeOfDay(d.depart_time);
-    end = timeOfDay(d.arrive_time);
+    start = timeOfDay(when.start_at);
+    end = timeOfDay(when.end_at);
   } else if (item.item_type === 'activity' || item.item_type === 'restaurant') {
-    start = timeOfDay(d.start_time);
-    end = timeOfDay(d.end_time);
+    start = timeOfDay(when.start_at);
+    end = timeOfDay(when.end_at);
   }
   if (start === null) return null;
   if (end === null || end <= start) end = start + 1;
@@ -495,13 +506,14 @@ function extractTime(v) {
 
 function formatItemTime(item, tw) {
   const d = item.details || {};
+  const when = d.when || {};
   let s = '', e = '';
   if (item.item_type === 'transit') {
-    s = extractTime(d.depart_time);
-    e = extractTime(d.arrive_time);
+    s = extractTime(when.start_at);
+    e = extractTime(when.end_at);
   } else {
-    s = extractTime(d.start_time);
-    e = extractTime(d.end_time);
+    s = extractTime(when.start_at);
+    e = extractTime(when.end_at);
   }
   if (!s) s = fmtHour(tw.start);
   if (!e) e = fmtHour(tw.end);
