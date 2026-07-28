@@ -17,6 +17,13 @@
   display: flex; align-items: flex-start; justify-content: center;
   padding: 5vh clamp(8px, 1.5vw, 24px);
   overflow-y: auto;
+  /* Contain the modal's scroll: without this, scrolling the modal
+   * body to its top and continuing to drag would (on iOS Safari)
+   * also scroll the page behind the modal and trigger the page's
+   * pull-to-refresh. The longhand is included for older Safari
+   * builds that don't yet accept the shorthand. */
+  overscroll-behavior: contain;
+  overscroll-behavior-y: contain;
   z-index: 9999;
 }
 .modal.item-editor {
@@ -55,7 +62,7 @@
   color: var(--muted, #64748b); padding: 2px 6px; border-radius: 6px;
 }
 .modal-close:hover { background: var(--surface-2, #f1f5f9); color: var(--text, #111827); }
-.modal.item-editor .modal-body { padding: 20px 24px; overflow-y: auto; }
+.modal.item-editor .modal-body { padding: 20px 24px; overflow-y: auto; overscroll-behavior: contain; overscroll-behavior-y: contain; }
 .modal.item-editor .modal-footer {
   display: flex; justify-content: flex-end; gap: 8px;
   padding: 12px 22px; border-top: 1px solid var(--border, #eef2f7);
@@ -358,6 +365,8 @@
   flex-direction: column;
   gap: 10px;
   overflow-y: auto;
+  overscroll-behavior: contain;
+  overscroll-behavior-y: contain;
   min-height: 0;
 }
 .modal.expense-modal .modal-body .field {

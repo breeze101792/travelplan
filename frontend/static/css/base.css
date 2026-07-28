@@ -219,6 +219,14 @@ input[type="checkbox"], input[type="radio"] { width: auto; }
   justify-content: center;
   padding: 40px 16px;
   overflow-y: auto;
+  /* Keep the modal's scroll contained: scrolling at the top of the
+   * backdrop must not bubble up and scroll the page behind the modal
+   * (iOS Safari's elastic-scroll behaviour used to do exactly this
+   * and would also trigger the page-level pull-to-refresh). The
+   * longhand `overscroll-behavior-y` is included for older Safari
+   * builds that don't yet accept the shorthand. */
+  overscroll-behavior: contain;
+  overscroll-behavior-y: contain;
   z-index: 100;
 }
 .modal {
