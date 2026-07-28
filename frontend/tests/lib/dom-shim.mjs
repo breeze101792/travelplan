@@ -156,14 +156,36 @@ function matchAttr(node, sel) {
 }
 
 function matchSimple(node, sel) {
-  // Attribute selector? delegate.
+  // Pure attribute selector? delegate.
   if (sel.startsWith('[')) return matchAttr(node, sel);
-  // Compound with tag + attribute (e.g. 'button[data-action="x"]').
+  // Compound with tag and/or class/id plus attributes (e.g.
+  // 'button[data-action="x"]' or '.toolbar-range[data-action="x"]').
+  // Split off the attribute groups and check them via matchAttr, then
+  // match the remaining tag/class/id prefix.
   if (sel.includes('[')) {
-    const r = matchAttr(node, sel);
+    const bracket = sel.indexOf('[');
+    const head = sel.slice(0, bracket);     // 'button' or '.toolbar-range'
+    const attrPart = sel.slice(bracket);     // '[data-action="x"]'
+    // Head must match tag/class/id (no attributes).
+    if (head) {
+      let rest = head;
+      let tag = null;
+      const tagM = rest.match(/^[a-zA-Z][a-zA-Z0-9]*/);
+      if (tagM) { tag = tagM[0].toUpperCase(); rest = rest.slice(tagM[0].length); }
+      if (tag && node.tagName !== tag) return false;
+      for (const tok of rest.match(/[.#][^.#]+/g) || []) {
+        if (tok.startsWith('#')) { if (node.id !== tok.slice(1)) return false; }
+        else if (!node.classList || !node.classList.contains(tok.slice(1))) return false;
+      }
+      // head had at least a tag or class/id, otherwise it's just attributes.
+    }
+    // Now check the attribute groups.
+    const r = matchAttr(node, attrPart);
     if (r != null) return r;
+    // matchAttr returned null (not an attribute selector pattern); fall
+    // through to the generic path below.
   }
-  // Tag + class/id compounds.
+  // Tag + class/id compounds (no attributes).
   let rest = sel;
   let tag = null;
   const tagM = rest.match(/^[a-zA-Z][a-zA-Z0-9]*/);
@@ -262,5 +284,7 @@ export function installDom({ ids = [] } = {}) {
     matches: false, media: q, addEventListener() {}, removeEventListener() {},
     addListener() {}, removeListener() {},
   });
+  globalThis.requestAnimationFrame = (fn) => setTimeout(fn, 0);
+  globalThis.cancelAnimationFrame = (id) => clearTimeout(id);
   return documentShim;
 }

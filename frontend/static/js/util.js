@@ -120,6 +120,10 @@ export async function loadSettings() {
   return _settingsCache;
 }
 
+/** Clear the cached settings so the next loadSettings() re-fetches. Tests
+ *  use this between boots with different stubbed /api/settings responses. */
+export function resetSettingsCache() { _settingsCache = null; }
+
 // Small <span> badge for an item status.
 export function statusBadge(status) {
   const label = (status || '').charAt(0).toUpperCase() + (status || '').slice(1);

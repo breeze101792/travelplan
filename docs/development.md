@@ -5,24 +5,24 @@ Read the README first, then this file. Already familiar? Skim the headings.
 
 ## Tests
 
-`start.sh` runs three test suites before serving, and a failing test in
-any of them aborts startup:
+`start.sh` no longer runs tests (it just starts the server). All tests live
+under `tests/` and run via `tests/run-tests.sh`:
 
 | Suite                  | Command                              | What it covers                              |
 | ---                    | ---                                  | ---                                         |
-| Backend expense engine | `python -m backend.expense`          | the settlement / multi-currency engine      |
-| Backend auth + plans   | `python -m backend.tests`            | login, self-serve settings, plan API, buffer days, `fmt_date` |
-| Frontend fixtures      | `bash frontend/tests/run.sh`         | staging engine, board boot, timeline boot, `fmtDate` |
+| Backend (pytest)       | `./tests/run-tests.sh --backend`     | auth, plans, items, uploads, expenses, util |
+| Frontend (node)       | `bash frontend/tests/run.sh`         | staging engine, board boot, timeline boot, `fmtDate` |
+| E2E (Playwright)       | `./tests/run-tests.sh --e2e`         | desktop + iPhone browser flows (login, dashboard, board, expenses, members, settings) |
 
-`backend.tests` (run via `backend/tests/__main__.py`) loads both
-`test_auth.py` (auth, self-serve settings, admin user management) and
-`test_plans.py` (plan CRUD, buffer days, shared header rendering,
-`fmt_date` parity with the frontend).
+`tests/backend/` is pytest with shared fixtures (`conftest.py`: fresh temp
+data dir per test, `app`/`client`/`admin_client`/`member_client`/`make_user`/
+`make_plan`/`db` query helper). ~150 tests covering every blueprint.
+`tests/e2e/` is Playwright (Python) driving a real Chromium against a
+throwaway Flask server; two device profiles — desktop (1280x800) and
+iPhone 14 (390x664, touch). ~40 tests.
 
 The frontend fixture is skipped (exit 0) if `node` is not on `PATH`; set
-`NODE=/path/to/node` to force a failure in that case. Every suite also
-prints a short banner (`>> running expense engine self-tests` etc.) so
-you can see which gate fired when startup fails.
+`NODE=/path/to/node` to force a failure in that case.
 
 ## Frontend test fixture: what's there and why
 
@@ -93,8 +93,8 @@ point the app at a new temp data dir must call `db.reset_for_tests()`
 first to drop the cached connection, otherwise `init_db()` creates the
 schema in the new file but `get_db()` reuses the old connection —
 queries return empty / stale data and `UNIQUE` constraints fire on
-re-runs. The pattern in `test_auth.py` and `test_plans.py` (each has
-its own `_fresh_app()` helper):
+re-runs. The pattern lives in `tests/backend/conftest.py`'s
+`fresh_app` fixture:
 
 ```python
 db_mod.reset_for_tests()
@@ -166,9 +166,11 @@ default to `main` unless the change is big enough to need isolation.
 
 ## Workflow tips
 
-- `start.sh` is the source of truth for "does this build?" It runs
-  the venv setup, all three test suites, then the server. A failing
-  test aborts startup. If `start.sh` works, the codebase is healthy.
+- `./tests/run-tests.sh --e2e` is the source of truth for "does this
+  build?" It runs the backend pytest suite, the frontend node tests, and
+  the Playwright browser tests. A failing test exits non-zero. If the
+  runner is green, the codebase is healthy. `start.sh` just starts the
+  server (no test gate).
 - The frontend test fixture needs node (any recent LTS; 20+ works).
   If a machine doesn't have node, `run.sh` skips with exit 0, and
   `start.sh` carries on. Set `NODE=/path/to/node` if you want a
