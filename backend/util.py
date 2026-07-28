@@ -1,7 +1,7 @@
 """Small shared helpers: JSON responses and money parsing/formatting."""
 from __future__ import annotations
 
-from decimal import Decimal, ROUND_HALF_UP
+from decimal import Decimal, ROUND_HALF_UP, InvalidOperation
 from datetime import date
 
 from flask import jsonify
@@ -55,9 +55,12 @@ def parse_amount_to_cents(amount, decimals: int = 2) -> int:
         raise ValueError("invalid amount")
     if isinstance(amount, int):
         return amount  # already in cents
-    d = Decimal(str(amount))
-    factor = Decimal(10) ** decimals
-    cents = (d * factor).quantize(Decimal(1), rounding=ROUND_HALF_UP)
+    try:
+        d = Decimal(str(amount))
+        factor = Decimal(10) ** decimals
+        cents = (d * factor).quantize(Decimal(1), rounding=ROUND_HALF_UP)
+    except InvalidOperation:
+        raise ValueError("invalid amount")
     return int(cents)
 
 
