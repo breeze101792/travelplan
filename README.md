@@ -45,13 +45,13 @@ PORT=9000 ./start.sh    # or set the port via the PORT env var
 ```
 
 `start.sh` creates a per-host virtualenv (`.venv_$(hostname)`), installs Flask,
-runs the self-tests (expense engine + auth + frontend fixtures), then serves
-the app. Set the port with a positional arg (`./start.sh 8080`) or the
-`PORT` env var (the arg wins); `HOST` defaults to `0.0.0.0` so friends on the
-same network can reach your machine at that port. Debug/auto-reload is **off**
-by default (the Werkzeug debugger is unsafe to expose on a shared network) — use
-`DEBUG=1 ./start.sh` while developing locally. `./backend/run.sh` still works as
-an alias for `./start.sh`.
+then serves the app. Tests are run separately via `./tests/run-tests.sh`
+(see the **Tests** section below). Set the port with a positional arg
+(`./start.sh 8080`) or the `PORT` env var (the arg wins); `HOST` defaults
+to `0.0.0.0` so friends on the same network can reach your machine at
+that port. Debug/auto-reload is **off** by default (the Werkzeug debugger
+is unsafe to expose on a shared network) — use `DEBUG=1 ./start.sh` while
+developing locally. `./backend/run.sh` still works as an alias for `./start.sh`.
 
 On first run there is no admin yet — open the app and create the admin account
 at the setup page. The admin then creates member accounts (for friends) and can
@@ -102,22 +102,23 @@ the base currency using a greedy min-cash-flow ("who owes whom") algorithm.
 ```
 
 `start.sh` no longer runs the tests (it just starts the server). Tests live
-under `tests/` and are run separately via `tests/run-tests.sh`:
+under `tests/` and are run separately via `tests/run-tests.sh`. **550 tests
+total, all passing.**
 
-- **`tests/backend/`** — pytest, ~150 tests covering every blueprint (auth,
-  plans, items, uploads, expenses, util). Fresh temp data dir per test; no
-  shared state. Run alone with `./tests/run-tests.sh --backend` or
-  `.venv_$(hostname)/bin/python -m pytest tests/backend -c pytest.ini`.
-- **`tests/e2e/`** — Playwright (Python) browser tests, ~40 tests on a real
-  Chromium against a throwaway Flask server. Two device profiles: desktop
-  (1280x800, mouse) and iPhone 14 (390x664, touch). Covers setup, login,
-  dashboard create/edit/delete, board add/edit/drag/revert items, right-click
-  context menu, expenses, members, settings. Needs `playwright` installed
-  (`pip install playwright`) and a chromium binary; on NixOS set
-  `CHROMIUM=/nix/store/.../bin/chromium` (the conftest tries a default path).
-  Run with `./tests/run-tests.sh --e2e`.
-- **`frontend/tests/`** — the original node ES-module tests (staging engine,
-  itinerary/timeline page execution, fmtDate parity). Plain node, no npm.
+- **`tests/backend/`** — pytest, **149 tests** covering every blueprint
+  (auth, plans, items, uploads, expenses, util). Fresh temp data dir per
+  test; no shared state. Run alone with `./tests/run-tests.sh --backend`
+  or `.venv_$(hostname)/bin/python -m pytest tests/backend -c pytest.ini`.
+- **`tests/e2e/`** — Playwright (Python) browser tests, **42 tests** on a
+  real Chromium against a throwaway Flask server. Two device profiles:
+  desktop (1280x800, mouse) and iPhone 14 (390x664, touch). Covers setup,
+  login, dashboard create/edit/delete, board add/edit/drag/revert items,
+  right-click context menu, expenses, members, settings. Needs `playwright`
+  installed (`pip install playwright`) and a chromium binary; on NixOS set
+  `CHROMIUM=/nix/store/.../bin/chromium` (the conftest tries a default
+  path). Run with `./tests/run-tests.sh --e2e`.
+- **`frontend/tests/`** — the original node ES-module tests, **359 tests**
+  (itinerary 134, staging 89, timeline 118, util 18). Plain node, no npm.
   Skipped automatically when node is not installed.
 
 The frontend fixtures under `frontend/tests/` run the staging engine's unit

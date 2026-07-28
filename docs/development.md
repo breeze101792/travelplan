@@ -70,7 +70,7 @@ planRes, memRes, itemsRes, expRes] = await Promise.all([...]); ... }
 catch { return; }` was followed by code that used `itemsRes.items`
 after the block. The `const` made `itemsRes` invisible, the page threw
 on first load, the board rendered blank. The DOM-shim page-execution
-test was added specifically so this class of bug fails `start.sh`
+test (`frontend/tests/itinerary.test.mjs`) catches this class of bug
 before it ships.
 
 Rule of thumb: if a value is created inside a `try` and used after
