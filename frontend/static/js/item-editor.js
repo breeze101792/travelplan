@@ -20,6 +20,7 @@
 import { apiGet } from '/static/js/api.js';
 import { el, clear } from '/static/js/util.js';
 import { openExpenseFormModal } from '/static/js/expense-form.js';
+import { lockBodyScroll, unlockBodyScroll } from '/static/js/page-utils.js';
 import {
   saveItemOp, uploadImageOp, addLinkOp, deleteAttachmentOp, addExpenseOp, updateAttachmentOp,
 } from '/static/js/staging.js';
@@ -549,6 +550,15 @@ export function openItemEditor(ctx, { plan, item, settings, members, staging, se
   });
 
   document.body.appendChild(backdrop);
+  // Lock the page scroll while the modal is open. Without this, iOS
+  // Safari's elastic overscroll on the modal's body can still scroll
+  // the page behind the modal — and that scroll bleeds into the page's
+  // pull-to-refresh, kicking the user out of the modal with a full
+  // page reload. The CSS `overscroll-behavior: contain` blocks the
+  // visual scroll; this is the body-scroll lock that blocks the
+  // touch-driven pull-to-refresh that pulltorefresh.js reads the
+  // `has-open-modal` class for.
+  lockBodyScroll();
   backdrop.addEventListener('click', (e) => { if (e.target === backdrop) onCancel(); });
 
   /* ----- handlers ----- */
@@ -566,6 +576,7 @@ export function openItemEditor(ctx, { plan, item, settings, members, staging, se
     // (e.g. suppress a click that would otherwise clear multi-select).
     if (onClose) onClose();
     backdrop.remove();
+    unlockBodyScroll();
     if (onApplied) onApplied();
   }
 
@@ -672,6 +683,7 @@ export function openItemEditor(ctx, { plan, item, settings, members, staging, se
     }));
     if (onClose) onClose();
     backdrop.remove();
+    unlockBodyScroll();
     if (onApplied) onApplied();
   }
 
@@ -774,13 +786,20 @@ function openLinkEditModal(attachment, onSaved) {
           attachment._pendingCaption = nameInput.value.trim();
         }
         backdrop.remove();
+        unlockBodyScroll();
         if (onSaved) onSaved();
       }}),
   ]);
   modal.appendChild(footer);
 
   document.body.appendChild(backdrop);
-  backdrop.addEventListener('click', (e) => { if (e.target === backdrop) backdrop.remove(); });
+  lockBodyScroll();
+  backdrop.addEventListener('click', (e) => {
+    if (e.target === backdrop) {
+      backdrop.remove();
+      unlockBodyScroll();
+    }
+  });
 }
 
 /* Open a modal for adding an attachment — either a URL link or an image upload. */
@@ -792,7 +811,7 @@ function openAttachmentModal({ item, attachments, pendingFiles, onAttachmentsCha
   modal.appendChild(el('div', { class: 'modal-header' }, [
     el('h3', { text: 'Add attachment' }),
     el('button', { type: 'button', class: 'modal-close', text: '\u00d7',
-      onclick: () => backdrop.remove() }),
+      onclick: () => { backdrop.remove(); unlockBodyScroll(); } }),
   ]));
 
   const body = el('div', { class: 'modal-body' });
@@ -875,17 +894,48 @@ function openAttachmentModal({ item, attachments, pendingFiles, onAttachmentsCha
       });
     }
     backdrop.remove();
+    unlockBodyScroll();
     if (onAttachmentsChanged) onAttachmentsChanged();
   });
 
   const footer = el('div', { class: 'modal-footer' });
   footer.appendChild(el('button', { type: 'button', class: 'btn btn-ghost',
-    text: 'Cancel', onclick: () => backdrop.remove() }));
+    text: 'Cancel', onclick: () => { backdrop.remove(); unlockBodyScroll(); } }));
   footer.appendChild(addBtn);
   modal.appendChild(footer);
 
   document.body.appendChild(backdrop);
-  backdrop.addEventListener('click', (e) => { if (e.target === backdrop) backdrop.remove(); });
+  lockBodyScroll();
+  backdrop.addEventListener('click', (e) => {
+    if (e.target === backdrop) { backdrop.remove(); unlockBodyScroll(); }
+  });
+
+  loadLeaflet(() => {
+    const map = L.map(mapContainer).setView([geocode.lat, geocode.lng], 15);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: '&copy; <a href="https://openstreetmap.org/copyright">OpenStreetMap</a>',
+    }).addTo(map);
+
+    const marker = L.marker([geocode.lat, geocode.lng], { draggable: true }).addTo(map)
+      .bindPopup(geocode.label)
+      .openPopup();
+
+    let moved = false;
+    marker.on('dragend', () => {
+      moved = true;
+      updateBtn.disabled = false;
+    });
+
+    updateBtn.addEventListener('click', () => {
+      if (!moved) return;
+      const pos = marker.getLatLng();
+      if (onUpdate) onUpdate(pos.lat, pos.lng);
+      backdrop.remove();
+      unlockBodyScroll();
+    });
+
+    setTimeout(() => map.invalidateSize(), 100);
+  });
 }
 
 /* Open a popup modal for searching a location via Photon geocoding API.
@@ -898,7 +948,7 @@ function openGeoSearchPopup(onSelect) {
   const header = el('div', { class: 'geo-popup-header' });
   header.appendChild(el('h3', { text: 'Search location' }));
   const closeBtn = el('button', { type: 'button', class: 'modal-close', text: '\u00d7' });
-  closeBtn.addEventListener('click', () => backdrop.remove());
+  closeBtn.addEventListener('click', () => { backdrop.remove(); unlockBodyScroll(); });
   header.appendChild(closeBtn);
   modal.appendChild(header);
 
@@ -976,6 +1026,7 @@ function openGeoSearchPopup(onSelect) {
         item.addEventListener('click', () => {
           onSelect({ label, lat: coords[1], lng: coords[0] });
           backdrop.remove();
+          unlockBodyScroll();
         });
         resultsEl.appendChild(item);
       }
@@ -996,6 +1047,7 @@ function openGeoSearchPopup(onSelect) {
     if (marker && marker._label) {
       onSelect({ label: marker._label, lat: marker._lat, lng: marker._lng });
       backdrop.remove();
+      unlockBodyScroll();
     }
   });
   confirmRow.appendChild(confirmBtn);
@@ -1007,7 +1059,10 @@ function openGeoSearchPopup(onSelect) {
   });
 
   document.body.appendChild(backdrop);
-  backdrop.addEventListener('click', (e) => { if (e.target === backdrop) backdrop.remove(); });
+  lockBodyScroll();
+  backdrop.addEventListener('click', (e) => {
+    if (e.target === backdrop) { backdrop.remove(); unlockBodyScroll(); }
+  });
   searchInput.focus();
   ensureMap();
 }
@@ -1034,7 +1089,7 @@ export function openGeoMapPopup(geocode, onUpdate) {
   const header = el('div', { class: 'geo-popup-header' });
   header.appendChild(el('h3', { text: geocode.label }));
   const closeBtn = el('button', { type: 'button', class: 'modal-close', text: '\u00d7' });
-  closeBtn.addEventListener('click', () => backdrop.remove());
+  closeBtn.addEventListener('click', () => { backdrop.remove(); unlockBodyScroll(); });
   header.appendChild(closeBtn);
   modal.appendChild(header);
 

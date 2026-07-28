@@ -20,6 +20,15 @@ function onTouchStart(e) {
   state.startX = e.touches[0].clientX;
   state.currentY = state.startY;
   state.el.classList.remove('ptr-releasing', 'ptr-refreshing');
+  // Skip pull-to-refresh entirely if a modal is open. The modal's
+  // own scroll-bleed-through (on iOS Safari) would otherwise trigger
+  // location.reload() at the modal's top edge, kicking the user out
+  // of the modal and discarding any unsaved changes. The CSS
+  // `overscroll-behavior: contain` on the modal backdrop already
+  // blocks the scroll itself, but the touchstart still reaches this
+  // document-level handler; checking the body class here is the
+  // defence in depth that stops the reload.
+  if (document.body.classList.contains('has-open-modal')) return;
   // Only track pull-to-refresh when at the very top of the page.
   if (window.scrollY === 0) {
     state.pulling = true;

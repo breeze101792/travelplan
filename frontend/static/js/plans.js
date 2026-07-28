@@ -4,6 +4,7 @@ import {
 import {
   el, clear, fmtDate, loadSettings,
 } from '/static/js/util.js';
+import { lockBodyScroll, unlockBodyScroll } from '/static/js/page-utils.js';
 
 let baseCurrencies = ['USD'];
 let currentTab = 'ongoing';
@@ -378,7 +379,7 @@ function openEditModal(plan, section) {
     el('div', { class: 'modal-header' }, [
       el('h3', { text: 'Edit trip' }),
       el('button', { type: 'button', class: 'modal-close', text: '×',
-        onclick: () => backdrop.remove() }),
+        onclick: () => { backdrop.remove(); unlockBodyScroll(); } }),
     ]),
     el('div', { class: 'modal-body' }, [
       el('label', { class: 'field' }, [
@@ -416,7 +417,7 @@ function openEditModal(plan, section) {
     ]),
     el('div', { class: 'modal-footer' }, [
       el('button', { type: 'button', class: 'btn ghost', text: 'Cancel',
-        onclick: () => backdrop.remove() }),
+        onclick: () => { backdrop.remove(); unlockBodyScroll(); } }),
       el('button', { type: 'submit', class: 'btn primary' }, ['Save']),
       el('span', { class: 'form-msg', role: 'status' }),
     ]),
@@ -425,9 +426,17 @@ function openEditModal(plan, section) {
   modal.appendChild(form);
   backdrop.appendChild(modal);
   document.body.appendChild(backdrop);
+  // Lock the body scroll while the modal is open. Without this, iOS
+  // Safari's elastic overscroll on the modal body can still scroll
+  // the page behind the modal — and that scroll bleeds into the
+  // page's pull-to-refresh, kicking the user out of the modal with
+  // a full reload. The CSS `overscroll-behavior: contain` blocks
+  // the visual scroll; this is the body-scroll lock that stops the
+  // touch-driven pull-to-refresh.
+  lockBodyScroll();
 
   backdrop.addEventListener('click', (e) => {
-    if (e.target === backdrop) backdrop.remove();
+    if (e.target === backdrop) { backdrop.remove(); unlockBodyScroll(); }
   });
 
   form.addEventListener('submit', async (ev) => {
@@ -438,6 +447,7 @@ function openEditModal(plan, section) {
       msgEl.textContent = 'Saving…';
       await apiPatch(`/api/plans/${plan.id}`, data);
       backdrop.remove();
+      unlockBodyScroll();
       await renderPlans(section, currentTab);
     } catch (e) {
       msgEl.textContent = e.message || 'Failed to save.';

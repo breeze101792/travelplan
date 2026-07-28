@@ -150,3 +150,67 @@ export function onBeforeUnload(staging, e) {
 export function batchSessionId() {
   return 'sess-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 8);
 }
+
+/* ---------- body scroll lock for modals ----------
+ *
+ * A modal that's `position: fixed` doesn't actually stop the page
+ * behind it from scrolling on iOS Safari — overscroll on the modal
+ * content gets routed to the page (and the page's pull-to-refresh).
+ * Two fixes work together:
+ *   1. CSS `overscroll-behavior: contain` on the modal backdrop and
+ *      body. (Added in base.css and item-editor.css.)
+ *   2. While any modal is open, lock `<body>` scroll by setting
+ *      `overflow: hidden` and remember the previous scrollY so we can
+ *      restore it on close. (Locking prevents the page from being
+ *      scrolled by a wheel/touch event that leaks through during the
+ *      brief moment before the browser applies overscroll-behavior.)
+ *
+ * The count lets multiple modals stack: the first opens, the second
+ * opens (count=2), the first closes (count=1, body stays locked), the
+ * second closes (count=0, body unlocks). The body class
+ * `has-open-modal` is what pulltorefresh.js and any other module
+ * reads to decide "leave the page alone".
+ */
+let _modalCount = 0;
+let _savedScrollY = 0;
+
+export function lockBodyScroll() {
+  if (typeof document === 'undefined') return;
+  if (_modalCount === 0) {
+    _savedScrollY = window.scrollY || 0;
+    document.body.style.overflow = 'hidden';
+    // Fixed-position elements (topbar, plan-nav) stay in place because
+    // the page itself no longer scrolls; this also keeps the page's
+    // scroll position frozen so closing the modal doesn't drop the
+    // user back at the top.
+  }
+  _modalCount++;
+  document.body.classList.add('has-open-modal');
+}
+
+export function unlockBodyScroll() {
+  if (typeof document === 'undefined') return;
+  if (_modalCount <= 0) {
+    // Defensive: someone called unlock without a matching lock.
+    // Don't go negative; just leave the class alone.
+    return;
+  }
+  _modalCount--;
+  if (_modalCount === 0) {
+    document.body.classList.remove('has-open-modal');
+    document.body.style.overflow = '';
+    if (_savedScrollY && window.scrollTo) {
+      // Restore the exact scroll position the user was at. The page
+      // was frozen at _savedScrollY, so this is a no-op for most
+      // browsers, but on some Android builds the locked scrollY can
+      // drift during the modal's lifetime.
+      window.scrollTo(0, _savedScrollY);
+    }
+    _savedScrollY = 0;
+  }
+}
+
+/** Test helper / query — true if any modal is currently locking scroll. */
+export function isBodyScrollLocked() {
+  return _modalCount > 0;
+}

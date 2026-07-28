@@ -4,6 +4,7 @@ import { apiGet, apiPost, apiPatch, apiDel } from '/static/js/api.js';
 import { el, clear, money, statusBadge, loadSettings } from '/static/js/util.js';
 import { initSettlement } from '/static/js/settlement.js';
 import { openExpenseFormModal } from '/static/js/expense-form.js';
+import { lockBodyScroll, unlockBodyScroll } from '/static/js/page-utils.js';
 
 // --- helpers ---------------------------------------------------------------
 
@@ -64,20 +65,26 @@ function confirmModal(msg) {
     modal.appendChild(el('div', { class: 'modal-header' }, [
       el('h3', { text: 'Confirm' }),
       el('button', { type: 'button', class: 'modal-close', text: '\u00d7',
-        onclick: () => { backdrop.remove(); resolve(false); } }),
+        onclick: () => { backdrop.remove(); unlockBodyScroll(); resolve(false); } }),
     ]));
     modal.appendChild(el('div', { class: 'modal-body', style: 'padding: 16px 24px;' }, [
       el('p', { text: msg, style: 'margin: 0;' }),
     ]));
     modal.appendChild(el('div', { class: 'modal-footer' }, [
       el('button', { type: 'button', class: 'btn btn-ghost', text: 'Cancel',
-        onclick: () => { backdrop.remove(); resolve(false); } }),
+        onclick: () => { backdrop.remove(); unlockBodyScroll(); resolve(false); } }),
       el('button', { type: 'button', class: 'btn btn-danger', text: 'Delete',
-        onclick: () => { backdrop.remove(); resolve(true); } }),
+        onclick: () => { backdrop.remove(); unlockBodyScroll(); resolve(true); } }),
     ]));
     document.body.appendChild(backdrop);
+    // Lock the body scroll while the modal is open. The CSS
+    // overscroll-behavior on the backdrop already keeps the page from
+    // scrolling visually; this is the body-scroll lock that stops the
+    // touch-driven pull-to-refresh that would otherwise reload the
+    // page when the user is interacting with the modal.
+    lockBodyScroll();
     backdrop.addEventListener('click', (e) => {
-      if (e.target === backdrop) { backdrop.remove(); resolve(false); }
+      if (e.target === backdrop) { backdrop.remove(); unlockBodyScroll(); resolve(false); }
     });
   });
 }

@@ -2,6 +2,7 @@
  * Used by both the expenses page and the item editor.
  */
 import { el, clear, money } from '/static/js/util.js';
+import { lockBodyScroll, unlockBodyScroll } from '/static/js/page-utils.js';
 
 // --- helpers ---------------------------------------------------------------
 
@@ -454,6 +455,7 @@ export function openExpenseFormModal({
 
   function closeModal() {
     backdrop.remove();
+    unlockBodyScroll();
     if (onClose) onClose();
   }
 
@@ -463,5 +465,14 @@ export function openExpenseFormModal({
   renderPreview();
 
   document.body.appendChild(backdrop);
+  // Lock the body scroll while the modal is open. Without this, iOS
+  // Safari's elastic overscroll on the modal body can still scroll
+  // the page behind the modal — and that scroll bleeds into the
+  // page's pull-to-refresh, kicking the user out of the modal with
+  // a full reload. The CSS `overscroll-behavior: contain` blocks
+  // the visual scroll; this is the body-scroll lock that stops the
+  // touch-driven pull-to-refresh that pulltorefresh.js reads the
+  // `has-open-modal` class for.
+  lockBodyScroll();
   backdrop.addEventListener('click', (e) => { if (e.target === backdrop) closeModal(); });
 }
