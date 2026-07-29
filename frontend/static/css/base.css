@@ -70,14 +70,15 @@ a:hover { text-decoration: underline; }
 .topbar .spacer { flex: 1; }
 
 /* Plan-mode topbar (replaces brand + links with plan identity + nav) */
-.topbar--plan { gap: 6px; padding: 0 12px; }
+.topbar--plan { }
 .tp-plan-name {
-  font-weight: 700; font-size: 15px; color: var(--ink);
+  font-weight: 700; font-size: 18px; color: var(--ink);
+  letter-spacing: -0.01em;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   flex-shrink: 1; min-width: 0;
 }
 .tp-plan-dates {
-  font-size: 13px; color: var(--muted); white-space: nowrap;
+  font-size: 14px; color: var(--muted); white-space: nowrap;
   flex-shrink: 0;
 }
 .tp-refresh-btn {
@@ -91,15 +92,15 @@ a:hover { text-decoration: underline; }
   background: none; border: none; padding: 0; gap: 2px;
   flex-wrap: nowrap; overflow-x: auto;
   -webkit-overflow-scrolling: touch; scrollbar-width: none;
-  flex-shrink: 1; min-width: 0;
+  flex-shrink: 1; min-width: 0; margin-left: auto;
 }
 .topbar--plan .plan-nav::-webkit-scrollbar { display: none; }
 .topbar--plan .pn-link {
-  padding: 4px 8px; font-size: 12px; border-radius: 4px; flex-shrink: 0;
+  padding: 4px 8px; font-size: 13px; border-radius: 4px; flex-shrink: 0;
 }
-.topbar--plan .pn-link--muted { font-size: 11px; }
+.topbar--plan .pn-link--muted { font-size: 12px; }
 .topbar--plan .user-dropdown { flex-shrink: 0; }
-.topbar--plan .user-dropdown-trigger { font-size: 13px; padding: 2px 6px; }
+.topbar--plan .user-dropdown-trigger { font-size: 14px; padding: 2px 6px; }
 
 /* User dropdown menu */
 .user-dropdown { position: relative; }
@@ -587,11 +588,11 @@ tr:last-child td { border-bottom: none; }
 @media (max-width: 640px) {
   #view { padding: 16px; }
   .topbar { padding: 0 14px; gap: 10px; height: 48px; }
-  .topbar--plan { padding: 0 8px; gap: 4px; }
-  .tp-plan-name { font-size: 13px; max-width: 120px; }
+  .topbar--plan { gap: 4px; }
+  .tp-plan-name { font-size: 16px; max-width: 120px; }
   .tp-plan-dates { display: none; }
   .tp-refresh-btn { display: none; }
-  .topbar--plan .pn-link { padding: 3px 6px; font-size: 11px; }
+  .topbar--plan .pn-link { padding: 3px 6px; font-size: 12px; }
 
   .page-header h1 { font-size: 22px; }
   .field-row { flex-direction: column; }

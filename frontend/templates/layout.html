@@ -24,7 +24,6 @@
         <span class="tp-plan-dates">{{ fmt_date(plan.start_date) }} → {{ fmt_date(plan.end_date) }}</span>
       {% endif %}
       <button id="plan-refresh-btn" class="tp-refresh-btn" title="Refresh data" type="button">↻</button>
-      <div class="spacer"></div>
       {% include "_plan_nav.html" %}
       {% if current_user %}
       <div class="user-dropdown">
