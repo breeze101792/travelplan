@@ -32,6 +32,10 @@ function updateNav(view) {
 
 export async function navigate(view, pushState = true) {
   if (view === _currentView) return;
+
+  const editBar = document.getElementById('edit-bar');
+  if (editBar) editBar.hidden = true;
+
   if (_currentCleanup) {
     _currentCleanup();
     _currentCleanup = null;
