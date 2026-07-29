@@ -22,8 +22,8 @@ def _create_plan(server, title="Shared trip"):
     return r.read()["plan"]["id"] if False else json.loads(r.read())["plan"]["id"]
 
 
-def test_members_page_renders_for_owner(desktop, server):
-    p = desktop
+def test_members_page_renders_for_owner(admin_desktop, server):
+    p = admin_desktop
     pid = _create_plan(server)
     p.goto(server["base_url"] + f"/plans/{pid}/members")
     p.wait_for_selector("#members-root")
@@ -32,8 +32,8 @@ def test_members_page_renders_for_owner(desktop, server):
     assert p.locator('button:has-text("Transfer ownership")').count() >= 1
 
 
-def test_members_add_member(desktop, server):
-    p = desktop
+def test_members_add_member(admin_desktop, server):
+    p = admin_desktop
     pid = _create_plan(server)
     p.goto(server["base_url"] + f"/plans/{pid}/members")
     p.wait_for_selector("#members-root")
@@ -49,8 +49,8 @@ def test_members_add_member(desktop, server):
     assert "alice" in table_text or "bob" in table_text
 
 
-def test_members_change_role(desktop, server):
-    p = desktop
+def test_members_change_role(admin_desktop, server):
+    p = admin_desktop
     pid = _create_plan(server)
     # Add alice as editor via the API first.
     import urllib.request, urllib.parse, http.cookiejar, json
@@ -82,8 +82,8 @@ def test_members_change_role(desktop, server):
     assert alice_role == "viewer"
 
 
-def test_members_remove_member(desktop, server):
-    p = desktop
+def test_members_remove_member(admin_desktop, server):
+    p = admin_desktop
     pid = _create_plan(server)
     import urllib.request, urllib.parse, http.cookiejar, json
     cj = http.cookiejar.CookieJar()
@@ -113,16 +113,16 @@ def test_members_remove_member(desktop, server):
 
 
 # ------------------------------------------------------------------ settings
-def test_settings_page_renders(desktop, server):
-    p = desktop
+def test_settings_page_renders(admin_desktop, server):
+    p = admin_desktop
     p.goto(server["base_url"] + "/auth/settings")
     assert "Your account" in p.locator(".card-title").first.text_content()
     # The display-name input is pre-filled with the current name.
     assert p.locator("#display_name").input_value() == "Admin"
 
 
-def test_settings_change_display_name(desktop, server):
-    p = desktop
+def test_settings_change_display_name(admin_desktop, server):
+    p = admin_desktop
     p.goto(server["base_url"] + "/auth/settings")
     original = p.locator("#display_name").input_value()
     p.fill("#display_name", "Admin Renamed")
@@ -137,11 +137,11 @@ def test_settings_change_display_name(desktop, server):
     p.wait_for_load_state("networkidle")
 
 
-def test_settings_change_password(desktop, server):
+def test_settings_change_password(admin_desktop, server):
     # The admin's password is shared across the whole session (other tests
     # depend on it), so we change it and then change it back. This still
     # exercises the full POST path + the notice on success.
-    p = desktop
+    p = admin_desktop
     p.goto(server["base_url"] + "/auth/settings")
     old_pw = server["admin"]["password"]
     new_pw = "newtravelplan1"
@@ -159,8 +159,8 @@ def test_settings_change_password(desktop, server):
     p.wait_for_load_state("networkidle")
 
 
-def test_settings_change_password_rejects_mismatch(desktop, server):
-    p = desktop
+def test_settings_change_password_rejects_mismatch(admin_desktop, server):
+    p = admin_desktop
     p.goto(server["base_url"] + "/auth/settings")
     p.fill("#current_password", server["admin"]["password"])
     p.fill("#new_password", "newtravelplan1")
@@ -171,8 +171,8 @@ def test_settings_change_password_rejects_mismatch(desktop, server):
     assert p.locator(".error-msg").count() >= 1
 
 
-def test_settings_change_password_rejects_wrong_current(desktop, server):
-    p = desktop
+def test_settings_change_password_rejects_wrong_current(admin_desktop, server):
+    p = admin_desktop
     p.goto(server["base_url"] + "/auth/settings")
     p.fill("#current_password", "WRONGPASSWORD")
     p.fill("#new_password", "newtravelplan1")

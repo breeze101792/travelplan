@@ -18,7 +18,7 @@ def _create_trip_api(server, title="Japan 2026",
     cj = http.cookiejar.CookieJar()
     opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(cj))
     form = urllib.parse.urlencode({
-        "username": "admin", "password": server["admin"]["password"],
+        "username": "alice", "password": server["alice"]["password"],
     }).encode()
     opener.open(urllib.request.Request(
         server["base_url"] + "/auth/login", data=form, method="POST"))
@@ -45,7 +45,7 @@ def test_iphone_dashboard_renders_cards(iphone, server):
     cj = http.cookiejar.CookieJar()
     op = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(cj))
     form = urllib.parse.urlencode({
-        "username": "admin", "password": server["admin"]["password"],
+        "username": "alice", "password": server["alice"]["password"],
     }).encode()
     op.open(urllib.request.Request(
         server["base_url"] + "/auth/login", data=form, method="POST"))
@@ -101,7 +101,7 @@ def test_iphone_tap_opens_item_editor(iphone, server):
     cj = http.cookiejar.CookieJar()
     opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(cj))
     form = urllib.parse.urlencode({
-        "username": "admin", "password": server["admin"]["password"],
+        "username": "alice", "password": server["alice"]["password"],
     }).encode()
     opener.open(urllib.request.Request(
         server["base_url"] + "/auth/login", data=form, method="POST"))
@@ -151,7 +151,7 @@ def test_iphone_board_long_press_card_does_not_open_editor(iphone, server):
     cj = http.cookiejar.CookieJar()
     opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(cj))
     form = urllib.parse.urlencode({
-        "username": "admin", "password": server["admin"]["password"],
+        "username": "alice", "password": server["alice"]["password"],
     }).encode()
     opener.open(urllib.request.Request(
         server["base_url"] + "/auth/login", data=form, method="POST"))
@@ -205,7 +205,7 @@ def _create_trip_with_long_note(iphone, server, *, title="Scroll lock trip",
     op.open(urllib.request.Request(
         server["base_url"] + "/auth/login",
         data=urllib.parse.urlencode(
-            {"username": "admin", "password": server["admin"]["password"]}
+            {"username": "alice", "password": server["alice"]["password"]}
         ).encode(),
         method="POST"))
     pid = _json.loads(op.open(urllib.request.Request(
@@ -406,7 +406,7 @@ def test_iphone_navigation_swipe(iphone, server):
     cj = http.cookiejar.CookieJar()
     opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(cj))
     form = urllib.parse.urlencode({
-        "username": "admin", "password": server["admin"]["password"],
+        "username": "alice", "password": server["alice"]["password"],
     }).encode()
     opener.open(urllib.request.Request(
         server["base_url"] + "/auth/login", data=form, method="POST"))

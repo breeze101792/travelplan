@@ -18,6 +18,7 @@ import { clipboardGet, clipboardSet, serializeItem } from '/static/js/clipboard.
 import { buildDays, isoOf, wirePlanHeader, renderEditBar, makeDayActions,
         showDayContextMenu, closeDayContextMenu } from '/static/js/plan-header.js';
 import { expandHotelEvents } from '/static/js/hotel-events.js';
+import { enableGrabScroll } from '/static/js/page-utils.js';
 import { createMultiSelect } from '/static/js/multi-select.js';
 import { doSave as sharedSave, showToast, batchSessionId } from '/static/js/page-utils.js';
 
@@ -312,6 +313,7 @@ export async function initItinerary(ctx) {
       if (!day.is_buffer && day.date === todayStr) todaySec = sec;
     }
     board.appendChild(scrollWrap);
+    enableGrabScroll(scrollWrap);
 
     renderHeaderChrome();
     renderEditBarCtl();

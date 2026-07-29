@@ -21,12 +21,12 @@ import http.cookiejar
 
 
 def _api_client(server):
-    """A urllib opener logged in as admin. Used to set up state faster than
+    """A urllib opener logged in as a member. Used to set up state faster than
     driving the UI for every test prerequisite."""
     cj = http.cookiejar.CookieJar()
     opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(cj))
     form = urllib.parse.urlencode({
-        "username": "admin", "password": server["admin"]["password"],
+        "username": "alice", "password": server["alice"]["password"],
     }).encode()
     opener.open(urllib.request.Request(
         server["base_url"] + "/auth/login", data=form, method="POST"))
@@ -134,6 +134,140 @@ def test_delete_trip_via_card_button(desktop, server):
     p.click('.tab-btn[data-tab=planning]')
     p.wait_for_selector("#plans")
     assert p.locator(".plan-card").count() < before
+
+
+def test_context_menu_opens_on_right_click(desktop, server):
+    p = desktop
+    _create_plan_api(server, title="Menu test")
+    _clear_cache(p)
+    p.goto(server["base_url"] + "/dashboard")
+    p.wait_for_selector(".tab-bar")
+    p.click('.tab-btn[data-tab=planning]')
+    p.wait_for_selector(".plan-card")
+    p.locator(".plan-card").first.click(button="right")
+    p.wait_for_selector(".context-menu")
+    assert p.locator(".context-menu").count() >= 1
+
+
+def test_context_menu_has_status_and_delete_options(desktop, server):
+    p = desktop
+    _create_plan_api(server, title="Menu items")
+    _clear_cache(p)
+    p.goto(server["base_url"] + "/dashboard")
+    p.wait_for_selector(".tab-bar")
+    p.click('.tab-btn[data-tab=planning]')
+    p.wait_for_selector(".plan-card")
+    p.locator(".plan-card").first.click(button="right")
+    p.wait_for_selector(".context-menu")
+    labels = [b.text_content() for b in p.locator(".context-menu button").all()]
+    for expected in ("Move to Planning", "Move to Ongoing", "Move to Archived", "Delete"):
+        assert expected in labels, f"missing menu item '{expected}': {labels}"
+    # Move to Planning should be disabled (card is already planning).
+    disabled = p.locator('.context-menu button:disabled')
+    disabled_texts = [b.text_content() for b in disabled.all()]
+    assert "Move to Planning" in disabled_texts
+
+
+def test_context_menu_status_change_via_right_click(desktop, server):
+    p = desktop
+    pid = _create_plan_api(server, title="Status change")
+    _clear_cache(p)
+    p.goto(server["base_url"] + "/dashboard")
+    p.wait_for_selector(".tab-bar")
+    p.click('.tab-btn[data-tab=planning]')
+    p.wait_for_selector(".plan-card")
+    p.locator(".plan-card").first.click(button="right")
+    p.wait_for_selector(".context-menu")
+    p.locator('.context-menu button:has-text("Move to Ongoing")').click()
+    # After the status change the card moves to the ongoing tab.
+    p.click('.tab-btn[data-tab=ongoing]')
+    p.wait_for_timeout(500)
+    titles = [t.text_content() for t in p.locator(".plan-card .card-title").all()]
+    assert "Status change" in titles
+    op = _api_client(server)
+    r = json.loads(op.open(urllib.request.Request(
+        server["base_url"] + f"/api/plans/{pid}",
+        headers={"Accept": "application/json"})).read())
+    assert r["plan"]["status"] == "ongoing"
+
+
+def test_context_menu_delete_via_right_click(desktop, server):
+    p = desktop
+    pid = _create_plan_api(server, title="Delete me")
+    _clear_cache(p)
+    p.goto(server["base_url"] + "/dashboard")
+    p.wait_for_selector(".tab-bar")
+    p.click('.tab-btn[data-tab=planning]')
+    p.wait_for_selector(".plan-card")
+    before = p.locator(".plan-card").count()
+    assert before >= 1
+    p.locator(".plan-card").first.click(button="right")
+    p.wait_for_selector(".context-menu")
+    p.on("dialog", lambda d: d.accept())
+    p.locator('.context-menu button:has-text("Delete")').click()
+    p.wait_for_timeout(2000)
+    # Verify the plan is gone server-side.
+    op = _api_client(server)
+    req = urllib.request.Request(server["base_url"] + f"/api/plans/{pid}")
+    try:
+        op.open(req)
+        deleted = False
+    except urllib.error.HTTPError as e:
+        deleted = e.code == 404
+    assert deleted, "plan was not deleted server-side"
+    p.reload()
+    p.click('.tab-btn[data-tab=planning]')
+    p.wait_for_selector("#plans")
+    assert p.locator(".plan-card").count() < before
+
+
+def test_context_menu_right_click_selects_card(desktop, server):
+    """Right-clicking an unselected card selects it alone and deselects others."""
+    p = desktop
+    _create_plan_api(server, title="Card A")
+    _create_plan_api(server, title="Card B")
+    _clear_cache(p)
+    p.goto(server["base_url"] + "/dashboard")
+    p.wait_for_selector(".tab-bar")
+    p.click('.tab-btn[data-tab=planning]')
+    p.wait_for_selector(".plan-card")
+    cards = p.locator(".plan-card")
+    count = cards.count()
+    assert count >= 2
+    # Select the first card with a normal click.
+    cards.nth(0).click()
+    p.wait_for_timeout(100)
+    assert "selected" in cards.nth(0).get_attribute("class")
+    assert "selected" not in cards.nth(1).get_attribute("class")
+    # Right-click the second card — it should become selected, first deselected.
+    cards.nth(1).click(button="right")
+    p.wait_for_selector(".context-menu")
+    p.wait_for_timeout(100)
+    assert "selected" not in cards.nth(0).get_attribute("class")
+    assert "selected" in cards.nth(1).get_attribute("class")
+
+
+def test_context_menu_archives_to_archived_tab(desktop, server):
+    """Move to Archived — card disappears from planning tab, shows in archived."""
+    p = desktop
+    _create_plan_api(server, title="Archive me")
+    _clear_cache(p)
+    p.goto(server["base_url"] + "/dashboard")
+    p.wait_for_selector(".tab-bar")
+    p.click('.tab-btn[data-tab=planning]')
+    p.wait_for_selector(".plan-card")
+    p.locator(".plan-card").first.click(button="right")
+    p.wait_for_selector(".context-menu")
+    p.locator('.context-menu button:has-text("Move to Archived")').click()
+    p.wait_for_timeout(500)
+    # Card is no longer in planning.
+    planning_titles = [t.text_content() for t in p.locator(".plan-card .card-title").all()]
+    assert "Archive me" not in planning_titles
+    # Card shows in archived.
+    p.click('.tab-btn[data-tab=archived]')
+    p.wait_for_timeout(500)
+    archived_titles = [t.text_content() for t in p.locator(".plan-card .card-title").all()]
+    assert "Archive me" in archived_titles
 
 
 def test_status_tab_switch(desktop, server):

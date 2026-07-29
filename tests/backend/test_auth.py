@@ -62,19 +62,19 @@ class TestLogin:
         assert b"Sign in" in r.data
 
     def test_login_redirects_to_dashboard_on_success(self, client, login):
-        r = login("admin")
+        r = login("alice")
         assert r.status_code == 302
         assert r.headers["Location"].endswith("/dashboard")
 
     def test_login_already_logged_in_redirects_to_dashboard(self, client, login):
-        login("admin")
+        login("alice")
         r = client.get("/auth/login", follow_redirects=False)
         assert r.status_code == 302
         assert r.headers["Location"].endswith("/dashboard")
 
     def test_login_rejects_wrong_password(self, client):
         r = client.post("/auth/login", data={
-            "username": "admin", "password": "WRONG",
+            "username": "alice", "password": "WRONG",
         })
         assert r.status_code == 200
         assert b"Invalid username or password" in r.data
@@ -89,7 +89,7 @@ class TestLogin:
     def test_login_redirects_to_next_when_safe(self, client):
         r = client.post(
             "/auth/login?next=/auth/settings",
-            data={"username": "admin", "password": "pw12345"},
+            data={"username": "alice", "password": "pw12345"},
             follow_redirects=False,
         )
         assert r.status_code == 302
@@ -98,7 +98,7 @@ class TestLogin:
     def test_login_ignores_unsafe_next(self, client):
         r = client.post(
             "/auth/login?next=//evil.com/x",
-            data={"username": "admin", "password": "pw12345"},
+            data={"username": "alice", "password": "pw12345"},
             follow_redirects=False,
         )
         assert r.status_code == 302
@@ -108,7 +108,7 @@ class TestLogin:
 # ---------------------------------------------------------------- logout
 class TestLogout:
     def test_logout_clears_session_and_redirects_to_login(self, client, login):
-        login("admin")
+        login("alice")
         r = client.get("/auth/logout", follow_redirects=False)
         assert r.status_code == 302
         assert "/auth/login" in r.headers["Location"]

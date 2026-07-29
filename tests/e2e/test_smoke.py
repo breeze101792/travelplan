@@ -9,11 +9,9 @@ def test_server_boots(server):
 def test_desktop_login_lands_on_dashboard(desktop, server):
     desktop.goto(server["base_url"] + "/dashboard")
     assert "Your trips" in desktop.locator("h1").text_content()
-    # Topbar shows the admin's display name (which may have been renamed by
-    # the settings tests in the same session — just assert it's non-empty
-    # and matches the seeded admin username or a rename).
+    # Topbar shows the logged-in user's display name.
     me_text = desktop.locator(".topbar .me").text_content()
-    assert me_text and "admin" in me_text.lower() or me_text.startswith("Admin")
+    assert me_text and "alice" in me_text.lower()
 
 
 def test_iphone_context_is_touch(iphone):

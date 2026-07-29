@@ -58,7 +58,7 @@ def test_login_redirects_to_next(fresh_page, server):
     cj = http.cookiejar.CookieJar()
     opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(cj))
     form = urllib.parse.urlencode({
-        "username": "admin", "password": server["admin"]["password"],
+        "username": "alice", "password": server["alice"]["password"],
         "next": "/auth/settings",
     }).encode()
     r = opener.open(urllib.request.Request(

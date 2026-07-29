@@ -33,6 +33,7 @@
   touch-action: pan-x pan-y;
   flex: 1;
   min-width: 0;
+  cursor: grab;
 }
 
 /* Pinned days float on the left, outside the scroll container, so they

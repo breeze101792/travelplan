@@ -18,7 +18,7 @@ def _api_client(server):
     cj = http.cookiejar.CookieJar()
     opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(cj))
     form = urllib.parse.urlencode({
-        "username": "admin", "password": server["admin"]["password"],
+        "username": "alice", "password": server["alice"]["password"],
     }).encode()
     opener.open(urllib.request.Request(
         server["base_url"] + "/auth/login", data=form, method="POST"))

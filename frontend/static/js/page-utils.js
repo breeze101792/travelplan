@@ -151,6 +151,67 @@ export function batchSessionId() {
   return 'sess-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 8);
 }
 
+/* ---------- grab-to-scroll (click-and-drag to pan) ---------- */
+
+/**
+ * Enable click-and-drag horizontal scrolling on a container.
+ * The user can grab empty space and drag to pan — works like Figma,
+ * Trello, or Google Maps.
+ *
+ * - Skips interactive elements (buttons, links, inputs, draggable items).
+ * - Starts only after a 5px threshold to avoid interfering with clicks.
+ * - Suppresses the click event that would otherwise fire after a drag.
+ */
+export function enableGrabScroll(container) {
+  let state = null;
+
+  container.addEventListener('mousedown', (down) => {
+    if (down.button !== 0) return;
+    if (down.target.closest('button, a, input, select, textarea, [draggable], .tl-item, .card.item, .day-header, .add-summary')) return;
+
+    state = {
+      startX: down.clientX,
+      startY: down.clientY,
+      scrollLeft: container.scrollLeft,
+      scrollTop: container.scrollTop,
+      moved: false,
+    };
+
+    const onMove = (move) => {
+      if (!state) return;
+      const dx = move.clientX - state.startX;
+      const dy = move.clientY - state.startY;
+      if (!state.moved) {
+        if (Math.abs(dx) < 5 && Math.abs(dy) < 5) return;
+        state.moved = true;
+        container.style.cursor = 'grabbing';
+        container.style.userSelect = 'none';
+        // Prevent text selection and other browser defaults during drag.
+        document.body.style.pointerEvents = 'none';
+      }
+      container.scrollLeft = state.scrollLeft - dx;
+      container.scrollTop = state.scrollTop - dy;
+    };
+
+    const onUp = () => {
+      document.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mouseup', onUp);
+      if (state && state.moved) {
+        container.style.cursor = '';
+        container.style.userSelect = '';
+        document.body.style.pointerEvents = '';
+        // Suppress the click that would fire after a drag.
+        const abort = (e) => { e.preventDefault(); e.stopImmediatePropagation(); };
+        container.addEventListener('click', abort, { capture: true, once: true });
+      }
+      state = null;
+    };
+
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
+  });
+}
+
 /* ---------- body scroll lock for modals ----------
  *
  * A modal that's `position: fixed` doesn't actually stop the page

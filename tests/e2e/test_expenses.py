@@ -12,7 +12,7 @@ def _create_plan_with_items(server, title="Expenses trip"):
     cj = http.cookiejar.CookieJar()
     opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(cj))
     form = urllib.parse.urlencode({
-        "username": "admin", "password": server["admin"]["password"],
+        "username": "alice", "password": server["alice"]["password"],
     }).encode()
     opener.open(urllib.request.Request(
         server["base_url"] + "/auth/login", data=form, method="POST"))
@@ -55,21 +55,21 @@ def test_expenses_add_via_api_and_settlement_shows_balance(desktop, server):
     cj = http.cookiejar.CookieJar()
     opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(cj))
     form = urllib.parse.urlencode({
-        "username": "admin", "password": server["admin"]["password"],
+        "username": "alice", "password": server["alice"]["password"],
     }).encode()
     opener.open(urllib.request.Request(
         server["base_url"] + "/auth/login", data=form, method="POST"))
     pid, item_id = _create_plan_with_items(server)
-    admin_id = opener.open(server["base_url"] + "/api/me").read()
-    admin_id = json.loads(admin_id)["user"]["id"]
+    current_id = json.loads(
+        opener.open(server["base_url"] + "/api/me").read())["user"]["id"]
     r = opener.open(server["base_url"] + "/api/members")
     bob_id = next(m["id"] for m in json.loads(r.read())["members"]
                  if m["username"] == "bob")
     body = json.dumps({
         "description": "Dinner", "currency": "USD", "amount": "20.00",
         "split_method": "EQUAL", "item_id": item_id,
-        "payers": [{"user_id": admin_id, "amount": "20.00"}],
-        "participants": [admin_id, bob_id],
+        "payers": [{"user_id": current_id, "amount": "20.00"}],
+        "participants": [current_id, bob_id],
     }).encode()
     opener.open(urllib.request.Request(
         server["base_url"] + f"/api/plans/{pid}/expenses", data=body,
@@ -88,12 +88,12 @@ def test_expenses_by_item_shows_total(desktop, server):
     cj = http.cookiejar.CookieJar()
     opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(cj))
     form = urllib.parse.urlencode({
-        "username": "admin", "password": server["admin"]["password"],
+        "username": "alice", "password": server["alice"]["password"],
     }).encode()
     opener.open(urllib.request.Request(
         server["base_url"] + "/auth/login", data=form, method="POST"))
     pid, item_id = _create_plan_with_items(server)
-    admin_id = json.loads(opener.open(
+    current_id = json.loads(opener.open(
         server["base_url"] + "/api/me").read())["user"]["id"]
     r = opener.open(server["base_url"] + "/api/members")
     bob_id = next(m["id"] for m in json.loads(r.read())["members"]
@@ -101,8 +101,8 @@ def test_expenses_by_item_shows_total(desktop, server):
     body = json.dumps({
         "description": "Dinner", "currency": "USD", "amount": "20.00",
         "split_method": "EQUAL", "item_id": item_id,
-        "payers": [{"user_id": admin_id, "amount": "20.00"}],
-        "participants": [admin_id, bob_id],
+        "payers": [{"user_id": current_id, "amount": "20.00"}],
+        "participants": [current_id, bob_id],
     }).encode()
     opener.open(urllib.request.Request(
         server["base_url"] + f"/api/plans/{pid}/expenses", data=body,
@@ -123,12 +123,12 @@ def test_expenses_set_rates_via_api_renders_no_missing_rate(desktop, server):
     cj = http.cookiejar.CookieJar()
     opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(cj))
     form = urllib.parse.urlencode({
-        "username": "admin", "password": server["admin"]["password"],
+        "username": "alice", "password": server["alice"]["password"],
     }).encode()
     opener.open(urllib.request.Request(
         server["base_url"] + "/auth/login", data=form, method="POST"))
     pid, item_id = _create_plan_with_items(server)
-    admin_id = json.loads(opener.open(
+    current_id = json.loads(opener.open(
         server["base_url"] + "/api/me").read())["user"]["id"]
     r = opener.open(server["base_url"] + "/api/members")
     bob_id = next(m["id"] for m in json.loads(r.read())["members"]
@@ -137,8 +137,8 @@ def test_expenses_set_rates_via_api_renders_no_missing_rate(desktop, server):
     body = json.dumps({
         "description": "Dinner", "currency": "USD", "amount": "20.00",
         "split_method": "EQUAL", "item_id": item_id,
-        "payers": [{"user_id": admin_id, "amount": "20.00"}],
-        "participants": [admin_id, bob_id],
+        "payers": [{"user_id": current_id, "amount": "20.00"}],
+        "participants": [current_id, bob_id],
     }).encode()
     opener.open(urllib.request.Request(
         server["base_url"] + f"/api/plans/{pid}/expenses", data=body,

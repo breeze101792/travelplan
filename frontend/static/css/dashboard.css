@@ -468,6 +468,59 @@
 
 /* Responsive ----------------------------------------------------------- */
 
+/* Context menu --------------------------------------------------------- */
+
+.context-menu {
+  position: fixed;
+  z-index: 1000;
+  min-width: 200px;
+  padding: 0.35rem 0;
+  margin: 0;
+  list-style: none;
+  background: var(--surface, #fff);
+  border: 1px solid var(--border, #e2e8f0);
+  border-radius: 0.6rem;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.12);
+}
+
+.context-menu-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.context-menu-item button {
+  flex: 1;
+  text-align: left;
+  padding: 0.45rem 1rem;
+  border: none;
+  background: none;
+  font: inherit;
+  font-size: 0.88rem;
+  color: var(--text, #1f2328);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.context-menu-item button:hover { background: var(--surface-hover, #f1f5f9); }
+.context-menu-item button:disabled { color: var(--text-muted, #94a3b8); cursor: default; }
+.context-menu-item button:disabled:hover { background: none; }
+
+.context-menu-item.is-danger button { color: var(--danger, #dc2626); }
+.context-menu-item.is-danger button:hover { background: var(--danger-bg, #fee2e2); }
+
+.context-menu-shortcut {
+  padding-right: 1rem;
+  font-size: 0.78rem;
+  color: var(--text-muted, #94a3b8);
+}
+
+.context-menu-sep {
+  height: 1px;
+  background: var(--border, #e5e7eb);
+  margin: 0.35rem 0.5rem;
+}
+
 @media (max-width: 640px) {
   .plan-editor .modal-body .input,
   .plan-editor .modal-body select,

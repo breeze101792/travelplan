@@ -30,6 +30,7 @@ import { openItemEditor } from '/static/js/item-editor.js';
 import { clipboardGet, clipboardSet, serializeItem } from '/static/js/clipboard.js';
 import { buildDays, isoOf, wirePlanHeader, renderEditBar, makeDayActions, showDayContextMenu, closeDayContextMenu } from '/static/js/plan-header.js';
 import { expandHotelEvents } from '/static/js/hotel-events.js';
+import { enableGrabScroll } from '/static/js/page-utils.js';
 
 let HOUR_PX = 36;     // recalculated by updateScale() to fill viewport
 
@@ -1228,6 +1229,7 @@ export async function initTimeline(ctx) {
       }
     }
     root.appendChild(scrollWrap);
+    enableGrabScroll(scrollWrap);
 
     // Wire drag/resize + click/menu on every bar. Hotels are wired too
     // (for click → editor) but they have no drag/resize handles; only

@@ -4,7 +4,10 @@ import {
 import {
   el, clear, fmtDate, loadSettings,
 } from '/static/js/util.js';
-import { lockBodyScroll, unlockBodyScroll } from '/static/js/page-utils.js';
+import {
+  lockBodyScroll, unlockBodyScroll,
+  buildContextMenu, positionMenu, closeContextMenu,
+} from '/static/js/page-utils.js';
 
 let baseCurrencies = ['USD'];
 let currentTab = 'ongoing';
@@ -306,6 +309,19 @@ function planCard(plan, section, idx) {
     window.location.href = `/plans/${plan.id}`;
   });
 
+  card.addEventListener('contextmenu', (e) => {
+    e.preventDefault();
+    // If right-clicked card is not in selection, select it alone.
+    if (!selectedIds.has(plan.id)) {
+      document.querySelectorAll('.plan-card.selected').forEach(c => c.classList.remove('selected'));
+      selectedIds.clear();
+      card.classList.add('selected');
+      selectedIds.add(plan.id);
+      anchorIdx = idx;
+    }
+    showPlanContextMenu(e.clientX, e.clientY, section);
+  });
+
   return card;
 }
 
@@ -489,6 +505,116 @@ async function onDeletePlan(plan, section) {
     }
   }
 }
+
+/* ---------- right-click context menu ---------- */
+
+let _ctxMenu = null;
+
+function showPlanContextMenu(x, y, section) {
+  closeContextMenu(_ctxMenu);
+  _ctxMenu = null;
+
+  const ids = [...selectedIds];
+  if (ids.length === 0) return;
+
+  // Collect status of selected plans from the DOM.
+  const statuses = new Set();
+  let allOwned = true;
+  for (const id of ids) {
+    const card = document.querySelector(`[data-id="${id}"]`);
+    if (!card) continue;
+    const badge = card.querySelector('.badge.status-planning, .badge.status-ongoing, .badge.status-archived');
+    if (badge) {
+      for (const cls of badge.classList) {
+        if (cls.startsWith('status-')) statuses.add(cls.replace('status-', ''));
+      }
+    }
+    allOwned = allOwned && !!card.querySelector('.card-controls');
+  }
+  const allSame = statuses.size === 1;
+  const currentStatus = allSame ? [...statuses][0] : null;
+
+  const STATUS_LABELS = { planning: 'Planning', ongoing: 'Ongoing', archived: 'Archived' };
+
+  const items = [];
+  for (const [key, label] of Object.entries(STATUS_LABELS)) {
+    items.push({
+      label: `Move to ${label}`,
+      enabled: key !== currentStatus,
+      action: () => {
+        closeContextMenu(_ctxMenu); _ctxMenu = null;
+        _bulkPatchStatus(ids, key, section);
+      },
+    });
+  }
+  items.push({ sep: true });
+  items.push({
+    label: ids.length === 1 ? 'Delete' : `Delete (${ids.length})`,
+    danger: true,
+    enabled: allOwned,
+    action: () => {
+      closeContextMenu(_ctxMenu); _ctxMenu = null;
+      const msg = ids.length === 1
+        ? `Delete this trip? This cannot be undone.`
+        : `Delete ${ids.length} trips? This cannot be undone.`;
+      if (!confirm(msg)) return;
+      _bulkDelete(ids, section);
+    },
+  });
+
+  const menu = buildContextMenu(items);
+  _ctxMenu = menu;
+  positionMenu(menu, x, y);
+
+  const close = (e) => {
+    if (!menu.contains(e.target)) {
+      menu.remove();
+      _ctxMenu = null;
+      document.removeEventListener('mousedown', close);
+      document.removeEventListener('keydown', esc);
+    }
+  };
+  const esc = (e) => {
+    if (e.key === 'Escape') { menu.remove(); _ctxMenu = null; document.removeEventListener('mousedown', close); document.removeEventListener('keydown', esc); }
+  };
+  // Close on next click outside or Escape.
+  setTimeout(() => {
+    document.addEventListener('mousedown', close);
+    document.addEventListener('keydown', esc);
+  }, 0);
+}
+
+/* ---------- bulk actions ---------- */
+
+async function _bulkPatchStatus(ids, newStatus, section) {
+  // Optimistically update badges to avoid flash.
+  for (const id of ids) {
+    const card = document.querySelector(`[data-id="${id}"]`);
+    if (!card) continue;
+    const badge = card.querySelector('.badge.status-planning, .badge.status-ongoing, .badge.status-archived');
+    if (!badge) continue;
+    badge.classList.remove('status-planning', 'status-ongoing', 'status-archived');
+    badge.classList.add('status-' + newStatus);
+    badge.textContent = newStatus.charAt(0).toUpperCase() + newStatus.slice(1);
+  }
+  try {
+    await Promise.all(ids.map(id => apiPatch(`/api/plans/${id}`, { status: newStatus })));
+  } catch (_) {}
+  await renderPlans(section, currentTab, false);
+}
+
+async function _bulkDelete(ids, section) {
+  // Optimistically hide cards so they disappear immediately.
+  for (const id of ids) {
+    const card = document.querySelector(`[data-id="${id}"]`);
+    if (card) card.style.display = 'none';
+  }
+  try {
+    await Promise.all(ids.map(id => apiDel(`/api/plans/${id}`)));
+  } catch (_) {}
+  await renderPlans(section, currentTab, false);
+}
+
 
 function formData(form) {
   const out = {};

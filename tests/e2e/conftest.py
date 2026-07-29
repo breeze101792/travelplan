@@ -8,8 +8,10 @@ browser contexts are exposed:
   - ``iphone``   -> Playwright's "iPhone 14" device profile (390x664, touch)
 
 Both fixtures auto-log in to a fresh page so each test starts already
-authenticated as the seeded admin unless the test opts out via
+authenticated as the seeded member ``alice`` unless the test opts out via
 ``@pytest.mark.setup`` (the first-run setup flow is tested unauthenticated).
+Separate ``admin_desktop`` and ``admin_iphone`` fixtures are available for
+tests that need admin privileges (member management, settings).
 
 The Flask app runs in a background subprocess (not the test process) so the
 test client's requests go through the real WSGI server, exercise the service
@@ -165,10 +167,9 @@ conn.close()
         shutil.rmtree(tmp, ignore_errors=True)
 
 
-@pytest.fixture
-def desktop(server):
-    """A desktop Chromium browser context (1280x800, no touch), logged in
-    as admin. Yields a fresh page per test."""
+def _make_desktop(server, username, password):
+    """Build a desktop Chromium context (1280x800, no touch), logged in as
+    the given user. Yields a fresh page per call."""
     from playwright.sync_api import sync_playwright
     with sync_playwright() as p:
         launch_kwargs = {"args": ["--no-sandbox", "--disable-dev-shm-usage"]}
@@ -178,8 +179,7 @@ def desktop(server):
         browser = p.chromium.launch(**launch_kwargs)
         ctx = browser.new_context(viewport={"width": 1280, "height": 800})
         page = ctx.new_page()
-        # Log in as admin before yielding.
-        _login(page, server["base_url"], "admin", server["admin"]["password"])
+        _login(page, server["base_url"], username, password)
         try:
             yield page
         finally:
@@ -187,9 +187,9 @@ def desktop(server):
             browser.close()
 
 
-@pytest.fixture
-def iphone(server):
-    """An iPhone 14 Chromium context (390x664, touch), logged in as admin."""
+def _make_iphone(server, username, password):
+    """Build an iPhone 14 Chromium context (390x664, touch), logged in as
+    the given user. Yields a fresh page per call."""
     from playwright.sync_api import sync_playwright
     with sync_playwright() as p:
         launch_kwargs = {"args": ["--no-sandbox", "--disable-dev-shm-usage"]}
@@ -200,12 +200,41 @@ def iphone(server):
         iphone_cfg = p.devices["iPhone 14"]
         ctx = browser.new_context(**iphone_cfg)
         page = ctx.new_page()
-        _login(page, server["base_url"], "admin", server["admin"]["password"])
+        _login(page, server["base_url"], username, password)
         try:
             yield page
         finally:
             ctx.close()
             browser.close()
+
+
+@pytest.fixture
+def desktop(server):
+    """A desktop Chromium browser context (1280x800, no touch), logged in
+    as the member ``alice``. Yields a fresh page per test."""
+    yield from _make_desktop(server, "alice", server["alice"]["password"])
+
+
+@pytest.fixture
+def iphone(server):
+    """An iPhone 14 Chromium context (390x664, touch), logged in as the
+    member ``alice``. Yields a fresh page per test."""
+    yield from _make_iphone(server, "alice", server["alice"]["password"])
+
+
+@pytest.fixture
+def admin_desktop(server):
+    """A desktop Chromium browser context (1280x800, no touch), logged in
+    as **admin**. Only use this when the test exercises admin-only features
+    (member management, settings). Yields a fresh page per test."""
+    yield from _make_desktop(server, "admin", server["admin"]["password"])
+
+
+@pytest.fixture
+def admin_iphone(server):
+    """An iPhone 14 Chromium context (390x664, touch), logged in as
+    **admin**. Only use this when the test exercises admin-only features."""
+    yield from _make_iphone(server, "admin", server["admin"]["password"])
 
 
 @pytest.fixture

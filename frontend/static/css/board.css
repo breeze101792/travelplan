@@ -30,6 +30,7 @@
   touch-action: pan-x pan-y;
   flex: 1;
   min-width: 0;
+  cursor: grab;
 }
 .day {
   flex: 0 0 var(--day-col);
