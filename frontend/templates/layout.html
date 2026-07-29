@@ -17,24 +17,45 @@
   {% block styles %}{% endblock %}
 </head>
 <body data-page="{% block page %}{% endblock %}">
-  <nav class="topbar">
-    <a class="brand" href="/">TravelPlan</a>
-    <div class="spacer"></div>
-    <nav class="topbar-links">
-      {% if current_user %}
-        <div class="user-dropdown">
-          <button class="user-dropdown-trigger">{{ current_user.display_name }} ▾</button>
-          <div class="user-dropdown-menu">
-            <a class="ud-link" href="/auth/settings">Settings</a>
-            {% if current_user.role == 'admin' %}
-              <a class="ud-link" href="/auth/members">Members</a>
-            {% endif %}
-            <div class="ud-sep"></div>
-            <a class="ud-link" href="/auth/logout">Logout</a>
-          </div>
-        </div>
+  <nav class="topbar{% if plan %} topbar--plan{% endif %}">
+    {% if plan %}
+      <span class="tp-plan-name">{{ plan.title }}</span>
+      {% if plan.start_date and plan.end_date %}
+        <span class="tp-plan-dates">{{ fmt_date(plan.start_date) }} → {{ fmt_date(plan.end_date) }}</span>
       {% endif %}
-    </nav>
+      <button id="plan-refresh-btn" class="tp-refresh-btn" title="Refresh data" type="button">↻</button>
+      <div class="spacer"></div>
+      {% include "_plan_nav.html" %}
+      {% if current_user %}
+      <div class="user-dropdown">
+        <button class="user-dropdown-trigger">{{ current_user.display_name }} ▾</button>
+        <div class="user-dropdown-menu">
+          <a class="ud-link" href="/auth/settings">Settings</a>
+          {% if current_user.role == 'admin' %}
+            <a class="ud-link" href="/auth/members">Members</a>
+          {% endif %}
+          <div class="ud-sep"></div>
+          <a class="ud-link" href="/auth/logout">Logout</a>
+        </div>
+      </div>
+      {% endif %}
+    {% else %}
+      <a class="brand" href="/">TravelPlan</a>
+      <div class="spacer"></div>
+      {% if current_user %}
+      <div class="user-dropdown">
+        <button class="user-dropdown-trigger">{{ current_user.display_name }} ▾</button>
+        <div class="user-dropdown-menu">
+          <a class="ud-link" href="/auth/settings">Settings</a>
+          {% if current_user.role == 'admin' %}
+            <a class="ud-link" href="/auth/members">Members</a>
+          {% endif %}
+          <div class="ud-sep"></div>
+          <a class="ud-link" href="/auth/logout">Logout</a>
+        </div>
+      </div>
+      {% endif %}
+    {% endif %}
   </nav>
   <main id="view">{% block content %}{% endblock %}</main>
   {% block scripts %}{% endblock %}

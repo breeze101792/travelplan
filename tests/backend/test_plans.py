@@ -383,8 +383,8 @@ class TestPlanHeaderRender:
                               end_date="2026-09-12", base_currency="JPY")
 
     def _assert_header(self, html):
-        assert 'id="plan-title"' in html
-        assert 'id="plan-dates"' in html
+        assert 'class="tp-plan-name"' in html
+        assert 'class="tp-plan-dates"' in html
         assert 'class="plan-nav"' in html
         assert "Japan 2026" in html
 
