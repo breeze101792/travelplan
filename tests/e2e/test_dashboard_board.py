@@ -367,6 +367,36 @@ def test_board_edit_item_via_click(desktop, server):
     p.wait_for_selector('.card.item:has-text("Edited")', timeout=5000)
 
 
+def test_board_delete_item_via_editor(desktop, server):
+    """Open an item in the editor, click the Delete button in the footer,
+    confirm the confirmation modal, then Save. Guards the new
+    delete-from-editor flow (delete button + confirmation dialog)."""
+    p = desktop
+    pid = _create_plan_api(server, start_date="2026-09-10", end_date="2026-09-12")
+    op = _api_client(server)
+    op.open(urllib.request.Request(
+        server["base_url"] + f"/api/plans/{pid}/items",
+        data=json.dumps({"item_type": "note", "title": "Delete me",
+                        "item_date": "2026-09-10"}).encode(),
+        headers={"Content-Type": "application/json"}, method="POST"))
+    p.goto(server["base_url"] + f"/plans/{pid}")
+    p.wait_for_selector(".card.item")
+    before = p.locator(".card.item").count()
+    # Double-click the card to open the editor.
+    p.locator(".card.item").first.dblclick()
+    p.wait_for_selector(".item-editor")
+    # Click the Delete button in the editor footer.
+    p.click('.item-editor .modal-footer .btn-danger')
+    # Wait for the confirmation modal and click its Delete button.
+    p.wait_for_selector('.modal.expense-modal .btn-danger')
+    p.click('.modal.expense-modal .btn-danger')
+    # Save the pending changes (delete is staged, now commit).
+    p.wait_for_selector('.pb-save:not([disabled])', timeout=5000)
+    p.click(".pb-save")
+    p.wait_for_timeout(1500)
+    assert p.locator(".card.item").count() == before - 1
+
+
 def test_board_delete_item_via_context_menu(desktop, server):
     """Right-click an item, choose Delete from the context menu, then Save.
     This guards the context-menu + deleteSelection + staging flow that the

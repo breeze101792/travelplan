@@ -22,7 +22,7 @@ import { el, clear } from '/static/js/util.js';
 import { openExpenseFormModal } from '/static/js/expense-form.js';
 import { lockBodyScroll, unlockBodyScroll } from '/static/js/page-utils.js';
 import {
-  saveItemOp, uploadImageOp, addLinkOp, deleteAttachmentOp, addExpenseOp, updateAttachmentOp,
+  saveItemOp, uploadImageOp, addLinkOp, deleteAttachmentOp, addExpenseOp, updateAttachmentOp, deleteItemOp,
 } from '/static/js/staging.js';
 
 /* Default an end_at value to start_at + 1h. Used when the user saves
@@ -517,6 +517,11 @@ export function openItemEditor(ctx, { plan, item, settings, members, staging, se
     closeBtn.addEventListener('click', onCancel);
     footer.appendChild(closeBtn);
   } else {
+    const deleteBtn = document.createElement('button');
+    deleteBtn.type = 'button'; deleteBtn.className = 'btn btn-danger'; deleteBtn.textContent = 'Delete';
+    deleteBtn.style.marginRight = 'auto';
+    deleteBtn.addEventListener('click', onDelete);
+    if (isNew) deleteBtn.style.display = 'none';
     const cancelBtn = document.createElement('button');
     cancelBtn.type = 'button'; cancelBtn.className = 'btn btn-ghost'; cancelBtn.textContent = 'Cancel';
     cancelBtn.addEventListener('click', onCancel);
@@ -525,7 +530,7 @@ export function openItemEditor(ctx, { plan, item, settings, members, staging, se
     applyBtn.textContent = 'Apply';
     applyBtn.title = 'Apply changes to the staging area. Click Save in the top bar to commit.';
     applyBtn.addEventListener('click', onApply);
-    footer.append(cancelBtn, applyBtn);
+    footer.append(deleteBtn, cancelBtn, applyBtn);
   }
   modal.appendChild(footer);
 
@@ -566,6 +571,34 @@ export function openItemEditor(ctx, { plan, item, settings, members, staging, se
   lockBodyScroll();
   backdrop.addEventListener('click', (e) => { if (e.target === backdrop) onCancel(); });
 
+  /* ----- helpers ----- */
+
+  function confirmModal(msg) {
+    return new Promise((resolve) => {
+      const dlgBackdrop = el('div', { class: 'modal-backdrop editor-backdrop' });
+      const dlgModal = el('div', { class: 'modal expense-modal', style: 'width: min(90vw, 380px); padding: 0;' });
+      dlgBackdrop.appendChild(dlgModal);
+      dlgModal.appendChild(el('div', { class: 'modal-header' }, [
+        el('h3', { text: 'Confirm' }),
+        el('button', { type: 'button', class: 'modal-close', text: '\u00d7',
+          onclick: () => { dlgBackdrop.remove(); resolve(false); } }),
+      ]));
+      dlgModal.appendChild(el('div', { class: 'modal-body', style: 'padding: 16px 24px;' }, [
+        el('p', { text: msg, style: 'margin: 0;' }),
+      ]));
+      dlgModal.appendChild(el('div', { class: 'modal-footer' }, [
+        el('button', { type: 'button', class: 'btn btn-ghost', text: 'Cancel',
+          onclick: () => { dlgBackdrop.remove(); resolve(false); } }),
+        el('button', { type: 'button', class: 'btn btn-danger', text: 'Delete',
+          onclick: () => { dlgBackdrop.remove(); resolve(true); } }),
+      ]));
+      document.body.appendChild(dlgBackdrop);
+      dlgBackdrop.addEventListener('click', (e) => {
+        if (e.target === dlgBackdrop) { dlgBackdrop.remove(); resolve(false); }
+      });
+    });
+  }
+
   /* ----- handlers ----- */
 
   function onCancel() {
@@ -579,6 +612,17 @@ export function openItemEditor(ctx, { plan, item, settings, members, staging, se
     for (const f of pendingFiles) URL.revokeObjectURL(f.previewUrl);
     // Tell the caller we're closing so it can update any surrounding state
     // (e.g. suppress a click that would otherwise clear multi-select).
+    if (onClose) onClose();
+    backdrop.remove();
+    unlockBodyScroll();
+    if (onApplied) onApplied();
+  }
+
+  async function onDelete() {
+    const label = item.title || ti.label;
+    const ok = await confirmModal(`Delete "${label}"? This cannot be undone.`);
+    if (!ok) return;
+    staging.add(deleteItemOp({ itemId: item.id, label: `Delete ${label}`, sessionId }));
     if (onClose) onClose();
     backdrop.remove();
     unlockBodyScroll();
