@@ -328,3 +328,35 @@ class TestExpenseAccess:
         c2 = app.test_client()
         c2.post("/auth/login", data={"username": "dave2", "password": "pw12345"})
         assert c2.get(f"/api/plans/{plan_id}/expenses").status_code == 403
+
+
+class TestExpenseVersionConflicts:
+    def test_update_conflict_409(self, member_client, plan_id, user_ids, db):
+        e = member_client.post(f"/api/plans/{plan_id}/expenses", json={
+            "description": "A", "currency": "USD", "amount": "10.00",
+            "split_method": "EQUAL",
+            "payers": [{"user_id": user_ids["alice"], "amount": "10.00"}],
+            "participants": [user_ids["alice"], user_ids["bob2"]],
+        }).get_json()["expense"]
+        row = db.one("SELECT updated_at FROM expenses WHERE id = ?", (e["id"],))
+        wrong_ts = "2000-01-01T00:00:00" if row["updated_at"] != "2000-01-01T00:00:00" else "2000-01-02T00:00:00"
+        r = member_client.patch(f"/api/expenses/{e['id']}", json={
+            "description": "B", "expected_updated_at": wrong_ts})
+        assert r.status_code == 409
+        assert r.get_json()["error"] == "conflict"
+
+    def test_update_correct_version_succeeds(self, member_client, plan_id, user_ids, db):
+        e = member_client.post(f"/api/plans/{plan_id}/expenses", json={
+            "description": "A", "currency": "USD", "amount": "10.00",
+            "split_method": "EQUAL",
+            "payers": [{"user_id": user_ids["alice"], "amount": "10.00"}],
+            "participants": [user_ids["alice"], user_ids["bob2"]],
+        }).get_json()["expense"]
+        row = db.one("SELECT updated_at FROM expenses WHERE id = ?", (e["id"],))
+        r = member_client.patch(f"/api/expenses/{e['id']}", json={
+            "description": "B", "currency": "USD", "amount": "20.00",
+            "split_method": "EQUAL",
+            "payers": [{"user_id": user_ids["alice"], "amount": "20.00"}],
+            "participants": [user_ids["alice"], user_ids["bob2"]],
+            "expected_updated_at": row["updated_at"]})
+        assert r.status_code == 200

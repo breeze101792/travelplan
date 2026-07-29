@@ -502,3 +502,21 @@ class TestFormatCents:
     def test_0dp(self):
         from backend.util import format_cents
         assert format_cents(1234, 0) == "1234"
+
+
+class TestPlanVersionConflicts:
+    def test_patch_conflict_409(self, member_client, make_plan, db):
+        p = make_plan(title="V")
+        row = db.one("SELECT updated_at FROM plans WHERE id = ?", (p["id"],))
+        wrong_ts = "2000-01-01T00:00:00" if row["updated_at"] != "2000-01-01T00:00:00" else "2000-01-02T00:00:00"
+        r = member_client.patch(f"/api/plans/{p['id']}", json={
+            "title": "new", "expected_updated_at": wrong_ts})
+        assert r.status_code == 409
+        assert r.get_json()["error"] == "conflict"
+
+    def test_patch_correct_version_succeeds(self, member_client, make_plan, db):
+        p = make_plan(title="V")
+        row = db.one("SELECT updated_at FROM plans WHERE id = ?", (p["id"],))
+        r = member_client.patch(f"/api/plans/{p['id']}", json={
+            "title": "new", "expected_updated_at": row["updated_at"]})
+        assert r.status_code == 200

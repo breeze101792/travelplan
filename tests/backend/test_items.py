@@ -397,3 +397,47 @@ class TestItemAccessControl:
         c = app.test_client()
         c.get("/auth/logout")
         assert c.get(f"/api/plans/{p['id']}/items").status_code == 401
+
+
+# ------------------------------------------------------------------ version conflicts (409)
+class TestItemVersionConflicts:
+    def test_patch_conflict_409(self, member_client, plan_id, db):
+        item = member_client.post(f"/api/plans/{plan_id}/items", json={
+            "item_type": "note", "title": "T"}).get_json()["item"]
+        row = db.one("SELECT updated_at FROM items WHERE id = ?", (item["id"],))
+        wrong_ts = "2000-01-01T00:00:00" if row["updated_at"] != "2000-01-01T00:00:00" else "2000-01-02T00:00:00"
+        r = member_client.patch(f"/api/items/{item['id']}", json={
+            "title": "new", "expected_updated_at": wrong_ts})
+        assert r.status_code == 409
+        body = r.get_json()
+        assert body["error"] == "conflict"
+
+    def test_delete_conflict_409(self, member_client, plan_id, db):
+        item = member_client.post(f"/api/plans/{plan_id}/items", json={
+            "item_type": "note", "title": "T"}).get_json()["item"]
+        row = db.one("SELECT updated_at FROM items WHERE id = ?", (item["id"],))
+        wrong_ts = "2000-01-01T00:00:00" if row["updated_at"] != "2000-01-01T00:00:00" else "2000-01-02T00:00:00"
+        r = member_client.delete(f"/api/items/{item['id']}", json={"expected_updated_at": wrong_ts})
+        assert r.status_code == 409
+        body = r.get_json()
+        assert body["error"] == "conflict"
+
+    # Correct version lets the request through
+    def test_patch_correct_version_succeeds(self, member_client, plan_id, db):
+        item = member_client.post(f"/api/plans/{plan_id}/items", json={
+            "item_type": "note", "title": "T"}).get_json()["item"]
+        row = db.one("SELECT updated_at FROM items WHERE id = ?", (item["id"],))
+        r = member_client.patch(f"/api/items/{item['id']}", json={
+            "title": "new", "expected_updated_at": row["updated_at"]})
+        assert r.status_code == 200
+
+    def test_reorder_conflict_409(self, member_client, plan_id, db):
+        item = member_client.post(f"/api/plans/{plan_id}/items", json={
+            "item_type": "note", "title": "T"}).get_json()["item"]
+        row = db.one("SELECT updated_at FROM items WHERE id = ?", (item["id"],))
+        wrong_ts = "2000-01-01T00:00:00" if row["updated_at"] != "2000-01-01T00:00:00" else "2000-01-02T00:00:00"
+        r = member_client.post(f"/api/items/{item['id']}/move", json={
+            "item_date": "2026-07-01", "expected_updated_at": wrong_ts})
+        assert r.status_code == 409
+        body = r.get_json()
+        assert body["error"] == "conflict"
