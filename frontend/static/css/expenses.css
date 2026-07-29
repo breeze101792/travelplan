@@ -271,6 +271,9 @@ input:disabled { background: #f3f4f6; color: var(--muted, #6b7280); }
 .pay-inline-note { flex: 1; min-width: 60px; }
 .pay-arrow { color: var(--muted, #6b7280); font-weight: 600; flex-shrink: 0; }
 
+.settle-row { display: inline-flex; align-items: center; gap: 0.5rem; margin-top: 0.25rem; width: auto; }
+.settle-row.hide { display: none; }
+
 /* ---- settlement mode controls ---- */
 .settlement-controls {
   display: flex; flex-wrap: wrap; align-items: center; gap: 0.75rem 1.5rem;
@@ -285,7 +288,7 @@ input:disabled { background: #f3f4f6; color: var(--muted, #6b7280); }
 /* ---- per-currency settlement panels ---- */
 .settlement-currency-panel { margin-bottom: 1rem; }
 .settlement-currency-panel h3 { border-bottom: 2px solid var(--border, #e5e7eb); padding-bottom: 0.5rem; }
-.settlement-currency-panel h4.sub-title { margin: 0.75rem 0 0.4rem; font-size: 0.9rem; color: var(--muted, #6b7280); font-weight: 500; }
+h4.sub-title { margin: 0.75rem 0 0.4rem; font-size: 0.9rem; color: var(--muted, #6b7280); font-weight: 500; }
 
 /* ---- responsive ---- */
 @media (max-width: 640px) {

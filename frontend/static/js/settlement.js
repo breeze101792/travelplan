@@ -149,24 +149,24 @@ export async function initSettlement(ctx, { plan, users }) {
       onchange: () => { currentCurrency = curSel.value; render(); },
     });
 
-    const currencyGroup = el('span', { class: 'control-group' }, [
-      el('span', { class: 'control-label', text: 'Settle in:' }),
-      curSel,
-    ]);
     controls.append(
       el('span', { class: 'control-group' }, [
         el('span', { class: 'control-label', text: 'Mode:' }),
         el('label', { class: 'radio-label' }, [singleRadio, ' Single currency']),
         el('label', { class: 'radio-label' }, [perCurRadio, ' Per currency']),
-      ]),
-      currencyGroup
+      ])
     );
-    currencyGroup.style.display = currentMode === 'single' ? '' : 'none';
     els.push(controls);
+
+    const settleRow = el('div', { class: 'settle-row' +
+      (currentMode === 'single' ? '' : ' hide') } );
+    settleRow.append(el('span', { class: 'control-label', text: 'Settle in:' }));
+    settleRow.append(curSel);
+    els.push(settleRow);
 
     // --- rate editor ---
     const ratePanel = el('div', { class: 'rate-panel' });
-    ratePanel.append(el('h3', { text: 'Exchange rates' }));
+    ratePanel.append(el('h4', { class: 'sub-title', text: 'Exchange rates' }));
     if (missing.length) {
       ratePanel.append(el('p', { class: 'notice warn',
         text: 'Enter exchange rates to compute settlement.' }));
