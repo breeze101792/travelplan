@@ -75,6 +75,31 @@ a:hover { text-decoration: underline; }
 .topbar a.nav-link { color: var(--ink); font-size: 14px; }
 .topbar a.nav-link:hover { color: var(--accent); }
 
+/* User dropdown menu */
+.user-dropdown { position: relative; }
+.user-dropdown-trigger {
+  background: none; border: none; font: inherit; font-size: 14px; font-weight: 600;
+  color: var(--ink); cursor: pointer; padding: 4px 8px; border-radius: 6px;
+  display: flex; align-items: center; gap: 4px;
+}
+.user-dropdown-trigger:hover { background: var(--surface-2); }
+.user-dropdown-trigger:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.user-dropdown-menu {
+  position: absolute; top: calc(100% + 6px); right: 0; z-index: 60;
+  display: none; flex-direction: column; gap: 2px;
+  min-width: 160px; padding: 6px;
+  background: var(--card);
+  border: 1px solid var(--line); border-radius: 10px;
+  box-shadow: var(--shadow-lg);
+}
+.user-dropdown.open .user-dropdown-menu { display: flex; }
+.ud-link {
+  display: block; padding: 7px 10px; border-radius: 6px;
+  color: var(--ink); font-size: 14px; text-decoration: none;
+}
+.ud-link:hover { background: var(--surface-2); text-decoration: none; }
+.ud-sep { height: 1px; margin: 4px 2px; background: var(--line); }
+
 /* Main view — use most of the page width so boards/tables show more info */
 #view {
   max-width: 1600px;

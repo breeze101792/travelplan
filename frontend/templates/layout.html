@@ -22,12 +22,17 @@
     <div class="spacer"></div>
     <nav class="topbar-links">
       {% if current_user %}
-        <a class="nav-link" href="/auth/settings">Settings</a>
-        {% if current_user.role == 'admin' %}
-          <a class="nav-link" href="/auth/members">Members</a>
-        {% endif %}
-        <span class="me">{{ current_user.display_name }}</span>
-        <a class="nav-link" href="/auth/logout">Logout</a>
+        <div class="user-dropdown">
+          <button class="user-dropdown-trigger">{{ current_user.display_name }} ▾</button>
+          <div class="user-dropdown-menu">
+            <a class="ud-link" href="/auth/settings">Settings</a>
+            {% if current_user.role == 'admin' %}
+              <a class="ud-link" href="/auth/members">Members</a>
+            {% endif %}
+            <div class="ud-sep"></div>
+            <a class="ud-link" href="/auth/logout">Logout</a>
+          </div>
+        </div>
       {% endif %}
     </nav>
   </nav>
@@ -37,6 +42,23 @@
   if ('serviceWorker' in navigator) {
     navigator.serviceWorker.register('/static/sw.js', { scope: '/' });
   }
+  document.addEventListener('click', function(e) {
+    var trigger = e.target.closest('.user-dropdown-trigger');
+    if (trigger) {
+      trigger.closest('.user-dropdown').classList.toggle('open');
+    } else {
+      document.querySelectorAll('.user-dropdown.open').forEach(function(dd) {
+        if (!dd.contains(e.target)) dd.classList.remove('open');
+      });
+    }
+  });
+  document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape') {
+      document.querySelectorAll('.user-dropdown.open').forEach(function(dd) {
+        dd.classList.remove('open');
+      });
+    }
+  });
   </script>
   <script src="/static/js/pulltorefresh.js?v={{ static_version }}"></script>
 </body>

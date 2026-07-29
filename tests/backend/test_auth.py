@@ -164,7 +164,8 @@ class TestSettings:
         # The page reflects the new name and so does the topbar.
         r = client.get("/auth/settings")
         assert b"Alice (renamed)" in r.data
-        assert b'<span class="me">Alice (renamed)</span>' in r.data
+        assert b'Alice (renamed)' in r.data
+        assert b'user-dropdown-trigger' in r.data
         row = db.one("SELECT display_name FROM users WHERE username='alice'")
         assert row["display_name"] == "Alice (renamed)"
 
