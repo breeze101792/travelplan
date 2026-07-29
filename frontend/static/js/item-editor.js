@@ -441,10 +441,13 @@ export function openItemEditor(ctx, { plan, item, settings, members, staging, se
           text: `(${g.lat.toFixed(4)}, ${g.lng.toFixed(4)})`,
         }));
 
-        row.addEventListener('dblclick', () => openGeoMapPopup(g, (lat, lng) => {
-          g.lat = lat;
-          g.lng = lng;
-          renderGeoList();
+        row.addEventListener('dblclick', () => openGeoPopup({
+          geocode: g,
+          onUpdate(lat, lng) {
+            g.lat = lat;
+            g.lng = lng;
+            renderGeoList();
+          },
         }));
 
         const removeBtn = el('button', { type: 'button', class: 'btn btn-ghost geo-remove', text: '\u2715', title: 'Remove' });
@@ -480,9 +483,11 @@ export function openItemEditor(ctx, { plan, item, settings, members, staging, se
     }
 
     addBtn.addEventListener('click', () => {
-      openGeoSearchPopup((result) => {
-        selectedGeocodes.push(result);
-        renderGeoList();
+      openGeoPopup({
+        onSelect(result) {
+          selectedGeocodes.push(result);
+          renderGeoList();
+        },
       });
     });
 
@@ -938,21 +943,32 @@ function openAttachmentModal({ item, attachments, pendingFiles, onAttachmentsCha
   });
 }
 
-/* Open a popup modal for searching a location via Photon geocoding API.
- * Calls onSelect({ label, lat, lng }) when the user picks a result. */
-function openGeoSearchPopup(onSelect) {
+/* Open a popup modal for searching / editing a location.
+ * When geocode is provided it acts as an editor (draggable marker + map links),
+ * otherwise as a search-and-pick popup.
+ *   onSelect({ label, lat, lng })  — called when picking a new location
+ *   onUpdate(lat, lng)             — called when updating an existing geocode */
+export function openGeoPopup({ geocode, onSelect, onUpdate } = {}) {
+  const isEdit = !!geocode;
   const backdrop = el('div', { class: 'modal-backdrop editor-backdrop' });
-  const modal = el('div', { class: 'geo-popup geo-popup-wide' });
+  const modal = el('div', { class: 'geo-popup' });
   backdrop.appendChild(modal);
 
   const header = el('div', { class: 'geo-popup-header' });
-  header.appendChild(el('h3', { text: 'Search location' }));
+  header.appendChild(el('h3', { text: isEdit ? geocode.label : 'Search location' }));
   const closeBtn = el('button', { type: 'button', class: 'modal-close', text: '\u00d7' });
   closeBtn.addEventListener('click', () => { backdrop.remove(); unlockBodyScroll(); });
   header.appendChild(closeBtn);
   modal.appendChild(header);
 
   const body = el('div', { class: 'geo-popup-body' });
+
+  const mapContainer = el('div', { class: 'geo-map-container' });
+  const leftCol = el('div', { class: 'geo-popup-left' });
+  leftCol.appendChild(mapContainer);
+  body.appendChild(leftCol);
+
+  const rightCol = el('div', { class: 'geo-popup-right' });
   const searchRow = el('div', { class: 'geo-search-row' });
   const searchInput = document.createElement('input');
   searchInput.type = 'text'; searchInput.className = 'input';
@@ -961,38 +977,91 @@ function openGeoSearchPopup(onSelect) {
   searchBtn.type = 'button'; searchBtn.className = 'btn';
   searchBtn.textContent = 'Search';
   searchRow.append(searchInput, searchBtn);
-  body.appendChild(searchRow);
+  rightCol.appendChild(searchRow);
 
   const resultsEl = el('div', { class: 'geo-results' });
-  body.appendChild(resultsEl);
+  rightCol.appendChild(resultsEl);
 
-  const mapContainer = el('div', { class: 'geo-search-map' });
-  body.appendChild(mapContainer);
+  const footer = el('div', { class: 'geo-map-footer' });
+
+  if (isEdit) {
+    const label = encodeURIComponent(geocode.label || '');
+    const gLink = el('a', { class: 'geo-map-footer-link gl', href: `https://www.google.com/maps?q=${geocode.lat},${geocode.lng}`, target: '_blank', rel: 'noopener', text: 'Google Maps' });
+    const aLink = el('a', { class: 'geo-map-footer-link al', href: `https://maps.apple.com/?ll=${geocode.lat},${geocode.lng}&q=${label}`, target: '_blank', rel: 'noopener', text: 'Apple Maps' });
+    const oLink = el('a', { class: 'geo-map-footer-link ol', href: `https://www.openstreetmap.org/?mlat=${geocode.lat}&mlon=${geocode.lng}&zoom=15`, target: '_blank', rel: 'noopener', text: 'OSM' });
+    footer.append(gLink, aLink, oLink);
+  }
+
+  const confirmBtn = document.createElement('button');
+  confirmBtn.type = 'button'; confirmBtn.className = 'btn btn-primary';
+  confirmBtn.textContent = isEdit ? '\u2714 Update position' : 'Select map location';
+  if (isEdit) confirmBtn.disabled = true;
+  footer.appendChild(confirmBtn);
+  rightCol.appendChild(footer);
+
+  body.appendChild(rightCol);
   modal.appendChild(body);
+
+  document.body.appendChild(backdrop);
+  lockBodyScroll();
+  backdrop.addEventListener('click', (e) => {
+    if (e.target === backdrop) { backdrop.remove(); unlockBodyScroll(); }
+  });
 
   let map = null;
   let marker = null;
+  let moved = false;
 
-  function ensureMap() {
+  function ensureMap(lat, lng, zoom) {
     if (map) return;
     loadLeaflet(() => {
-      map = L.map(mapContainer).setView([35.6762, 139.6503], 3);
+      map = L.map(mapContainer).setView([lat, lng], zoom);
       L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
         attribution: '&copy; <a href="https://openstreetmap.org/copyright">OpenStreetMap</a>',
       }).addTo(map);
+
+      L.Control.Fullscreen = L.Control.extend({
+        onAdd() {
+          const btn = L.DomUtil.create('button', 'leaflet-fs-btn');
+          btn.innerHTML = '\u26F6';
+          btn.title = 'Expand map';
+          btn.setAttribute('aria-label', 'Toggle fullscreen map');
+          L.DomEvent.on(btn, 'click', () => {
+            const isFs = modal.classList.toggle('geo-popup--map-fs');
+            btn.innerHTML = isFs ? '\u292B' : '\u26F6';
+            btn.title = isFs ? 'Collapse map' : 'Expand map';
+            setTimeout(() => map.invalidateSize(), 150);
+          });
+          return btn;
+        },
+      });
+      new L.Control.Fullscreen({ position: 'topright' }).addTo(map);
+
+      if (isEdit) {
+        marker = L.marker([lat, lng], { draggable: true }).addTo(map)
+          .bindPopup(geocode.label)
+          .openPopup();
+        marker._lat = lat;
+        marker._lng = lng;
+        marker.on('dragend', () => {
+          moved = true;
+          confirmBtn.disabled = false;
+        });
+      }
+
       map.on('click', (e) => {
         const { lat, lng } = e.latlng;
         if (marker) map.removeLayer(marker);
         marker = L.marker([lat, lng]).addTo(map);
-        // Reverse geocode
+        marker._lat = lat;
+        marker._lng = lng;
+        confirmBtn.disabled = false;
         fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}`)
           .then(r => r.json())
           .then(data => {
             const label = data.display_name || `${lat.toFixed(4)}, ${lng.toFixed(4)}`;
             marker.bindPopup(label).openPopup();
             marker._label = label;
-            marker._lat = lat;
-            marker._lng = lng;
           })
           .catch(() => {
             marker._label = `${lat.toFixed(4)}, ${lng.toFixed(4)}`;
@@ -1024,9 +1093,20 @@ function openGeoSearchPopup(onSelect) {
         const item = el('div', { class: 'geo-result' });
         item.textContent = label;
         item.addEventListener('click', () => {
-          onSelect({ label, lat: coords[1], lng: coords[0] });
-          backdrop.remove();
-          unlockBodyScroll();
+          if (isEdit) {
+            map.setView([coords[1], coords[0]], 15);
+            if (marker) map.removeLayer(marker);
+            marker = L.marker([coords[1], coords[0]]).addTo(map);
+            marker._label = label;
+            marker._lat = coords[1];
+            marker._lng = coords[0];
+            moved = true;
+            confirmBtn.disabled = false;
+          } else {
+            if (onSelect) onSelect({ label, lat: coords[1], lng: coords[0] });
+            backdrop.remove();
+            unlockBodyScroll();
+          }
         });
         resultsEl.appendChild(item);
       }
@@ -1038,33 +1118,34 @@ function openGeoSearchPopup(onSelect) {
     }
   }
 
-  // Confirm button for map selection
-  const confirmRow = el('div', { class: 'geo-confirm-row' });
-  const confirmBtn = document.createElement('button');
-  confirmBtn.type = 'button'; confirmBtn.className = 'btn btn-primary';
-  confirmBtn.textContent = 'Select map location';
   confirmBtn.addEventListener('click', () => {
-    if (marker && marker._label) {
-      onSelect({ label: marker._label, lat: marker._lat, lng: marker._lng });
-      backdrop.remove();
-      unlockBodyScroll();
+    if (isEdit) {
+      if (!moved) return;
+      const pos = marker.getLatLng();
+      if (onUpdate) onUpdate(pos.lat, pos.lng);
+    } else {
+      if (marker && marker._label) {
+        if (onSelect) onSelect({ label: marker._label, lat: marker._lat, lng: marker._lng });
+      } else if (marker) {
+        const pos = marker.getLatLng();
+        if (onSelect) onSelect({ label: `${pos.lat.toFixed(4)}, ${pos.lng.toFixed(4)}`, lat: pos.lat, lng: pos.lng });
+      }
     }
+    backdrop.remove();
+    unlockBodyScroll();
   });
-  confirmRow.appendChild(confirmBtn);
-  body.appendChild(confirmRow);
 
   searchBtn.addEventListener('click', doSearch);
   searchInput.addEventListener('keydown', (e) => {
     if (e.key === 'Enter') doSearch();
   });
 
-  document.body.appendChild(backdrop);
-  lockBodyScroll();
-  backdrop.addEventListener('click', (e) => {
-    if (e.target === backdrop) { backdrop.remove(); unlockBodyScroll(); }
-  });
   searchInput.focus();
-  ensureMap();
+  ensureMap(
+    isEdit ? geocode.lat : 35.6762,
+    isEdit ? geocode.lng : 139.6503,
+    isEdit ? 15 : 3
+  );
 }
 
 function loadLeaflet(callback) {
@@ -1078,66 +1159,7 @@ function loadLeaflet(callback) {
   document.body.appendChild(script);
 }
 
-/* Open a popup with a Leaflet map showing a pin at the given coordinates.
-   Marker is draggable. Footer has map links + an update button to save
-   the new marker position back to the geocode. */
-export function openGeoMapPopup(geocode, onUpdate) {
-  const backdrop = el('div', { class: 'modal-backdrop editor-backdrop' });
-  const modal = el('div', { class: 'geo-map-popup' });
-  backdrop.appendChild(modal);
 
-  const header = el('div', { class: 'geo-popup-header' });
-  header.appendChild(el('h3', { text: geocode.label }));
-  const closeBtn = el('button', { type: 'button', class: 'modal-close', text: '\u00d7' });
-  closeBtn.addEventListener('click', () => { backdrop.remove(); unlockBodyScroll(); });
-  header.appendChild(closeBtn);
-  modal.appendChild(header);
-
-  const mapContainer = el('div', { class: 'geo-map-container' });
-  modal.appendChild(mapContainer);
-
-  const footer = el('div', { class: 'geo-map-footer' });
-  const label = encodeURIComponent(geocode.label || '');
-
-  const gLink = el('a', { class: 'geo-map-footer-link gl', href: `https://www.google.com/maps?q=${geocode.lat},${geocode.lng}`, target: '_blank', rel: 'noopener', text: 'Google Maps' });
-  const aLink = el('a', { class: 'geo-map-footer-link al', href: `https://maps.apple.com/?ll=${geocode.lat},${geocode.lng}&q=${label}`, target: '_blank', rel: 'noopener', text: 'Apple Maps' });
-  const oLink = el('a', { class: 'geo-map-footer-link ol', href: `https://www.openstreetmap.org/?mlat=${geocode.lat}&mlon=${geocode.lng}&zoom=15`, target: '_blank', rel: 'noopener', text: 'OSM' });
-
-  const updateBtn = el('button', { type: 'button', class: 'btn btn-primary', text: '\u2714 Update position' });
-  updateBtn.disabled = true;
-
-  footer.append(gLink, aLink, oLink, updateBtn);
-  modal.appendChild(footer);
-
-  document.body.appendChild(backdrop);
-  backdrop.addEventListener('click', (e) => { if (e.target === backdrop) backdrop.remove(); });
-
-  loadLeaflet(() => {
-    const map = L.map(mapContainer).setView([geocode.lat, geocode.lng], 15);
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-      attribution: '&copy; <a href="https://openstreetmap.org/copyright">OpenStreetMap</a>',
-    }).addTo(map);
-
-    const marker = L.marker([geocode.lat, geocode.lng], { draggable: true }).addTo(map)
-      .bindPopup(geocode.label)
-      .openPopup();
-
-    let moved = false;
-    marker.on('dragend', () => {
-      moved = true;
-      updateBtn.disabled = false;
-    });
-
-    updateBtn.addEventListener('click', () => {
-      if (!moved) return;
-      const pos = marker.getLatLng();
-      if (onUpdate) onUpdate(pos.lat, pos.lng);
-      backdrop.remove();
-    });
-
-    setTimeout(() => map.invalidateSize(), 100);
-  });
-}
 
 /* Build the right <input>/<select>/<textarea> for a type-specific field.
  * `plan` is used to pre-fill a currency field with the plan's base currency

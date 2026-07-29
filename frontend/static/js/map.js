@@ -3,7 +3,7 @@ const api = { get: apiGet, post: apiPost, patch: apiPatch, del: apiDel, upload: 
 import { buildDays, isoOf, wirePlanHeader, renderEditBar, showDayContextMenu, closeDayContextMenu } from '/static/js/plan-header.js';
 import { Staging, moveItemOp, deleteItemOp, saveItemOp } from '/static/js/staging.js';
 import { el, clear } from '/static/js/util.js';
-import { openItemEditor, openGeoMapPopup } from '/static/js/item-editor.js';
+import { openItemEditor, openGeoPopup } from '/static/js/item-editor.js';
 import { expandHotelEvents } from '/static/js/hotel-events.js';
 import { clipboardGet, clipboardSet, serializeItem } from '/static/js/clipboard.js';
 
@@ -514,10 +514,13 @@ function showItemGeocodes(itemId, selectGeoIdx) {
 
       row.addEventListener('dblclick', (e) => {
         if (e.target.closest('.di-geo-del')) return;
-        openGeoMapPopup(g, (lat, lng) => {
-          g.lat = lat;
-          g.lng = lng;
-          updateItemGeocodes(itemId, geocodes);
+        openGeoPopup({
+          geocode: g,
+          onUpdate(lat, lng) {
+            g.lat = lat;
+            g.lng = lng;
+            updateItemGeocodes(itemId, geocodes);
+          },
         });
       });
 
