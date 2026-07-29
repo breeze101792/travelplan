@@ -273,6 +273,74 @@ class TestPayments:
         assert p["to_user_id"] == user_ids["alice"]
         assert p["amount_cents"] == 15
 
+    def test_payment_affects_remaining_balances(self, member_client, plan_id, user_ids):
+        """A recorded payment must reduce the debtor's balance and
+        reduce the creditor's balance in remaining_balances."""
+        # Create an expense: alice pays 3000 JPY, split EQUALLY with bob2
+        # alice paid 3000, each owes 1500 → alice +1500, bob2 -1500
+        member_client.post(f"/api/plans/{plan_id}/expenses", json={
+            "description": "Dinner", "currency": "JPY", "decimals": 0,
+            "amount": 3000, "split_method": "EQUAL",
+            "payers": [{"user_id": user_ids["alice"], "amount": 3000}],
+            "participants": [user_ids["alice"], user_ids["bob2"]],
+        })
+        # Check balances before payment
+        r = member_client.get(f"/api/plans/{plan_id}/settlement")
+        body = r.get_json()
+        rem = {b["user_id"]: b["balance_cents"] for b in body["remaining_balances"]}
+        assert rem[user_ids["alice"]] == 1500, f"expected alice +1500, got {rem}"
+        assert rem[user_ids["bob2"]] == -1500, f"expected bob2 -1500, got {rem}"
+
+        # Record payment: bob2 (debtor) pays alice (creditor) 1500 JPY
+        r = member_client.post(f"/api/plans/{plan_id}/payments", json={
+            "from_user_id": user_ids["bob2"],
+            "to_user_id": user_ids["alice"],
+            "amount": "1500", "currency": "JPY", "decimals": 0,
+        })
+        assert r.status_code == 200
+
+        # Remaining balances should now be 0 for both (payment settled the debt)
+        r = member_client.get(f"/api/plans/{plan_id}/settlement")
+        body = r.get_json()
+        rem = {b["user_id"]: b["balance_cents"] for b in body["remaining_balances"]}
+        assert user_ids["alice"] not in rem or rem[user_ids["alice"]] == 0, \
+            f"expected alice 0, got {rem.get(user_ids['alice'])}"
+        assert user_ids["bob2"] not in rem or rem[user_ids["bob2"]] == 0, \
+            f"expected bob2 0, got {rem.get(user_ids['bob2'])}"
+
+    def test_payment_in_non_expense_currency_appears_in_per_currency(
+            self, member_client, plan_id, user_ids):
+        """Payments in a currency without expenses must still appear in
+        per-currency settlement remaining_balances."""
+        # Plan base is JPY. Add a JPY expense.
+        member_client.post(f"/api/plans/{plan_id}/expenses", json={
+            "description": "Dinner", "currency": "JPY", "decimals": 0,
+            "amount": 3000, "split_method": "EQUAL",
+            "payers": [{"user_id": user_ids["alice"], "amount": 3000}],
+            "participants": [user_ids["alice"], user_ids["bob2"]],
+        })
+        # Record a payment in USD (no USD expenses exist)
+        member_client.post(f"/api/plans/{plan_id}/payments", json={
+            "from_user_id": user_ids["bob2"],
+            "to_user_id": user_ids["alice"],
+            "amount": "10.00", "currency": "USD", "decimals": 2,
+        })
+        r = member_client.get(f"/api/plans/{plan_id}/settlement?mode=per_currency")
+        body = r.get_json()
+        assert "per_currency" in body
+        # USD should appear as a currency in per_currency results
+        assert "USD" in body["per_currency"], \
+            f"expected USD in per_currency keys, got {list(body['per_currency'].keys())}"
+        usd = body["per_currency"]["USD"]
+        rem = {b["user_id"]: b["balance_cents"] for b in usd["remaining_balances"]}
+        # bob2 paid alice 1000 USD cents (10.00) → bob2's balance goes up (less debt),
+        # alice's balance goes down (less credit), but since there are no USD expenses
+        # the balances start at 0, so:
+        #   bob2: 0 + 1000 = +1000
+        #   alice: 0 - 1000 = -1000
+        assert rem[user_ids["bob2"]] == 1000, f"expected bob2 +1000, got {rem}"
+        assert rem[user_ids["alice"]] == -1000, f"expected alice -1000, got {rem}"
+
     def test_record_payment_rejects_self_transfer(self, member_client, plan_id, user_ids):
         r = member_client.post(f"/api/plans/{plan_id}/payments", json={
             "from_user_id": user_ids["alice"],
@@ -300,6 +368,62 @@ class TestPayments:
         r = member_client.delete(f"/api/payments/{p['id']}")
         assert r.status_code == 200
         assert member_client.get(f"/api/plans/{plan_id}/payments").get_json()["payments"] == []
+
+    def test_update_payment(self, member_client, plan_id, user_ids):
+        p = member_client.post(f"/api/plans/{plan_id}/payments", json={
+            "from_user_id": user_ids["bob2"], "to_user_id": user_ids["alice"],
+            "amount": "1500", "currency": "JPY", "decimals": 0, "note": "first",
+        }).get_json()["payment"]
+        r = member_client.patch(f"/api/payments/{p['id']}", json={
+            "amount": "2000", "currency": "JPY", "note": "updated",
+        })
+        assert r.status_code == 200
+        u = r.get_json()["payment"]
+        assert u["amount_cents"] == 2000
+        assert u["note"] == "updated"
+        assert u["from_user_id"] == user_ids["bob2"]
+
+    def test_update_payment_rejects_self_transfer(self, member_client, plan_id, user_ids):
+        p = member_client.post(f"/api/plans/{plan_id}/payments", json={
+            "from_user_id": user_ids["bob2"], "to_user_id": user_ids["alice"],
+            "amount": "1500", "currency": "JPY", "decimals": 0,
+        }).get_json()["payment"]
+        r = member_client.patch(f"/api/payments/{p['id']}", json={
+            "from_user_id": user_ids["alice"], "to_user_id": user_ids["alice"],
+        })
+        assert r.status_code == 400
+
+    def test_payment_multi_currency_missing_rate(
+            self, member_client, plan_id, user_ids):
+        """Payments in a non-base currency without an exchange rate must not
+        zero out remaining_balances — they should appear in per-currency mode
+        and be excluded (not crash) in single-currency mode."""
+        # Plan base is JPY. Create a JPY expense then a USD payment (no USD rate set).
+        member_client.post(f"/api/plans/{plan_id}/expenses", json={
+            "description": "Hotel", "currency": "JPY", "decimals": 0,
+            "amount": 6000, "split_method": "EQUAL",
+            "payers": [{"user_id": user_ids["alice"], "amount": 6000}],
+            "participants": [user_ids["alice"], user_ids["bob2"]],
+        })
+        member_client.post(f"/api/plans/{plan_id}/payments", json={
+            "from_user_id": user_ids["bob2"], "to_user_id": user_ids["alice"],
+            "amount": "10.00", "currency": "USD", "decimals": 2,
+        })
+        # Single-currency mode — should not crash; JPY balances unchanged.
+        r = member_client.get(f"/api/plans/{plan_id}/settlement")
+        assert r.status_code == 200
+        body = r.get_json()
+        rem = {b["user_id"]: b["balance_cents"] for b in body["remaining_balances"]}
+        assert rem[user_ids["alice"]] == 3000, f"expected alice 3000, got {rem}"
+        assert rem[user_ids["bob2"]] == -3000, f"expected bob2 -3000, got {rem}"
+        # Per-currency mode — USD payment must appear in its own bucket.
+        r = member_client.get(
+            f"/api/plans/{plan_id}/settlement?mode=per_currency")
+        body = r.get_json()
+        assert "USD" in body["per_currency"]
+        usd_rem = {b["user_id"]: b["balance_cents"]
+                   for b in body["per_currency"]["USD"]["remaining_balances"]}
+        assert usd_rem[user_ids["bob2"]] == 1000
 
 
 # ------------------------------------------------------------------ access control

@@ -293,8 +293,10 @@ def recorded_payments_base(plan_id: int, rates: dict[str, float],
     for r in rows:
         if r["currency"] == base_currency:
             rate = Decimal("1")
+        elif r["currency"] in rates:
+            rate = Decimal(str(rates[r["currency"]]))
         else:
-            rate = Decimal(str(rates.get(r["currency"], 0)))
+            continue
         exp_decimals = _currency_decimals(r["currency"])
         exp_major = Decimal(r["amount_cents"]) / Decimal(10 ** exp_decimals)
         base_major = exp_major * rate
@@ -352,8 +354,9 @@ def _per_currency_settlement(plan_id: int,
     payment_effects = _recorded_payments_by_currency(plan_id)
 
     per_currency_result = {}
-    for cur in sorted(per_cur.keys()):
-        balances = per_cur[cur]
+    all_currencies = sorted(set(per_cur.keys()) | set(payment_effects.keys()))
+    for cur in all_currencies:
+        balances = per_cur.get(cur, {})
         pay = payment_effects.get(cur, {})
 
         proposed = settle_debts(balances)

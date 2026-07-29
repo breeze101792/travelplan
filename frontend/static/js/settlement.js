@@ -1,5 +1,5 @@
 // settlement.js — exchange rates, balances, who-pays-whom, payments.
-import { apiGet, apiPost, apiDel } from '/static/js/api.js';
+import { apiGet, apiPost, apiPatch, apiDel } from '/static/js/api.js';
 import { el, clear, money } from '/static/js/util.js';
 
 function decimalsFor(currency) {
@@ -109,15 +109,12 @@ export async function initSettlement(ctx, { plan, users }) {
     // Fetch all data first — old DOM stays visible during loading so the
     // page doesn't collapse and scroll to top. After all data is in hand,
     // build the new DOM and swap it in one synchronous clear+append.
-    let st, paymentsEl;
+    let st;
     try {
       const params = new URLSearchParams();
       params.set('mode', currentMode);
       if (currentMode === 'single') params.set('currency', currentCurrency);
-      [st, paymentsEl] = await Promise.all([
-        apiGet(`/api/plans/${planId}/settlement?${params.toString()}`),
-        renderPayments(),
-      ]);
+      st = await apiGet(`/api/plans/${planId}/settlement?${params.toString()}`);
     } catch (e) {
       clear(root);
       root.append(el('p', { class: 'error', text: e.message }));
@@ -229,10 +226,7 @@ export async function initSettlement(ctx, { plan, users }) {
         ));
       });
 
-      if (!readOnly) {
-        els.push(renderPaymentForm());
-      }
-      els.push(paymentsEl);
+      els.push(await renderPaymentsPanel());
       els.push(refreshBtn());
 
       clear(root);
@@ -263,89 +257,120 @@ export async function initSettlement(ctx, { plan, users }) {
       settleDec, settleCur
     ));
 
-    // --- record payment form ---
-    if (!readOnly) {
-      els.push(renderPaymentForm());
-    }
-
-    // --- recorded payments ---
-    els.push(paymentsEl);
+    els.push(await renderPaymentsPanel());
     els.push(refreshBtn());
 
     clear(root);
     for (const el of els) root.append(el);
   }
 
-  function renderPaymentForm() {
-    const wrap = el('div', { class: 'panel payment-form-panel' });
-    wrap.append(el('h3', { text: 'Record a payment' }));
+  let editingPaymentId = null;
+  let showAddForm = false;
 
-    let fromId = users[0].id;
-    let toId = users.length > 1 ? users[1].id : users[0].id;
-    let amount = '';
-    let currency = baseCurrency;
-    let note = '';
+  function payFormFields(editPayment) {
+    let fromId = editPayment ? editPayment.from_user_id : users[0].id;
+    let toId = editPayment ? editPayment.to_user_id : (users.length > 1 ? users[1].id : users[0].id);
+    let amount = editPayment ? (editPayment.amount_cents / (10 ** decimalsFor(editPayment.currency))).toFixed(decimalsFor(editPayment.currency)) : '';
+    let currency = editPayment ? editPayment.currency : baseCurrency;
+    let note = editPayment ? (editPayment.note || '') : '';
 
-    const fromSel = makeSelect(userOptions, fromId);
+    const fromSel = makeSelect(userOptions, fromId, { class: 'pay-inline-select' });
     fromSel.addEventListener('change', () => { fromId = Number(fromSel.value); });
-    const toSel = makeSelect(userOptions, toId);
+    const toSel = makeSelect(userOptions, toId, { class: 'pay-inline-select' });
     toSel.addEventListener('change', () => { toId = Number(toSel.value); });
 
-    const curOptions = (currencies && currencies.length ? currencies : [baseCurrency])
+    const curOptions = Array.from(new Set([...(currencies || []), baseCurrency]))
       .map(c => ({ value: c, label: c }));
-    const curSel = makeSelect(curOptions, currency);
+    const curSel = makeSelect(curOptions, currency, { class: 'pay-inline-select' });
     curSel.addEventListener('change', () => { currency = curSel.value; });
 
     const amtInput = el('input', { type: 'text', inputmode: 'decimal',
-      placeholder: '0.00', value: amount });
+      placeholder: '0.00', class: 'pay-inline-input', value: amount });
     amtInput.addEventListener('input', () => { amount = amtInput.value; });
 
-    const noteInput = el('input', { type: 'text', placeholder: 'optional note',
-      value: note });
+    const noteInput = el('input', { type: 'text', placeholder: 'note',
+      class: 'pay-inline-input pay-inline-note', value: note });
     noteInput.addEventListener('input', () => { note = noteInput.value; });
 
-    const msg = el('p', { class: 'form-msg' });
-    const submit = el('button', { type: 'button', class: 'btn btn-primary',
-      text: 'Record payment' });
-    submit.addEventListener('click', async () => {
-      if (!amount || isNaN(parseFloat(amount))) {
-        msg.textContent = 'Enter an amount.';
-        msg.className = 'form-msg error';
-        return;
-      }
-      if (fromId === toId) {
-        msg.textContent = 'From and to must differ.';
-        msg.className = 'form-msg error';
-        return;
-      }
-      msg.textContent = 'Saving…';
-      msg.className = 'form-msg';
-      try {
-        await apiPost(`/api/plans/${planId}/payments`, {
-          from_user_id: fromId, to_user_id: toId,
-          amount: amount, currency, note: note || undefined,
-        });
-        render();
-      } catch (e) {
-        msg.textContent = e.message;
-        msg.className = 'form-msg error';
-      }
-    });
-
-    wrap.append(el('div', { class: 'form-grid' }, [
-      el('label', { class: 'field' }, [el('span', { class: 'field-label', text: 'From' }), fromSel]),
-      el('label', { class: 'field' }, [el('span', { class: 'field-label', text: 'To' }), toSel]),
-      el('label', { class: 'field' }, [el('span', { class: 'field-label', text: 'Amount' }), amtInput]),
-      el('label', { class: 'field' }, [el('span', { class: 'field-label', text: 'Currency' }), curSel]),
-      el('label', { class: 'field full' }, [el('span', { class: 'field-label', text: 'Note' }), noteInput]),
-    ]));
-    wrap.append(el('div', { class: 'form-actions' }, [msg, submit]));
-    return wrap;
+    return { fromSel, toSel, curSel, amtInput, noteInput, getData: () => ({ fromId, toId, amount, currency, note }) };
   }
 
-  async function renderPayments() {
+  function createPaymentRow(payment) {
+    const isEditing = payment && editingPaymentId === payment.id;
+    const isNew = !payment;
+
+    if (isEditing) {
+      const f = payFormFields(payment);
+      const row = el('li', { class: 'payment-row pay-edit-row' }, [
+        f.fromSel, el('span', { class: 'pay-arrow', text: '→' }), f.toSel,
+        f.amtInput, f.curSel, f.noteInput,
+        el('button', { type: 'button', class: 'btn btn-primary btn-sm',
+          text: 'Save', onclick: async () => {
+            const d = f.getData();
+            if (!d.amount || isNaN(parseFloat(d.amount))) return;
+            if (d.fromId === d.toId) return;
+            try {
+              await apiPatch(`/api/payments/${payment.id}`, {
+                from_user_id: d.fromId, to_user_id: d.toId,
+                amount: d.amount, currency: d.currency, note: d.note || undefined,
+              });
+              editingPaymentId = null;
+              render();
+            } catch (e) { alert(e.message); }
+          } }),
+        el('button', { type: 'button', class: 'btn btn-sm',
+          text: 'Cancel', onclick: () => { editingPaymentId = null; render(); } }),
+      ]);
+      return row;
+    }
+
+    if (isNew) {
+      if (readOnly) return null;
+      const f = payFormFields(null);
+      const row = el('li', { class: 'payment-row pay-add-row' }, [
+        f.fromSel, el('span', { class: 'pay-arrow', text: '→' }), f.toSel,
+        f.amtInput, f.curSel, f.noteInput,
+        el('button', { type: 'button', class: 'btn btn-sm',
+          text: 'Add', onclick: async () => {
+            const d = f.getData();
+            if (!d.amount || isNaN(parseFloat(d.amount))) return;
+            if (d.fromId === d.toId) return;
+            try {
+              await apiPost(`/api/plans/${planId}/payments`, {
+                from_user_id: d.fromId, to_user_id: d.toId,
+                amount: d.amount, currency: d.currency, note: d.note || undefined,
+              });
+              showAddForm = false;
+              render();
+            } catch (e) { alert(e.message); }
+          } }),
+        el('button', { type: 'button', class: 'btn btn-danger btn-sm',
+          text: 'Cancel', onclick: () => { showAddForm = false; render(); } }),
+      ]);
+      return row;
+    }
+
+    // view mode
+    const dec = decimalsFor(payment.currency);
+    const row = el('li', { class: 'payment-row' }, [
+      el('span', { class: 'pay-who', text: `${payment.from_name} → ${payment.to_name}` }),
+      el('span', { class: 'pay-amt', text: money(payment.amount_cents, dec, payment.currency) }),
+      el('span', { class: 'pay-note muted', text: payment.note || '' }),
+      readOnly ? null : el('button', { type: 'button', class: 'btn btn-sm', text: 'Edit',
+        onclick: () => { editingPaymentId = payment.id; render(); } }),
+      readOnly ? null : el('button', { type: 'button', class: 'btn btn-danger btn-sm', text: 'Delete',
+        onclick: async () => {
+          if (!confirm('Delete this payment?')) return;
+          try { await apiDel(`/api/payments/${payment.id}`); render(); }
+          catch (e) { alert(e.message); }
+        } }),
+    ]);
+    return row;
+  }
+
+  async function renderPaymentsPanel() {
     const wrap = el('div', { class: 'panel payments-panel' });
-    wrap.append(el('h3', { text: 'Recorded payments' }));
+    wrap.append(el('h3', { text: 'Payments' }));
     let res;
     try {
       res = await apiGet(`/api/plans/${planId}/payments`);
@@ -354,34 +379,27 @@ export async function initSettlement(ctx, { plan, users }) {
       return wrap;
     }
     const payments = res.payments || [];
-    if (!payments.length) {
-      wrap.append(el('p', { class: 'empty', text: 'No payments recorded yet.' }));
-      return wrap;
-    }
     const list = el('ul', { class: 'payment-list' });
     payments.forEach(p => {
-      const dec = decimalsFor(p.currency);
-      const row = el('li', { class: 'payment-row' }, [
-        el('span', { class: 'pay-who', text: `${p.from_name} → ${p.to_name}` }),
-        el('span', { class: 'pay-amt', text: money(p.amount_cents, dec, p.currency) }),
-        el('span', { class: 'pay-note muted', text: p.note || '' }),
-        readOnly ? null : el('button', { class: 'btn btn-danger btn-sm',
-          text: 'Delete', onclick: () => delPayment(p.id) }),
-      ]);
-      list.append(row);
+      const row = createPaymentRow(p);
+      if (row) list.append(row);
     });
-    wrap.append(list);
-    return wrap;
-  }
-
-  async function delPayment(id) {
-    if (!confirm('Delete this payment?')) return;
-    try {
-      await apiDel(`/api/payments/${id}`);
-      render();
-    } catch (e) {
-      alert(e.message);
+    if (!payments.length) {
+      list.append(el('li', { class: 'empty', style: 'padding: 0.5rem 0.75rem;', text: 'No payments recorded yet.' }));
     }
+    if (showAddForm) {
+      const addRow = createPaymentRow(null);
+      if (addRow) list.append(addRow);
+    }
+    wrap.append(list);
+    if (!readOnly && !showAddForm) {
+      wrap.append(el('div', { style: 'margin-top: 0.5rem;' }, [
+        el('button', { type: 'button', class: 'btn btn-primary',
+          text: '+ Add a payment',
+          onclick: () => { showAddForm = true; render(); } }),
+      ]));
+    }
+    return wrap;
   }
 
   await render();

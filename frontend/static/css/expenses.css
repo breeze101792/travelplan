@@ -251,9 +251,25 @@ input:disabled { background: #f3f4f6; color: var(--muted, #6b7280); }
   padding: 0.5rem 0.75rem; border-radius: 8px;
   border: 1px solid var(--border, #e5e7eb);
 }
-.pay-who { flex: 1; font-weight: 500; font-size: 0.9rem; }
-.pay-amt { font-variant-numeric: tabular-nums; font-weight: 600; }
-.pay-note { font-size: 0.85rem; }
+.pay-who { flex-shrink: 0; font-weight: 500; font-size: 0.9rem; }
+.pay-amt { flex-shrink: 0; font-variant-numeric: tabular-nums; font-weight: 600; }
+.pay-note { font-size: 0.85rem; flex: 1; }
+
+.pay-add-row, .pay-edit-row {
+  background: var(--thead-bg, #f9fafb);
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+.pay-add-row select, .pay-edit-row select,
+.pay-add-row input, .pay-edit-row input {
+  min-height: 34px;
+  box-sizing: border-box;
+}
+
+.pay-inline-select { min-width: 60px; width: auto; }
+.pay-inline-input { width: 70px; }
+.pay-inline-note { flex: 1; min-width: 60px; }
+.pay-arrow { color: var(--muted, #6b7280); font-weight: 600; flex-shrink: 0; }
 
 /* ---- settlement mode controls ---- */
 .settlement-controls {

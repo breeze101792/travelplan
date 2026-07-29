@@ -289,6 +289,31 @@ def record_payment(plan_id):
         "SELECT * FROM payments WHERE id = ?", (cur.lastrowid,)).fetchone())})
 
 
+@expenses_bp.route("/api/payments/<int:payment_id>", methods=["PATCH"])
+@login_required
+def update_payment(payment_id):
+    check_payment_access(payment_id, write=True)
+    data = request.get_json(force=True, silent=True) or {}
+    db = get_db()
+    row = dict(db.execute("SELECT * FROM payments WHERE id = ?", (payment_id,)).fetchone())
+    from_user = int(data.get("from_user_id", row["from_user_id"]))
+    to_user = int(data.get("to_user_id", row["to_user_id"]))
+    if from_user == to_user:
+        return jsonify({"error": "from and to must differ"}), 400
+    currency = (data.get("currency") or row["currency"]).upper()
+    decimals = int(data.get("decimals", 2 if currency not in ("JPY", "KRW") else 0))
+    amount = parse_amount_to_cents(
+        data.get("amount", data.get("amount_cents", row["amount_cents"])), decimals)
+    note = data.get("note") if "note" in data else row["note"]
+    db.execute(
+        """UPDATE payments SET from_user_id=?, to_user_id=?, amount_cents=?, currency=?, note=?
+           WHERE id=?""",
+        (from_user, to_user, amount, currency, note, payment_id))
+    db.commit()
+    return jsonify({"payment": dict(db.execute(
+        "SELECT * FROM payments WHERE id = ?", (payment_id,)).fetchone())})
+
+
 @expenses_bp.route("/api/payments/<int:payment_id>", methods=["DELETE"])
 @login_required
 def delete_payment(payment_id):
