@@ -395,12 +395,10 @@ function renderDay(day, items, settings, nowFraction, ctx, staging, setBlockErro
     const endTxt   = when.end_at   ? String(when.end_at).replace('T', ' ').replace(/^\S+ /, '') : '';
     const isBackup = s.isBackup;
     const durationHrs = s.end - s.start;
-    // Show the range whenever both times are known. The 1.5h threshold
-    // existed to skip the subtitle on short bars (it was visually
-    // busy), but with the new unified shape the range is informative
-    // even at 1h. Use a 0.5h floor so a near-instant bar still hides
-    // the time.
-    const barTime = (durationHrs >= 0.5 && startTxt)
+    // Show the range whenever both times are known. Bars under 1h only
+    // show the title — there isn't room for both title and time on a
+    // short bar. Exactly 1h (or longer) still shows the range.
+    const barTime = (durationHrs >= 1 && startTxt)
       ? (startTxt + (endTxt ? ' → ' + endTxt.split(' ').pop() : ''))
       : '';
     const extraClass = (isBackup ? ' tl-item-backup' : '') + (s.unscheduled ? ' tl-item-unscheduled' : '');
