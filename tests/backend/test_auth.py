@@ -337,3 +337,47 @@ class TestMembers:
         names = [m["username"] for m in r.get_json()["members"]]
         assert "alice" in names and "bob" in names
         assert "admin" not in names
+
+
+# ---------------------------------------------------------------- AI settings
+class TestAISettings:
+    def test_ai_settings_admin_only(self, client, login):
+        # Member -> 403.
+        login("alice")
+        assert client.get("/auth/ai").status_code == 403
+        # Admin -> 200.
+        client.get("/auth/logout")
+        login("admin")
+        r = client.get("/auth/ai")
+        assert r.status_code == 200
+        assert b"AI Agent" in r.data
+
+    def test_admin_saves_ai_config(self, client, login, tmp_path, monkeypatch):
+        from backend import ai as ai_mod
+        cfg_path = tmp_path / "ai.json"
+        monkeypatch.setattr(ai_mod, "CONFIG_PATH", cfg_path)
+        login("admin")
+        r = client.post("/auth/ai", data={
+            "base_url": "https://api.example.com/v1",
+            "api_key": "sk-test",
+            "model": "test-model",
+        }, follow_redirects=False)
+        assert r.status_code == 302
+        assert "info=" in r.headers["Location"]
+        # Config persisted and readable.
+        cfg = ai_mod.read_ai_config()
+        assert cfg["base_url"] == "https://api.example.com/v1"
+        assert cfg["api_key"] == "sk-test"
+        assert cfg["model"] == "test-model"
+        # load_ai_config now succeeds.
+        assert ai_mod.load_ai_config()["model"] == "test-model"
+
+    def test_admin_save_requires_base_url_and_model(self, client, login, tmp_path, monkeypatch):
+        from backend import ai as ai_mod
+        cfg_path = tmp_path / "ai.json"
+        monkeypatch.setattr(ai_mod, "CONFIG_PATH", cfg_path)
+        login("admin")
+        r = client.post("/auth/ai", data={"base_url": "", "model": ""})
+        assert r.status_code == 200
+        assert b"base_url and model are required" in r.data
+        assert not cfg_path.exists()

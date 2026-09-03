@@ -231,3 +231,26 @@ def settings_password():
         return redirect(url_for("auth.settings", error="Current password is incorrect."))
     update_user(user_id=current_user()["id"], password=new_pw)
     return redirect(url_for("auth.settings", info="Password updated."))
+
+
+# ---------------------------------------------------------------- AI settings
+#
+# Admin-only: configure the AI provider (base_url / api_key / model) that
+# powers the in-app AI chat window and the MCP extract tool. The key is
+# stored in data/config/ai.json (gitignored), never in the DB.
+
+@auth_bp.route("/auth/ai", methods=["GET", "POST"])
+@admin_required
+def ai_settings():
+    from ..ai import read_ai_config, write_ai_config
+    if request.method == "POST":
+        base_url = (request.form.get("base_url") or "").strip().rstrip("/")
+        api_key = (request.form.get("api_key") or "").strip()
+        model = (request.form.get("model") or "").strip()
+        if not base_url or not model:
+            return render_template("ai-settings.html", error="base_url and model are required.",
+                                   cfg=read_ai_config())
+        write_ai_config({"base_url": base_url, "api_key": api_key, "model": model})
+        return redirect(url_for("auth.ai_settings", info="AI provider saved."))
+    return render_template("ai-settings.html", error=None, info=request.args.get("info"),
+                           cfg=read_ai_config())
