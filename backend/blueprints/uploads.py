@@ -44,6 +44,11 @@ def _sniff_mime(header: bytes) -> str | None:
 @login_required
 def upload_item_image(item_id):
     check_item_access(item_id, write=True)
+    item = get_db().execute("SELECT plan_id FROM items WHERE id = ?", (item_id,)).fetchone()
+    if item is not None:
+        plan = get_db().execute("SELECT status FROM plans WHERE id = ?", (item["plan_id"],)).fetchone()
+        if plan is not None and plan["status"] == "archived":
+            abort(403)
     if "file" not in request.files:
         return jsonify({"error": "no file"}), 400
     f = request.files["file"]
