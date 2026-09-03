@@ -93,6 +93,23 @@ exchange rate from each to the plan's *base currency*. The app never fetches or
 assumes rates — you provide them, they are saved, and settlement is computed in
 the base currency using a greedy min-cash-flow ("who owes whom") algorithm.
 
+## AI agent & MCP
+
+TravelPlan ships an AI extraction core (`backend/ai.py`), an in-app floating
+**AI Agent** chat window on the board / timeline / map pages, and a Model
+Context Protocol server (`backend/mcp_server.py`, launched via `./mcp.sh`) so
+an external agent — e.g. opencode — can read a plan's itinerary and help fill
+in items from pasted text (flight tickets, hotel confirmations, bookings).
+
+The chat window takes text and images, answers questions, and suggests
+itinerary items you can add via `POST /api/plans/<id>/ai/chat`. The MCP server
+exposes seven tools: `list_plans`, `get_plan`, `list_items`, `get_item`,
+`extract_item`, `create_item`, `update_item`. It reads/writes the SQLite DB
+directly over stdio and is registered in the project's `opencode.json`. The
+LLM connection (any OpenAI-compatible endpoint) is configured in
+`data/config/ai.json` (gitignored). See `docs/ai.md` for the config format,
+tool list, and opencode setup.
+
 ## Development
 
 ```bash

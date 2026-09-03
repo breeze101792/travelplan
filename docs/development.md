@@ -19,6 +19,25 @@ see are covered in `docs/test.md`. The lesson below on the block-scope
 
 ## Lessons
 
+### MCP server reads the DB directly (no Flask context)
+
+The MCP server (`backend/mcp_server.py`) is a separate process from the Flask
+app. It opens its own `sqlite3` connection to `data/travelplan.db` and never
+touches `db.get_db()` (which is tied to a Flask request context and a
+module-level shared connection). This means:
+
+- It can run standalone (`./mcp.sh`) without a running web server.
+- It does **not** fire SSE events, so items it creates appear in the web UI
+  on the next fetch, not pushed live.
+- It has **no auth / plan-role checks** — it is launched locally by the
+  user's own agent, so that's acceptable. If it ever needs to be exposed
+  remotely, add auth and route through the Flask API instead.
+
+The extraction logic is shared with the web app via `backend/ai.py`, which is
+stdlib-only so both processes can import it. The `mcp` dependency is kept in a
+separate `backend/requirements-mcp.txt` (installed by `mcp.sh`) so the web
+app's own `requirements.txt` stays lean.
+
 ### Block-scope `const` inside `try` is invisible outside
 
 A `const` declared inside a `try { ... }` block is block-scoped. Using
