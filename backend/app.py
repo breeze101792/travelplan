@@ -47,12 +47,14 @@ def create_app(config: dict | None = None) -> Flask:
     from .blueprints.items import items_bp
     from .blueprints.uploads import uploads_bp
     from .blueprints.expenses import expenses_bp
+    from .blueprints.ai import ai_bp
 
     app.register_blueprint(auth_bp)
     app.register_blueprint(plans_bp)
     app.register_blueprint(items_bp)
     app.register_blueprint(uploads_bp)
     app.register_blueprint(expenses_bp)
+    app.register_blueprint(ai_bp)
 
     @app.context_processor
     def inject_user():

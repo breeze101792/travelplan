@@ -17,6 +17,9 @@ data/config/secret_key
 # keep settings.json (shipped defaults) but ignore per-user overrides
 data/config/settings.local.json
 
+# AI connection details (API key) — never commit
+data/config/ai.json
+
 # editor
 .vscode/
 .idea/
