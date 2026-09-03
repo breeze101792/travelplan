@@ -31,6 +31,8 @@ import { clipboardGet, clipboardSet, serializeItem } from '/static/js/clipboard.
 import { buildDays, isoOf, wirePlanHeader, renderEditBar, makeDayActions, showDayContextMenu, closeDayContextMenu } from '/static/js/plan-header.js';
 import { expandHotelEvents } from '/static/js/hotel-events.js';
 import { enableGrabScroll } from '/static/js/page-utils.js';
+import { createItemFromExtraction } from '/static/js/ai-extract.js';
+import { registerAgentContext } from '/static/js/ai-agent.js';
 
 let HOUR_PX = 36;     // recalculated by updateScale() to fill viewport
 
@@ -1412,6 +1414,16 @@ export async function initTimeline(ctx) {
     }
   }
   window.addEventListener('beforeunload', onBeforeUnload);
+
+  // Expose the AI-agent entry point so the floating widget can open a
+  // pre-filled item editor from an extraction.
+  registerAgentContext({
+    canEdit: ctx.role !== 'viewer' && plan.status !== 'archived',
+    createItemFromExtraction: (ext) => createItemFromExtraction({
+      ctx, staging, plan, settings, members,
+      onApplied: () => { render(); renderEditBarCtl(); },
+    }, ext),
+  });
 }
 
 /* ---------- bar click / right-click ---------- */

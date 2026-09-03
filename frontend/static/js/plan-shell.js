@@ -48,6 +48,10 @@ export async function navigate(view, pushState = true) {
   container.innerHTML = '';
   updateNav(view);
 
+  // Show the AI agent only on the board / timeline / map views.
+  const { setAgentVisible } = await import('/static/js/ai-agent.js');
+  setAgentVisible(view);
+
   if (pushState) {
     const base = `/plans/${window.__CONTEXT__.planId}`;
     const url = view === 'board' ? base : `${base}/${view}`;
@@ -83,6 +87,9 @@ function initShell(context) {
   window.__CONTEXT__ = context;
   document.querySelector('.plan-nav')?.addEventListener('click', handleNavClick);
   window.addEventListener('popstate', handlePopState);
+
+  // Boot the floating AI agent widget (hidden until a board/timeline/map view).
+  import('/static/js/ai-agent.js').then(({ initAgent }) => initAgent());
 
   document.getElementById('plan-refresh-btn')?.addEventListener('click', async () => {
     const btn = document.getElementById('plan-refresh-btn');

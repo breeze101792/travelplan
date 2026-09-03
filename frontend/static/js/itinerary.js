@@ -21,6 +21,8 @@ import { expandHotelEvents } from '/static/js/hotel-events.js';
 import { enableGrabScroll } from '/static/js/page-utils.js';
 import { createMultiSelect } from '/static/js/multi-select.js';
 import { doSave as sharedSave, showToast, batchSessionId } from '/static/js/page-utils.js';
+import { createItemFromExtraction } from '/static/js/ai-extract.js';
+import { registerAgentContext } from '/static/js/ai-agent.js';
 
 /* JPY/KRW have 0 minor units; everything else uses 2. Matches backend. */
 function decimalsFor(cur) {
@@ -779,4 +781,15 @@ export async function initItinerary(ctx) {
     ms.clearSelection();
   });
   document.addEventListener('scroll', () => ms.closeContextMenu(), true);
+
+  // Expose the AI-agent entry point so the floating widget can open a
+  // pre-filled item editor from an extraction.
+  registerAgentContext({
+    canEdit: ctx.role !== 'viewer' && plan.status !== 'archived',
+    createItemFromExtraction: (ext) => createItemFromExtraction({
+      ctx, staging, plan, settings, members: allMembers,
+      onApplied: () => { render(); renderEditBarCtl(); },
+      onClose: () => { suppressClearOnce = true; },
+    }, ext),
+  });
 }

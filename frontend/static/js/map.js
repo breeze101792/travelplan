@@ -6,6 +6,8 @@ import { el, clear } from '/static/js/util.js';
 import { openItemEditor, openGeoPopup } from '/static/js/item-editor.js';
 import { expandHotelEvents } from '/static/js/hotel-events.js';
 import { clipboardGet, clipboardSet, serializeItem } from '/static/js/clipboard.js';
+import { createItemFromExtraction } from '/static/js/ai-extract.js';
+import { registerAgentContext } from '/static/js/ai-agent.js';
 
 const DAY_COLORS = [
   '#e74c3c', '#3498db', '#2ecc71', '#f39c12',
@@ -715,6 +717,16 @@ export async function initMap(c) {
   const anyCoords = Object.values(dayCoords).some(c => c.length);
   if (!anyCoords) map.setView([35.6762, 139.6503], 5);
   renderEditBarCtl();
+
+  // Expose the AI-agent entry point so the floating widget can open a
+  // pre-filled item editor from an extraction.
+  registerAgentContext({
+    canEdit: ctx.role !== 'viewer' && plan.status !== 'archived',
+    createItemFromExtraction: (ext) => createItemFromExtraction({
+      ctx, staging, plan, settings, members: [],
+      onApplied: () => { refreshFromStaging(); renderEditBarCtl(); },
+    }, ext),
+  });
 }
 
 
