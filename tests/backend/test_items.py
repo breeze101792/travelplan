@@ -147,6 +147,31 @@ class TestItemPatchDelete:
         assert it["item_date"] == "2026-07-02"
         assert it["end_date"] == "2026-07-03"
 
+    def test_serialize_reconciles_columns_from_when(self, member_client, plan_id, app):
+        """The ``when`` object is the single source of truth. If a row's
+        item_date/end_date columns drifted from its when (e.g. a hotel whose
+        stay dates were edited), the serialized item must reflect when so the
+        board/timeline render the hotel on the right days."""
+        item = member_client.post(f"/api/plans/{plan_id}/items", json={
+            "item_type": "hotel", "title": "H",
+            "item_date": "2026-07-01", "end_date": "2026-07-02",
+            "details": {"when": {"start_at": "2026-07-01T15:00",
+                                 "end_at": "2026-07-02T11:00"}},
+        }).get_json()["item"]
+        assert item["item_date"] == "2026-07-01"
+        assert item["end_date"] == "2026-07-02"
+        # Simulate a drifted row: columns disagree with when.
+        from backend import db as db_mod
+        with app.app_context():
+            db = db_mod.get_db()
+            db.execute("UPDATE items SET item_date = '2026-07-01', end_date = '2026-07-01' WHERE id = ?",
+                       (item["id"],))
+            db.commit()
+        r = member_client.get(f"/api/plans/{plan_id}/items")
+        it = next(x for x in r.get_json()["items"] if x["id"] == item["id"])
+        assert it["item_date"] == "2026-07-01"
+        assert it["end_date"] == "2026-07-02"
+
     def test_patch_when_derives_date(self, member_client, plan_id):
         """Sending a new ``when`` should update item_date and end_date."""
         item = member_client.post(f"/api/plans/{plan_id}/items", json={
@@ -163,6 +188,29 @@ class TestItemPatchDelete:
         it = r.get_json()["item"]
         assert it["item_date"] == "2026-08-15"
         assert it["details"]["when"]["start_at"] == "2026-08-15T14:00"
+
+    def test_patch_when_wins_over_stale_item_date_end_date(self, member_client, plan_id):
+        """A new ``when`` object is the source of truth even when the body
+        also carries stale item_date/end_date columns (the editor sends both).
+        The re-derived dates must win, so a hotel checkout date actually
+        changes."""
+        item = member_client.post(f"/api/plans/{plan_id}/items", json={
+            "item_type": "hotel", "title": "H",
+            "item_date": "2026-07-01", "end_date": "2026-07-02",
+            "details": {"when": {"start_at": "2026-07-01T15:00",
+                                 "end_at": "2026-07-02T11:00"}},
+        }).get_json()["item"]
+        assert item["end_date"] == "2026-07-02"
+        r = member_client.patch(f"/api/items/{item['id']}", json={
+            # Stale columns the editor still sends from the original item.
+            "item_date": "2026-07-01", "end_date": "2026-07-02",
+            "details": {"when": {"start_at": "2026-07-01T15:00",
+                                 "end_at": "2026-07-05T11:00"}},
+        })
+        assert r.status_code == 200
+        it = r.get_json()["item"]
+        assert it["end_date"] == "2026-07-05"
+        assert it["item_date"] == "2026-07-01"
 
     def test_patch_when_with_only_start(self, member_client, plan_id):
         """When PATCHing a when object, end_at defaults to start_at + 1h."""

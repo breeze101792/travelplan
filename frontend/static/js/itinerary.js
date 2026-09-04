@@ -13,7 +13,8 @@ import { el, clear, money, statusBadge, loadSettings } from '/static/js/util.js'
 import { enableDragDrop } from '/static/js/dragdrop.js';
 import { openItemEditor } from '/static/js/item-editor.js';
 import { Staging, createBlankItemOp, createItemsFromClipOp, saveItemOp, updateItemOp,
-        moveItemOp, deleteItemOp, uploadImageOp, addLinkOp, deleteAttachmentOp, addExpenseOp } from '/static/js/staging.js';
+        moveItemOp, deleteItemOp, uploadImageOp, addLinkOp, deleteAttachmentOp, addExpenseOp,
+        timeEditItemOp } from '/static/js/staging.js';
 import { clipboardGet, clipboardSet, serializeItem } from '/static/js/clipboard.js';
 import { buildDays, isoOf, wirePlanHeader, renderEditBar, makeDayActions,
         showDayContextMenu, closeDayContextMenu } from '/static/js/plan-header.js';
@@ -677,9 +678,26 @@ export async function initItinerary(ctx) {
       const newItemDate = item._hotelEvent === 'check-in' ? item_date : parent.item_date;
       const newEndDate = item._hotelEvent === 'check-out' ? item_date : parent.end_date;
       if (newItemDate === parent.item_date && newEndDate === parent.end_date) return;
-      staging.add(moveItemOp({
-        itemId: parent.id, item_date: newItemDate,
-        before_id, after_id, end_date: newEndDate, sessionId,
+      // The when object is the single source of truth for dates, so the
+      // drag must update it too — otherwise the server's reconciliation
+      // (which derives item_date/end_date from when) would clobber the
+      // column change back to the old date. Keep the existing time-of-day
+      // and only move the date.
+      const when = Object.assign({}, (parent.details && parent.details.when) || {});
+      if (item._hotelEvent === 'check-in' && when.start_at) {
+        when.start_at = newItemDate + 'T' + String(when.start_at).split('T')[1];
+      } else if (item._hotelEvent === 'check-out' && when.end_at) {
+        when.end_at = newEndDate + 'T' + String(when.end_at).split('T')[1];
+      }
+      const details = Object.assign({}, parent.details || {}, { when });
+      staging.add(timeEditItemOp({
+        planId: ctx.planId,
+        itemId: parent.id,
+        item_date: newItemDate,
+        end_date: newEndDate,
+        details,
+        title: parent.title,
+        sessionId,
       }));
       return;
     }

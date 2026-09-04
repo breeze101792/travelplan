@@ -155,6 +155,21 @@ def _attach(item: dict) -> dict:
         item["details"] = json.loads(item["details"]) if item.get("details") else {}
     except (TypeError, ValueError):
         item["details"] = {}
+    # The ``when`` object is the single source of truth for an item's dates.
+    # Reconcile the item_date / end_date columns from it so every consumer
+    # (board, timeline, hotel-events) sees consistent data even if a row was
+    # written before this invariant held (e.g. a hotel whose columns drifted
+    # from its when). The columns are what spanning rendering reads, so a
+    # mismatch made hotels render on the wrong days.
+    when = item["details"].get("when") or {}
+    if when.get("start_at"):
+        d = _date_part(when["start_at"])
+        if d:
+            item["item_date"] = d
+    if when.get("end_at"):
+        d = _date_part(when["end_at"])
+        if d:
+            item["end_date"] = d
     item["attachments"] = _load_attachments(item["id"])
     item["geocodes"] = _load_geocodes(item["id"])
     return item
@@ -265,9 +280,15 @@ def mutate_item(item_id):
                 # Explicitly empty when — clear the field.
                 details.pop("when", None)
         sets.append("details = ?"); args.append(json.dumps(details))
-    for k in ("item_date", "end_date"):
-        if k in data:
-            sets.append(f"{k} = ?"); args.append(data[k])
+    # When a when object was supplied, it is the single source of truth for
+    # item_date / end_date (derived above). Only apply explicit column values
+    # when no when object was sent, so a stale item_date/end_date in the body
+    # can't clobber the re-derived dates (e.g. a hotel checkout that never
+    # changes).
+    if "when" not in (data.get("details") or {}):
+        for k in ("item_date", "end_date"):
+            if k in data:
+                sets.append(f"{k} = ?"); args.append(data[k])
     if sets:
         sets.append("updated_at = datetime('now')")
         args.append(item_id)

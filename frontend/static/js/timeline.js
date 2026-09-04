@@ -691,12 +691,28 @@ function wireBarDrag({ bar, staging, getViewItems, getSelection, onMultiDrag, ct
       // to be intact. Deep-cloning here keeps the base clean.
       const srcDetails = it.details || {};
       const newDetails = JSON.parse(JSON.stringify(srcDetails));
+      // For hotel events, map the drag correctly to the parent hotel's
+      // date columns: check-in drag → update item_date, check-out drag
+      // → update end_date. The when object carries the times; the
+      // server derives item_date / end_date from it on save.
+      const hotelEvent = bar.dataset.hotelEvent;
       // The onMove handler populated _pendingStart and _pendingEnd with
       // the user's new values (already snapped + clamped). We commit
       // them as the unified details.when.start_at / when.end_at.
       newDetails.when = newDetails.when || {};
-      newDetails.when.start_at = combineDateHour(hoverDayIso, newStartH);
-      newDetails.when.end_at = combineDateHour(hoverDayIso, newEndH);
+      // For hotel check-in/check-out event bars, only the dragged field's
+      // date changes: a check-out drag must move end_at's date but keep
+      // start_at (the check-in) on its original day, and vice-versa.
+      // Otherwise both dates would be set to the hover day and the
+      // check-in would silently jump to the checkout day.
+      if (hotelEvent === 'check-in') {
+        newDetails.when.start_at = combineDateHour(hoverDayIso, newStartH);
+      } else if (hotelEvent === 'check-out') {
+        newDetails.when.end_at = combineDateHour(hoverDayIso, newEndH);
+      } else {
+        newDetails.when.start_at = combineDateHour(hoverDayIso, newStartH);
+        newDetails.when.end_at = combineDateHour(hoverDayIso, newEndH);
+      }
       // Drop any legacy time fields so the item doesn't carry two
       // different ways of saying the same thing.
       delete newDetails.time;
@@ -707,11 +723,6 @@ function wireBarDrag({ bar, staging, getViewItems, getSelection, onMultiDrag, ct
       delete newDetails.check_in_time;
       delete newDetails.check_out_time;
 
-      // For hotel events, map the drag correctly to the parent hotel's
-      // date columns: check-in drag → update item_date, check-out drag
-      // → update end_date. The when object carries the times; the
-      // server derives item_date / end_date from it on save.
-      const hotelEvent = bar.dataset.hotelEvent;
       const itemDate = hotelEvent === 'check-out' ? (it.item_date || dayIso) : hoverDayIso;
       const endDate = hotelEvent === 'check-out' ? hoverDayIso : undefined;
       staging.add(timeEditItemOp({

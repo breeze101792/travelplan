@@ -665,14 +665,19 @@ export function openItemEditor(ctx, { plan, item, settings, members, staging, se
     }
     if (Object.keys(when).length) details.when = when;
     else delete details.when;
+    // Derive item_date / end_date from when so the local view (board /
+    // timeline) re-renders immediately on Apply, without waiting for Save.
+    // The server still treats when as the single source of truth and
+    // ignores these columns when a when object is present, so sending
+    // them is safe and keeps the optimistic view in sync.
+    const derivedItemDate = when.start_at ? String(when.start_at).slice(0, 10) : null;
+    const derivedEndDate = when.end_at ? String(when.end_at).slice(0, 10) : null;
     const snapshot = {
       id: item.id,
       item_type: item.item_type,
       title: titleInput.value.trim() || item.title || '(Untitled)',
-      // item_date / end_date are derived on the server from details.when
-      // (preserved here for backward compat with the old API shape).
-      item_date: item.item_date || null,
-      end_date: item.end_date || null,
+      item_date: derivedItemDate || item.item_date || null,
+      end_date: derivedEndDate || item.end_date || null,
       status: statusSel.value,
       details,
       geocodes: selectedGeocodes,
