@@ -64,6 +64,20 @@ model only returns valid types and field keys. `when` is coerced through the
 same `_coerce_when` the web app uses (end_at defaults to start_at + 1h). The
 module is stdlib-only so both the Flask app and the MCP server can import it.
 
+The prompts instruct the model to **fill every field it can infer** — e.g. a
+transit item always gets a `mode` (Flight/Train/Bus/Ferry/Taxi/Rental car),
+a hotel gets its address, a restaurant its name/address/party size — plus the
+date (`when`) and **geocodes** (real `{label, lat, lng}` coordinates) for each
+location. Geocodes are normalized (`_normalize_geocodes` drops entries without
+valid numeric lat/lng) and flow into the item editor's Map locations section,
+so the map page doesn't need to re-geocode.
+
+Model output is hardened: empty or non-JSON replies are retried (up to
+`_MAX_RETRIES`), and each retry appends a corrective user message ("respond
+with a single JSON object only") so a model that drifts into prose is steered
+back instead of re-sending the same prompt. Markdown-fenced and prose-wrapped
+JSON are also parsed out of the reply.
+
 ## In-app floating AI chat window
 
 On the plan pages (board / timeline / map) a draggable, resizable **AI Agent**
@@ -82,15 +96,29 @@ navigating to any other page hides both.
 
 - **Endpoints** (`backend/blueprints/ai.py`):
   - `POST /api/plans/<id>/ai/chat` — conversational turn. Body `{messages:
-    [{role, content}], image?: data-URL}` → `{reply, items}`. Read access is
-    enough to chat; adding items still goes through the write path.
+    [{role, content}], image?: data-URL}` → `{reply, items, edits}`. Read
+    access is enough to chat; adding/editing items still goes through the
+    write path.
   - `POST /api/plans/<id>/ai/extract` — single-item extraction (used by the
     MCP server and kept for the old flow). Requires write access.
 - **Widget:** `frontend/static/js/ai-agent.js` + `ai-agent.css`, mounted in
   `plan-shell.html` / `plan-shell.js`. Shown only on board / timeline / map.
-- **Pre-fill:** `frontend/static/js/ai-extract.js` stages a blank item, patches
-  it with the suggestion, and opens the editor. Each view registers its
-  staging context via `registerAgentContext()`.
+- **Pre-fill:** `frontend/static/js/ai-extract.js` stages a blank item (or
+  patches an existing item for an edit), and opens the editor. Each view
+  registers its staging context via `registerAgentContext()`.
+
+### Editing existing items
+
+The chat response can also carry `edits`: an array of changes to existing
+items, used when the user asks to change something already in the plan (e.g.
+"change the hotel date"). Each edit is `{item_id, title?, details?, when?}`
+with only the fields the user wants to change. The plan context sent to the
+model includes each item's `id` so it can reference the right one.
+
+Each edit is offered as an **Edit item** button that opens the item editor
+pre-filled with the proposed change — Apply stages a PATCH through the normal
+pending bar, exactly like the create flow. `_normalize_edit` in `backend/ai.py`
+validates each edit (drops any without an `item_id`, strips empty fields).
 
 ### Edit gating
 
@@ -178,7 +206,12 @@ fields, and inserts the item.
   admin-only 403, returns connection status, `service` filter).
 - `tests/backend/test_ai.py` — extraction core + chat with a stubbed `urlopen`
   (valid, invalid type, config-missing, type constraint, title default, chat
-  reply/items, invalid-item skipping; web search hits/encoding/not-configured/
+  reply/items, invalid-item skipping; geocodes: filled, invalid dropped,
+  empty when absent, in chat items and edits; chat edits: change date / title /
+  details, skip missing item_id, ignore empty details, empty/absent edits;
+  retry hardening: empty/non-JSON retried, corrective message appended on
+  retry, prose-then-JSON recovery, markdown-fenced/noise parsing, clear
+  ValueError after all retries; web search hits/encoding/not-configured/
   transport-error; chat search loop with results and with no results;
   `test_connections` all-ok / model-missing / unreachable / missing-fields /
   searxng-unreachable).
@@ -187,10 +220,19 @@ fields, and inserts the item.
   reply/items, missing messages, not-configured, viewer allowed).
 - `tests/backend/test_mcp.py` — all seven tools against a temp data dir
   (create/update round-trip, validation errors, missing rows).
+- `tests/backend/test_ai_agent.py` — the full chat→add and chat→edit journeys
+  across the web API (create item then edit its date via the normal PATCH
+  endpoint), plus read-only gating (viewer can chat but not add; archived plan
+  blocks create) and geocode persistence (a suggested item's coordinates are
+  written to `item_geocodes`).
+- `frontend/tests/ai-extract.test.mjs` — `ai-extract.js` (create patches
+  title/details/when/geocodes onto a staged draft; edit patches an existing
+  item including geocodes; unknown edit id is a no-op; no geocodes when none
+  supplied).
 - `frontend/tests/ai-agent.test.mjs` — the chat widget (init + default-minimized,
   per-view visibility, minimize/restore, resize, typing indicator, chat submit
-  flow, image attach + paste, suggestion add, read-only gating, clear chat,
-  no-context guard).
+  flow, image attach + paste, suggestion add, edit flow with change-date,
+  read-only gating for edits, clear chat, no-context guard).
 - `frontend/tests/markdown.test.mjs` — the markdown renderer (headings, bold/
   italic, code, lists, links, paragraphs, XSS safety, edge cases).
 

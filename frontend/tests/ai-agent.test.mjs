@@ -15,7 +15,8 @@ const CHAT_RESULT = {
   items: [
     { item_type: 'transit', title: 'JL 123', details: { mode: 'Flight' },
       when: { start_at: '2026-09-10T09:00', end_at: '2026-09-10T10:00' },
-      item_date: '2026-09-10', end_date: '2026-09-10' },
+      item_date: '2026-09-10', end_date: '2026-09-10',
+      geocodes: [{ label: 'Tokyo', lat: 35.68, lng: 139.65 }] },
   ],
 };
 
@@ -167,6 +168,91 @@ async function loadAgent() {
   assert(received != null, 'createItemFromExtraction called on suggestion click');
   eq(received.item_type, 'transit', 'suggested item_type passed through');
   eq(received.title, 'JL 123', 'suggested title passed through');
+  eq(received.geocodes[0].lat, 35.68, 'suggested geocodes passed through');
+
+  restore();
+}
+
+// ---------- edit flow (change date) ----------
+
+{
+  installDom({ ids: [] });
+  window.__CONTEXT__ = { planId: 7, role: 'owner' };
+  const { initAgent, registerAgentContext } = await loadAgent();
+  initAgent();
+
+  const EDIT_RESULT = {
+    reply: 'Moved your checkout to Sep 30.',
+    items: [],
+    edits: [
+      { item_id: 3, when: { start_at: '2026-09-24T15:00', end_at: '2026-09-30T11:00' } },
+    ],
+  };
+  const { restore } = installFetch([
+    ['POST /api/plans/7/ai/chat', () => EDIT_RESULT],
+  ]);
+
+  let receivedEdit = null;
+  registerAgentContext({
+    canEdit: true,
+    createItemFromExtraction: () => {},
+    editItemFromExtraction: (ed) => { receivedEdit = ed; },
+    getItemTitle: (id) => id === 3 ? 'Beverly Hotels Elements' : null,
+  });
+
+  const input = document.querySelector('.ai-agent-input');
+  const sendBtn = document.querySelector('.ai-agent-send');
+  input.value = 'change the hotel date';
+  sendBtn.dispatch('click');
+  await new Promise((r) => setTimeout(r, 0));
+
+  // reply rendered
+  const texts = [...document.querySelectorAll('.ai-msg-text')].map((n) => n.textContent);
+  assert(texts.some((t) => t.includes('Moved your checkout')), 'edit reply rendered');
+
+  // edit button offered, labeled with the item title
+  const editBtn = document.querySelector('.ai-suggest-btn');
+  assert(editBtn != null, 'edit button rendered');
+  assert(editBtn.textContent.includes('Edit Beverly Hotels Elements'), 'edit button labels the item title');
+  assert(!editBtn.textContent.includes('item #3'), 'edit button does not show the raw id');
+  editBtn.dispatch('click');
+  assert(receivedEdit != null, 'editItemFromExtraction called on edit click');
+  eq(receivedEdit.item_id, 3, 'edit item_id passed through');
+  eq(receivedEdit.when.end_at, '2026-09-30T11:00', 'edit when passed through');
+
+  restore();
+}
+
+// ---------- edit flow read-only shows plain text ----------
+
+{
+  installDom({ ids: [] });
+  window.__CONTEXT__ = { planId: 7, role: 'viewer' };
+  const { initAgent, registerAgentContext } = await loadAgent();
+  initAgent();
+  registerAgentContext({
+    canEdit: false,
+    createItemFromExtraction: () => {},
+    getItemTitle: (id) => id === 3 ? 'Beverly Hotels Elements' : null,
+  });
+
+  const { restore } = installFetch([
+    ['POST /api/plans/7/ai/chat', () => ({
+      reply: 'ok', items: [],
+      edits: [{ item_id: 3, when: { start_at: '2026-09-24T15:00' } }],
+    })],
+  ]);
+  const input = document.querySelector('.ai-agent-input');
+  const sendBtn = document.querySelector('.ai-agent-send');
+  input.value = 'change the date';
+  sendBtn.dispatch('click');
+  await new Promise((r) => setTimeout(r, 0));
+
+  const editBtn = document.querySelector('.ai-suggest-btn');
+  assert(editBtn == null, 'no edit button when read-only');
+  const readonly = document.querySelector('.ai-suggest-readonly');
+  assert(readonly != null, 'read-only edit shown as text');
+  assert(readonly.textContent.includes('Edit Beverly Hotels Elements'), 'read-only edit shows item title');
 
   restore();
 }

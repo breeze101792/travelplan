@@ -152,3 +152,103 @@ def test_archived_plan_blocks_item_create(app, member_client, make_plan, ai_conf
         "item_type": "note", "title": "x", "details": {},
     })
     assert r.status_code == 403
+
+
+# ---------------------------------------------------------------- edit flow
+
+def test_chat_then_edit_item_flow(member_client, ai_config, stub_llm):
+    """User asks to change a date; the agent returns an edit; the user applies
+    it via the normal PATCH endpoint and the change sticks."""
+    pid = _make_plan(member_client)
+
+    # Create a hotel item first.
+    r = member_client.post(f"/api/plans/{pid}/items", json={
+        "item_type": "hotel", "title": "Beverly Hotels Elements",
+        "details": {"when": {"start_at": "2026-09-24T15:00", "end_at": "2026-09-29T11:00"}},
+    })
+    assert r.status_code == 200, r.data
+    item = r.get_json()["item"]
+    item_id = item["id"]
+    assert item["item_date"] == "2026-09-24"
+    assert item["end_date"] == "2026-09-29"
+
+    # Chat: the agent proposes an edit to that item.
+    stub_llm({
+        "reply": "I've moved your checkout to Sep 30.",
+        "items": [],
+        "edits": [{"item_id": item_id,
+                   "when": {"start_at": "2026-09-24T15:00", "end_at": "2026-09-30T11:00"}}],
+    })
+    r = member_client.post(f"/api/plans/{pid}/ai/chat", json={
+        "messages": [{"role": "user", "content": "change the hotel date"}],
+    })
+    assert r.status_code == 200, r.data
+    data = r.get_json()
+    assert len(data["edits"]) == 1
+    edit = data["edits"][0]
+    assert edit["item_id"] == item_id
+    assert edit["when"]["end_at"] == "2026-09-30T11:00"
+
+    # Apply the edit via the normal PATCH endpoint.
+    r = member_client.patch(f"/api/items/{item_id}", json={
+        "details": {"when": edit["when"]},
+    })
+    assert r.status_code == 200, r.data
+    updated = r.get_json()["item"]
+    assert updated["end_date"] == "2026-09-30"
+
+    # The change is persisted.
+    r = member_client.get(f"/api/plans/{pid}/items")
+    items = r.get_json()["items"]
+    assert items[0]["end_date"] == "2026-09-30"
+
+
+# ---------------------------------------------------------------- geocode flow
+
+def test_chat_then_add_item_persists_geocodes(member_client, ai_config, stub_llm):
+    """A suggested item with geocodes is added via the items API and the
+    coordinates are persisted to item_geocodes, so the map page can show it
+    without re-geocoding."""
+    pid = _make_plan(member_client)
+
+    stub_llm({
+        "reply": "Added the hotel.",
+        "items": [
+            {"item_type": "hotel", "title": "Beverly Hotels Elements",
+             "details": {"address": "1 Raffles Place, Singapore"},
+             "geocodes": [{"label": "1 Raffles Place, Singapore",
+                           "lat": 1.2844, "lng": 103.8512}]},
+        ],
+    })
+    r = member_client.post(f"/api/plans/{pid}/ai/chat", json={
+        "messages": [{"role": "user", "content": "add a hotel"}],
+    })
+    assert r.status_code == 200, r.data
+    suggested = r.get_json()["items"][0]
+    assert len(suggested["geocodes"]) == 1
+    assert suggested["geocodes"][0]["lat"] == 1.2844
+
+    # Add the suggested item (with its geocodes) via the items API.
+    r = member_client.post(f"/api/plans/{pid}/items", json={
+        "item_type": suggested["item_type"],
+        "title": suggested["title"],
+        "details": suggested["details"],
+        "geocodes": suggested["geocodes"],
+    })
+    assert r.status_code == 200, r.data
+    created = r.get_json()["item"]
+    assert len(created["geocodes"]) == 1
+    assert created["geocodes"][0]["lat"] == 1.2844
+    assert created["geocodes"][0]["lng"] == 103.8512
+
+    # Persisted in the DB (not just in the response).
+    with member_client.application.app_context():
+        from backend.db import get_db
+        db = get_db()
+        rows = db.execute(
+            "SELECT label, lat, lng FROM item_geocodes WHERE item_id = ?",
+            (created["id"],)).fetchall()
+    assert len(rows) == 1
+    assert rows[0]["label"] == "1 Raffles Place, Singapore"
+    assert rows[0]["lat"] == 1.2844
+    assert rows[0]["lng"] == 103.8512

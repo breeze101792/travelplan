@@ -6,7 +6,7 @@ import { el, clear } from '/static/js/util.js';
 import { openItemEditor, openGeoPopup } from '/static/js/item-editor.js';
 import { expandHotelEvents } from '/static/js/hotel-events.js';
 import { clipboardGet, clipboardSet, serializeItem } from '/static/js/clipboard.js';
-import { createItemFromExtraction } from '/static/js/ai-extract.js';
+import { createItemFromExtraction, editItemFromExtraction } from '/static/js/ai-extract.js';
 import { registerAgentContext } from '/static/js/ai-agent.js';
 
 const DAY_COLORS = [
@@ -726,6 +726,14 @@ export async function initMap(c) {
       ctx, staging, plan, settings, members: [],
       onApplied: () => { refreshFromStaging(); renderEditBarCtl(); },
     }, ext),
+    editItemFromExtraction: (edit) => editItemFromExtraction({
+      ctx, staging, plan, settings, members: [],
+      onApplied: () => { refreshFromStaging(); renderEditBarCtl(); },
+    }, edit),
+    getItemTitle: (itemId) => {
+      const it = staging.viewItems().find(x => String(x.id) === String(itemId));
+      return it ? it.title : null;
+    },
   });
 }
 

@@ -180,6 +180,38 @@ function addSuggestions(items) {
   _messages.scrollTop = _messages.scrollHeight;
 }
 
+function addEdits(edits) {
+  if (!edits || !edits.length) return;
+  const canEdit = !!( _agentContext && _agentContext.canEdit);
+  const row = el('div', { class: 'ai-msg ai-msg-assistant' });
+  row.appendChild(el('div', { class: 'ai-msg-text', text: 'Suggested edits:' }));
+  const list = el('div', { class: 'ai-suggest' });
+  for (const ed of edits) {
+    const title = (_agentContext && _agentContext.getItemTitle)
+      ? (_agentContext.getItemTitle(ed.item_id) || `item #${ed.item_id}`)
+      : `item #${ed.item_id}`;
+    if (!canEdit) {
+      list.appendChild(el('div', { class: 'ai-suggest-readonly', text: `Edit ${title}` }));
+      continue;
+    }
+    const btn = el('button', {
+      class: 'ai-suggest-btn',
+      text: `✎ Edit ${title}`,
+    });
+    btn.addEventListener('click', () => {
+      if (!_agentContext || !_agentContext.editItemFromExtraction) {
+        showToast('Open the board, timeline, or map to edit items.', 'warn');
+        return;
+      }
+      _agentContext.editItemFromExtraction(ed);
+    });
+    list.appendChild(btn);
+  }
+  row.appendChild(list);
+  _messages.appendChild(row);
+  _messages.scrollTop = _messages.scrollHeight;
+}
+
 function setBusy(busy) {
   _sendBtn.disabled = busy;
   _sendBtn.textContent = busy ? '…' : 'Send';
@@ -243,6 +275,7 @@ async function send() {
     }
     addMessage('assistant', data.reply || '');
     addSuggestions(data.items || []);
+    addEdits(data.edits || []);
     _history.push({ role: 'assistant', content: data.reply || '' });
   } catch (e) {
     addMessage('assistant', 'AI request failed: ' + e.message);

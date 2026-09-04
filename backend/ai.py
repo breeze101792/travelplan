@@ -179,26 +179,35 @@ def _call_chat_completions(cfg: dict, messages: list[dict], json_mode: bool = Tr
     headers = {"Content-Type": "application/json"}
     if cfg.get("api_key"):
         headers["Authorization"] = f"Bearer {cfg['api_key']}"
-    req = urllib.request.Request(
-        url,
-        data=json.dumps(payload).encode("utf-8"),
-        headers=headers,
-        method="POST",
-    )
-
     last_err = None
+    working_messages = list(messages)
     for _attempt in range(_MAX_RETRIES):
         try:
+            payload["messages"] = working_messages
+            req = urllib.request.Request(
+                url,
+                data=json.dumps(payload).encode("utf-8"),
+                headers=headers,
+                method="POST",
+            )
             with urllib.request.urlopen(req, timeout=_HTTP_TIMEOUT) as resp:
                 raw_body = resp.read().decode("utf-8", errors="replace")
             body = json.loads(raw_body)
             content = body["choices"][0]["message"]["content"]
             if not content or not str(content).strip():
                 last_err = "AI returned an empty response"
+                working_messages.append({
+                    "role": "user",
+                    "content": "Your previous reply was empty. Respond with a single JSON object only.",
+                })
                 continue
             return _parse_json_content(content)
         except (json.JSONDecodeError, ValueError, KeyError, IndexError, TypeError) as e:
             last_err = f"AI returned a non-JSON response: {e}"
+            working_messages.append({
+                "role": "user",
+                "content": "Your previous reply was not valid JSON. Respond with a single JSON object only, no prose.",
+            })
             continue
     raise ValueError(last_err or "AI request failed")
 
@@ -314,6 +323,14 @@ def _build_extract_prompt(settings: dict, item_type: str | None = None) -> str:
         '  "details": an object of field values for that item type.',
         '  "when": {"start_at": "YYYY-MM-DDTHH:MM", "end_at": "YYYY-MM-DDTHH:MM"} '
         "if a date/time is present (end_at optional).",
+        '  "geocodes": an array of {label, lat, lng} for each location in the '
+        "item (e.g. the hotel address, the transit from/to, the activity venue). "
+        "Use real coordinates you know; if unsure, omit geocodes.",
+        "",
+        "Fill in EVERY field you can infer from the text. Do not leave a field "
+        "blank if the information is present or can be reasonably inferred.",
+        "For transit items, always set the mode (one of: Flight, Train, Bus, "
+        "Ferry, Taxi, Rental car) based on the text.",
         "",
         "Allowed item types and their fields:",
         _item_type_schema(settings),
@@ -343,8 +360,19 @@ def _build_chat_prompt(settings: dict, plan_context: str, can_search: bool = Fal
         '  "reply": a friendly, concise answer to the user.',
         '  "items": an array of suggested itinerary items to add. Each item:',
         '    {"item_type": one of ' + ", ".join(sorted(types.keys())) + ", "
-        '"title": "...", "details": {...}, "when": {"start_at": "...", "end_at": "..."}}',
-        "  Use an empty array [] if no items are suggested.",
+        '"title": "...", "details": {...}, "when": {"start_at": "...", "end_at": "..."}, '
+        '"geocodes": [{label, lat, lng}]}',
+        "  Fill in EVERY field you can infer (e.g. for transit always set the "
+        "mode; for a hotel set the address). Include geocodes (real coordinates) "
+        "for each location when you know them. Use an empty array [] if no items "
+        "are suggested.",
+        '  "edits": an array of changes to existing items. Use this when the user '
+        "asks to change an existing item (e.g. change a date, title, or detail). "
+        "Each edit:",
+        '    {"item_id": <the item id from the plan context>, "title": "...", '
+        '"details": {...}, "when": {"start_at": "...", "end_at": "..."}}',
+        "  Only include the fields the user wants to change. Use an empty array [] "
+        "if no items are edited.",
         "",
         "Allowed item types and their fields:",
         _item_type_schema(settings),
@@ -360,6 +388,33 @@ def _build_chat_prompt(settings: dict, plan_context: str, can_search: bool = Fal
             "provided to you, and you will then answer with a final reply.",
         ]
     return "\n".join(lines)
+
+
+def _normalize_geocodes(raw) -> list[dict]:
+    """Normalize a model-supplied geocodes array into {label, lat, lng} dicts.
+
+    Drops entries without valid numeric lat/lng. Returns an empty list if
+    nothing usable was supplied.
+    """
+    if not isinstance(raw, list):
+        return []
+    out = []
+    for g in raw:
+        if not isinstance(g, dict):
+            continue
+        try:
+            lat = float(g.get("lat"))
+            lng = float(g.get("lng"))
+        except (TypeError, ValueError):
+            continue
+        if not (-90 <= lat <= 90) or not (-180 <= lng <= 180):
+            continue
+        out.append({
+            "label": (g.get("label") or "").strip(),
+            "lat": lat,
+            "lng": lng,
+        })
+    return out
 
 
 def _normalize_item(raw: dict) -> dict:
@@ -388,7 +443,39 @@ def _normalize_item(raw: dict) -> dict:
         "when": when,
         "item_date": item_date,
         "end_date": end_date,
+        "geocodes": _normalize_geocodes(raw.get("geocodes")),
     }
+
+
+def _normalize_edit(raw: dict) -> dict:
+    """Validate and normalize a suggested edit to an existing item.
+
+    Returns ``{item_id, title?, details?, when?}`` with only the fields the
+    model wants to change. Raises ``ValueError`` if ``item_id`` is missing.
+    """
+    item_id = raw.get("item_id")
+    if item_id is None:
+        raise ValueError("AI returned an edit without item_id")
+    out: dict = {"item_id": item_id}
+    if raw.get("title"):
+        out["title"] = str(raw["title"]).strip()
+    details = raw.get("details")
+    if isinstance(details, dict):
+        clean = {}
+        for k, v in details.items():
+            if k == "when":
+                continue
+            if v is not None and str(v).strip() != "":
+                clean[k] = v
+        if clean:
+            out["details"] = clean
+    when = _coerce_when(details.get("when") if isinstance(details, dict) else raw.get("when"))
+    if when:
+        out["when"] = when
+    geocodes = _normalize_geocodes(raw.get("geocodes"))
+    if geocodes:
+        out["geocodes"] = geocodes
+    return out
 
 
 def extract_item(text: str, item_type: str | None = None, settings: dict | None = None) -> dict:
@@ -484,7 +571,15 @@ def chat(plan_context: str, messages: list[dict], image_url: str | None = None,
             items.append(_normalize_item(it))
         except ValueError:
             continue
-    return {"reply": reply, "items": items}
+    edits = []
+    for ed in raw.get("edits") or []:
+        if not isinstance(ed, dict):
+            continue
+        try:
+            edits.append(_normalize_edit(ed))
+        except ValueError:
+            continue
+    return {"reply": reply, "items": items, "edits": edits}
 
 
 def _load_settings() -> dict:

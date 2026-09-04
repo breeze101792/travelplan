@@ -242,6 +242,59 @@ def test_call_handles_error_body_gracefully(ai_config, monkeypatch):
         ai_mod._call_chat_completions(ai_mod.load_ai_config(), [{"role": "user", "content": "hi"}])
 
 
+def test_call_sends_corrective_message_on_retry(ai_config, monkeypatch):
+    """On a non-JSON reply the retry appends a corrective user message so the
+    model is told to emit JSON only (instead of re-sending the same prompt)."""
+    ai_config()
+    seen = {"n": 0, "last_messages": None}
+
+    class _Resp:
+        def __enter__(self): return self
+        def __exit__(self, *a): return False
+        def read(self):
+            return json.dumps({
+                "choices": [{"message": {"content": "Sure, here's the update!"}}]
+            }).encode("utf-8")
+
+    def fake_urlopen(req, timeout):
+        body = json.loads(req.data.decode("utf-8"))
+        seen["n"] += 1
+        seen["last_messages"] = body["messages"]
+        return _Resp()
+
+    monkeypatch.setattr(ai_mod.urllib.request, "urlopen", fake_urlopen)
+    with pytest.raises(ValueError, match="non-JSON"):
+        ai_mod._call_chat_completions(ai_mod.load_ai_config(), [{"role": "user", "content": "hi"}])
+    # The corrective message was appended on the retry.
+    assert seen["n"] == ai_mod._MAX_RETRIES
+    last = seen["last_messages"][-1]
+    assert last["role"] == "user"
+    assert "JSON" in last["content"]
+
+
+def test_call_recovers_prose_then_json(ai_config, monkeypatch):
+    """A prose reply on the first attempt is corrected and the retry returns JSON."""
+    ai_config()
+    responses = [
+        "Sure, I'll update the date for you!",
+        json.dumps({"reply": "done", "items": [], "edits": [{"item_id": 3, "when": {"start_at": "2026-09-27T15:00"}}]}),
+    ]
+    calls = {"n": 0}
+
+    class _Resp:
+        def __enter__(self): return self
+        def __exit__(self, *a): return False
+        def read(self):
+            idx = min(calls["n"], len(responses) - 1)
+            calls["n"] += 1
+            return json.dumps({"choices": [{"message": {"content": responses[idx]}}]}).encode("utf-8")
+
+    monkeypatch.setattr(ai_mod.urllib.request, "urlopen", lambda *a, **k: _Resp())
+    out = ai_mod._call_chat_completions(ai_mod.load_ai_config(), [{"role": "user", "content": "change the date"}])
+    assert out["reply"] == "done"
+    assert out["edits"][0]["item_id"] == 3
+
+
 # ---------------------------------------------------------------- extraction
 
 def test_extract_item_valid(ai_config, stub_llm):
@@ -269,6 +322,49 @@ def test_extract_item_invalid_type(ai_config, stub_llm):
     stub_llm({"item_type": "spaceship", "title": "x", "details": {}})
     with pytest.raises(ValueError):
         ai_mod.extract_item("text", settings=SETTINGS)
+
+
+def test_extract_item_fills_geocodes(ai_config, stub_llm):
+    """The model supplies geocodes; they are normalized into the item."""
+    ai_config()
+    stub_llm({
+        "item_type": "hotel",
+        "title": "Beverly Hotels Elements",
+        "details": {"hotel_name": "Beverly Hotels Elements",
+                    "address": "1 Raffles Place, Singapore"},
+        "geocodes": [{"label": "1 Raffles Place, Singapore", "lat": 1.2844, "lng": 103.8512}],
+    })
+    out = ai_mod.extract_item("hotel text", settings=SETTINGS)
+    assert len(out["geocodes"]) == 1
+    assert out["geocodes"][0]["label"] == "1 Raffles Place, Singapore"
+    assert out["geocodes"][0]["lat"] == 1.2844
+    assert out["geocodes"][0]["lng"] == 103.8512
+
+
+def test_extract_item_geocodes_drops_invalid(ai_config, stub_llm):
+    """Invalid geocodes (missing/non-numeric/out-of-range) are dropped."""
+    ai_config()
+    stub_llm({
+        "item_type": "transit",
+        "title": "Flight",
+        "details": {"mode": "Flight", "from": "Tokyo", "to": "Singapore"},
+        "geocodes": [
+            {"label": "ok", "lat": 35.68, "lng": 139.65},
+            {"label": "no lat", "lng": 103.85},
+            {"label": "bad", "lat": "abc", "lng": 103.85},
+            {"label": "oob", "lat": 200, "lng": 103.85},
+        ],
+    })
+    out = ai_mod.extract_item("flight text", settings=SETTINGS)
+    assert len(out["geocodes"]) == 1
+    assert out["geocodes"][0]["label"] == "ok"
+
+
+def test_extract_item_no_geocodes_returns_empty(ai_config, stub_llm):
+    ai_config()
+    stub_llm({"item_type": "note", "title": "x", "details": {"text": "hi"}})
+    out = ai_mod.extract_item("hi", settings=SETTINGS)
+    assert out["geocodes"] == []
 
 
 def test_extract_item_not_configured(tmp_path, monkeypatch):
@@ -337,6 +433,165 @@ def test_chat_not_configured(tmp_path, monkeypatch):
     monkeypatch.setattr(ai_mod, "CONFIG_PATH", tmp_path / "missing.json")
     with pytest.raises(ai_mod.AIConfigError):
         ai_mod.chat("Title: Trip", [{"role": "user", "content": "x"}], settings=SETTINGS)
+
+
+# ---------------------------------------------------------------- chat edits
+
+def test_chat_change_date(ai_config, stub_llm):
+    """User asks to change a hotel date; the model returns an edit."""
+    ai_config()
+    stub_llm({
+        "reply": "I've moved your hotel checkout to Sep 30.",
+        "items": [],
+        "edits": [
+            {"item_id": 3, "when": {"start_at": "2026-09-24T15:00", "end_at": "2026-09-30T11:00"}},
+        ],
+    })
+    out = ai_mod.chat("Title: Trip", [{"role": "user", "content": "change the hotel date"}],
+                      settings=SETTINGS)
+    assert out["reply"] == "I've moved your hotel checkout to Sep 30."
+    assert out["items"] == []
+    assert len(out["edits"]) == 1
+    ed = out["edits"][0]
+    assert ed["item_id"] == 3
+    assert ed["when"]["start_at"] == "2026-09-24T15:00"
+    assert ed["when"]["end_at"] == "2026-09-30T11:00"
+
+
+def test_chat_change_title(ai_config, stub_llm):
+    ai_config()
+    stub_llm({
+        "reply": "Renamed the hotel.",
+        "items": [],
+        "edits": [{"item_id": 3, "title": "Beverly Hills Hotel"}],
+    })
+    out = ai_mod.chat("Title: Trip", [{"role": "user", "content": "rename the hotel"}],
+                      settings=SETTINGS)
+    assert len(out["edits"]) == 1
+    assert out["edits"][0]["item_id"] == 3
+    assert out["edits"][0]["title"] == "Beverly Hills Hotel"
+    assert "when" not in out["edits"][0]
+
+
+def test_chat_change_details(ai_config, stub_llm):
+    ai_config()
+    stub_llm({
+        "reply": "Updated the room type.",
+        "items": [],
+        "edits": [{"item_id": 5, "details": {"room_type": "Deluxe King"}}],
+    })
+    out = ai_mod.chat("Title: Trip", [{"role": "user", "content": "set room to deluxe king"}],
+                      settings=SETTINGS)
+    assert len(out["edits"]) == 1
+    assert out["edits"][0]["details"]["room_type"] == "Deluxe King"
+
+
+def test_chat_edit_skips_missing_item_id(ai_config, stub_llm):
+    ai_config()
+    stub_llm({
+        "reply": "ok",
+        "items": [],
+        "edits": [
+            {"title": "no id"},
+            {"item_id": 7, "title": "has id"},
+        ],
+    })
+    out = ai_mod.chat("Title: Trip", [{"role": "user", "content": "x"}], settings=SETTINGS)
+    assert len(out["edits"]) == 1
+    assert out["edits"][0]["item_id"] == 7
+
+
+def test_chat_edit_ignores_empty_details(ai_config, stub_llm):
+    ai_config()
+    stub_llm({
+        "reply": "ok",
+        "items": [],
+        "edits": [{"item_id": 2, "details": {"room_type": "", "when": {}}}],
+    })
+    out = ai_mod.chat("Title: Trip", [{"role": "user", "content": "x"}], settings=SETTINGS)
+    assert len(out["edits"]) == 1
+    ed = out["edits"][0]
+    assert "details" not in ed
+    assert "when" not in ed
+
+
+def test_chat_no_edits_by_default(ai_config, stub_llm):
+    ai_config()
+    stub_llm({"reply": "Sure.", "items": [], "edits": []})
+    out = ai_mod.chat("Title: Trip", [{"role": "user", "content": "hi"}], settings=SETTINGS)
+    assert out["edits"] == []
+
+
+def test_chat_edits_absent_returns_empty(ai_config, stub_llm):
+    ai_config()
+    stub_llm({"reply": "Sure.", "items": []})
+    out = ai_mod.chat("Title: Trip", [{"role": "user", "content": "hi"}], settings=SETTINGS)
+    assert out["edits"] == []
+
+
+def test_chat_item_includes_geocodes(ai_config, stub_llm):
+    """A suggested item carries geocodes for its location."""
+    ai_config()
+    stub_llm({
+        "reply": "Added the hotel.",
+        "items": [
+            {"item_type": "hotel", "title": "Beverly Hotels Elements",
+             "details": {"address": "1 Raffles Place, Singapore"},
+             "geocodes": [{"label": "1 Raffles Place, Singapore", "lat": 1.2844, "lng": 103.8512}]},
+        ],
+    })
+    out = ai_mod.chat("Title: Trip", [{"role": "user", "content": "add a hotel"}], settings=SETTINGS)
+    assert len(out["items"]) == 1
+    assert out["items"][0]["geocodes"][0]["lat"] == 1.2844
+
+
+def test_chat_edit_includes_geocodes(ai_config, stub_llm):
+    """An edit can carry geocodes for a changed location."""
+    ai_config()
+    stub_llm({
+        "reply": "Moved the hotel.",
+        "items": [],
+        "edits": [
+            {"item_id": 3, "details": {"address": "2 Marina Blvd, Singapore"},
+             "geocodes": [{"label": "2 Marina Blvd, Singapore", "lat": 1.2834, "lng": 103.8607}]},
+        ],
+    })
+    out = ai_mod.chat("Title: Trip", [{"role": "user", "content": "move the hotel"}], settings=SETTINGS)
+    assert len(out["edits"]) == 1
+    assert out["edits"][0]["geocodes"][0]["lng"] == 103.8607
+
+
+def test_chat_recovers_prose_then_edit(ai_config, monkeypatch):
+    """The exact failure the user hit: the model answers a date-change request
+    in prose (non-JSON) on the first attempt. The corrective retry steers it
+    back to JSON with a valid edits[] entry, and chat() returns the edit."""
+    ai_config()
+    responses = [
+        "Sure, I've updated the date for you!",
+        json.dumps({
+            "reply": "Moved your checkout to Sep 27.",
+            "items": [],
+            "edits": [{"item_id": 3,
+                       "when": {"start_at": "2026-09-27T15:00", "end_at": "2026-09-28T11:00"}}],
+        }),
+    ]
+    calls = {"n": 0}
+
+    class _Resp:
+        def __enter__(self): return self
+        def __exit__(self, *a): return False
+        def read(self):
+            idx = min(calls["n"], len(responses) - 1)
+            calls["n"] += 1
+            return json.dumps({"choices": [{"message": {"content": responses[idx]}}]}).encode("utf-8")
+
+    monkeypatch.setattr(ai_mod.urllib.request, "urlopen", lambda *a, **k: _Resp())
+    out = ai_mod.chat("Title: Trip", [{"role": "user", "content": "change the hotel date"}],
+                      settings=SETTINGS)
+    assert out["reply"] == "Moved your checkout to Sep 27."
+    assert len(out["edits"]) == 1
+    assert out["edits"][0]["item_id"] == 3
+    assert out["edits"][0]["when"]["end_at"] == "2026-09-28T11:00"
 
 
 # ---------------------------------------------------------------- web search

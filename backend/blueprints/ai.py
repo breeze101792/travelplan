@@ -26,7 +26,7 @@ def _plan_context(plan_id: int) -> str:
         return ""
     plan = dict(plan)
     items = get_db().execute(
-        "SELECT item_type, title, item_date, end_date FROM items "
+        "SELECT id, item_type, title, item_date, end_date FROM items "
         "WHERE plan_id = ? ORDER BY item_date, sort_key, id",
         (plan_id,),
     ).fetchall()
@@ -34,11 +34,11 @@ def _plan_context(plan_id: int) -> str:
         f"Title: {plan.get('title')}",
         f"Dates: {plan.get('start_date')} to {plan.get('end_date')}",
         f"Base currency: {plan.get('base_currency')}",
-        "Items:",
+        "Items (id, date, type, title):",
     ]
     for it in items:
         it = dict(it)
-        lines.append(f"- {it['item_date']} {it['item_type']}: {it['title']}")
+        lines.append(f"- id {it['id']}: {it['item_date']} {it['item_type']}: {it['title']}")
     return "\n".join(lines)
 
 
