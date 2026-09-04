@@ -291,7 +291,10 @@ export function initAgent() {
   _root = el('div', { id: 'ai-agent', class: 'ai-agent' });
   const header = el('div', { class: 'ai-agent-header' }, [
     el('span', { class: 'ai-agent-title', text: 'AI Agent' }),
-    el('button', { class: 'ai-agent-toggle', text: '−', title: 'Collapse' }),
+    el('div', { class: 'ai-agent-header-actions' }, [
+      el('button', { class: 'ai-agent-clear', text: '🗑', title: 'Clear chat' }),
+      el('button', { class: 'ai-agent-toggle', text: '−', title: 'Collapse' }),
+    ]),
   ]);
   _messages = el('div', { class: 'ai-agent-messages' });
   _messages.appendChild(el('div', {
@@ -333,6 +336,8 @@ export function initAgent() {
   const toggle = _root.querySelector('.ai-agent-toggle');
   toggle.addEventListener('click', minimize);
 
+  _root.querySelector('.ai-agent-clear').addEventListener('click', clearChat);
+
   makeDraggable(header, _root);
   makeResizable(_root.querySelector('.ai-agent-resize'), _root);
 
@@ -370,6 +375,22 @@ function minimize() {
 function restore() {
   _root.hidden = false;
   if (_icon) _icon.hidden = true;
+}
+
+/* ---------- clear chat ---------- */
+
+function clearChat() {
+  if (!confirm('Clear the AI chat history?')) return;
+  // Remove all message bubbles except the welcome one.
+  for (const node of [..._messages.children]) {
+    node.remove();
+  }
+  _messages.appendChild(el('div', {
+    class: 'ai-msg ai-msg-assistant ai-msg-welcome',
+    text: 'Hi! I can help plan your trip. Paste a ticket or confirmation, ask a question, or attach an image.',
+  }));
+  hideTyping();
+  _history = [];
 }
 
 export function setAgentVisible(view) {

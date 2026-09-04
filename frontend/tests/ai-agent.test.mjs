@@ -206,4 +206,42 @@ async function loadAgent() {
   restore();
 }
 
+// ---------- clear chat ----------
+
+{
+  installDom({ ids: [] });
+  window.__CONTEXT__ = { planId: 7, role: 'owner' };
+  const { initAgent, registerAgentContext } = await loadAgent();
+  initAgent();
+
+  const { restore } = installFetch([
+    ['POST /api/plans/7/ai/chat', () => CHAT_RESULT],
+  ]);
+  registerAgentContext({ canEdit: true, createItemFromExtraction: () => {} });
+
+  const input = document.querySelector('.ai-agent-input');
+  const sendBtn = document.querySelector('.ai-agent-send');
+  input.value = 'hello there';
+  sendBtn.dispatch('click');
+  await new Promise((r) => setTimeout(r, 0));
+
+  const beforeWelcome = document.querySelectorAll('.ai-msg-welcome').length;
+  assert(beforeWelcome === 1, 'one welcome message before clear');
+  assert(document.querySelectorAll('.ai-msg-user').length === 1, 'user message present before clear');
+
+  const originalConfirm = globalThis.confirm;
+  globalThis.confirm = () => true;
+  try {
+    document.querySelector('.ai-agent-clear').dispatch('click');
+  } finally {
+    globalThis.confirm = originalConfirm;
+  }
+  await new Promise((r) => setTimeout(r, 0));
+
+  assert(document.querySelectorAll('.ai-msg-user').length === 0, 'user messages cleared');
+  assert(document.querySelectorAll('.ai-msg-welcome').length === 1, 'welcome message restored after clear');
+
+  restore();
+}
+
 summary('ai-agent');

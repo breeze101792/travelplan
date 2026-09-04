@@ -39,18 +39,26 @@
   color: var(--ink, #1f2430);
 }
 
-.ai-agent-toggle {
+.ai-agent-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.ai-agent-toggle,
+.ai-agent-clear {
   border: none;
   background: transparent;
   color: var(--muted, #6b7280);
-  font-size: 16px;
+  font-size: 15px;
   line-height: 1;
   cursor: pointer;
   padding: 2px 6px;
   border-radius: 6px;
 }
 
-.ai-agent-toggle:hover { background: var(--surface-3, #e2e8f0); }
+.ai-agent-toggle:hover,
+.ai-agent-clear:hover { background: var(--surface-3, #e2e8f0); }
 
 .ai-agent-body {
   display: flex;
