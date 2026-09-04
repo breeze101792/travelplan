@@ -57,4 +57,22 @@ assert(xss.includes('&lt;script&gt;'), 'script tag shown as text');
 const jsLink = renderMarkdown('[x](javascript:alert(1))');
 assert(!jsLink.includes('href="javascript:'), 'javascript: link is not rendered as a link');
 
+// edge cases
+eq(renderMarkdown(''), '', 'empty input');
+eq(renderMarkdown('__bold__'), '<p><strong>bold</strong></p>', 'bold with underscores');
+eq(renderMarkdown('_italic_'), '<p><em>italic</em></p>', 'italic with underscores');
+eq(renderMarkdown('###### tiny'), '<h6>tiny</h6>', 'h6');
+eq(renderMarkdown('#nospace'), '<p>#nospace</p>', 'hash without space is not a heading');
+eq(renderMarkdown('+ a\n+ b'), '<ul><li>a</li><li>b</li></ul>', 'plus list');
+eq(renderMarkdown('* a\n* b'), '<ul><li>a</li><li>b</li></ul>', 'star list');
+eq(renderMarkdown('para one\n\npara two'), '<p>para one</p>\n<p>para two</p>', 'multiple paragraphs');
+eq(
+  renderMarkdown('**bold** and *italic* and `code`'),
+  '<p><strong>bold</strong> and <em>italic</em> and <code>code</code></p>',
+  'mixed inline formatting'
+);
+// code block content is escaped (no HTML execution inside fences)
+const codeBlock = renderMarkdown('```\n<script>alert(1)</script>\n```');
+assert(!codeBlock.includes('<script>'), 'code block content is escaped');
+
 summary('markdown');

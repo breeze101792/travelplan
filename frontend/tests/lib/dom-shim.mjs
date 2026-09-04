@@ -330,5 +330,13 @@ export function installDom({ ids = [], viewport } = {}) {
   });
   globalThis.requestAnimationFrame = (fn) => setTimeout(fn, 0);
   globalThis.cancelAnimationFrame = (id) => clearTimeout(id);
+  // Minimal FileReader shim so image attach/paste can be tested. readAsDataURL
+  // resolves the onload handler with a deterministic data URL.
+  globalThis.FileReader = class {
+    readAsDataURL(file) {
+      this.result = `data:${file.type};base64,${file.name}`;
+      if (this.onload) this.onload({ target: this });
+    }
+  };
   return documentShim;
 }

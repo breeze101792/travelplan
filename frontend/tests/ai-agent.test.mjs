@@ -35,14 +35,26 @@ async function loadAgent() {
   initAgent();
   const root = document.getElementById('ai-agent');
   assert(root != null, 'widget is created on init');
-  assert(root.hidden === false, 'widget visible by default');
+  assert(root.hidden === true, 'window hidden (minimized) by default');
+  const icon = document.getElementById('ai-agent-icon');
+  assert(icon != null, 'icon created on init');
+  assert(icon.hidden === false, 'icon visible by default');
 
+  // On a supported view while minimized: window stays hidden, icon shows.
   setAgentVisible('board');
-  assert(root.hidden === false, 'visible on board');
+  assert(root.hidden === true, 'window hidden on board when minimized');
+  assert(icon.hidden === false, 'icon visible on board when minimized');
+
+  // Unsupported view: both hidden.
   setAgentVisible('expenses');
   assert(root.hidden === true, 'hidden on expenses');
+  assert(icon.hidden === true, 'icon hidden on expenses');
+
+  // Restore, then switch to map: window shows, icon hides.
+  icon.dispatch('click');
   setAgentVisible('map');
-  assert(root.hidden === false, 'visible on map');
+  assert(root.hidden === false, 'visible on map after restore');
+  assert(icon.hidden === true, 'icon hidden on map when window open');
 }
 
 // ---------- minimize / restore ----------
@@ -242,6 +254,75 @@ async function loadAgent() {
   assert(document.querySelectorAll('.ai-msg-welcome').length === 1, 'welcome message restored after clear');
 
   restore();
+}
+
+// ---------- image attach (file picker) ----------
+
+{
+  installDom({ ids: [] });
+  window.__CONTEXT__ = { planId: 7, role: 'owner' };
+  const { initAgent, registerAgentContext } = await loadAgent();
+  initAgent();
+  registerAgentContext({ canEdit: true, createItemFromExtraction: () => {} });
+
+  const { calls, restore } = installFetch([
+    ['POST /api/plans/7/ai/chat', (body) => CHAT_RESULT],
+  ]);
+
+  const fileInput = document.querySelector('input');
+  assert(fileInput != null, 'hidden file input exists');
+
+  // Simulate selecting an image file.
+  const file = { type: 'image/png', name: 'ticket.png' };
+  fileInput.files = [file];
+  fileInput.dispatch('change');
+  await new Promise((r) => setTimeout(r, 0));
+
+  const attachName = document.querySelector('.ai-attach-name');
+  assert(attachName != null, 'attached image name shown');
+  eq(attachName.textContent, 'ticket.png', 'attached image name matches');
+
+  // Send with the image attached.
+  const input = document.querySelector('.ai-agent-input');
+  const sendBtn = document.querySelector('.ai-agent-send');
+  input.value = 'read this ticket';
+  sendBtn.dispatch('click');
+  await new Promise((r) => setTimeout(r, 0));
+
+  const call = calls.find((c) => c.url.endsWith('/ai/chat'));
+  const sent = JSON.parse(call.body);
+  assert(sent.image != null, 'image data URL sent with chat');
+  assert(sent.image.startsWith('data:image/png;base64,'), 'image is a data URL');
+
+  restore();
+}
+
+// ---------- image paste (clipboard) ----------
+
+{
+  installDom({ ids: [] });
+  window.__CONTEXT__ = { planId: 7, role: 'owner' };
+  const { initAgent, registerAgentContext } = await loadAgent();
+  initAgent();
+  registerAgentContext({ canEdit: true, createItemFromExtraction: () => {} });
+
+  const input = document.querySelector('.ai-agent-input');
+  const file = { type: 'image/png', name: 'screenshot.png' };
+  const pasteEvent = {
+    clipboardData: {
+      items: [
+        { type: 'text/plain', getAsFile: () => null },
+        { type: 'image/png', getAsFile: () => file },
+      ],
+    },
+    preventDefault() {},
+  };
+  input.dispatch('paste', pasteEvent);
+  await new Promise((r) => setTimeout(r, 0));
+
+  const attachName = document.querySelector('.ai-attach-name');
+  assert(attachName != null, 'pasted image attached');
+  eq(attachName.textContent, 'screenshot.png', 'pasted image name matches');
 }
 
 summary('ai-agent');
