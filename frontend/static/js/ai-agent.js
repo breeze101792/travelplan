@@ -17,6 +17,15 @@ import { renderMarkdown } from '/static/js/markdown.js';
 const STORAGE_KEY = 'travelplan.ai-agent';
 const VISIBLE_VIEWS = new Set(['board', 'timeline', 'map']);
 
+const ICON_TITLE = 'Open AI Agent';
+const ICON_SVG =
+  '<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">' +
+  '<path class="ai-agent-bubble" ' +
+  'd="M7.5 3h9a5 5 0 0 1 5 5v4a5 5 0 0 1-5 5H6.5l-4 3.5V8a5 5 0 0 1 5-5Z"/>' +
+  '<path class="ai-agent-spark" ' +
+  'd="M12 5.4q1 3.6 4.6 4.6q-3.6 1-4.6 4.6q-1-3.6-4.6-4.6q3.6-1 4.6-4.6Z"/>' +
+  '</svg>';
+
 let _root = null;
 let _body = null;
 let _messages = null;
@@ -28,6 +37,7 @@ let _pendingImage = null;   // { dataUrl, name }
 let _agentContext = null;   // { createItemFromExtraction } from the active view
 let _history = [];          // [{role, content}] sent to the backend
 let _icon = null;           // small floating icon shown when minimized
+let _minimized = true;      // start minimized (icon shown, window hidden)
 
 /* ---------- context bridge ---------- */
 
@@ -322,6 +332,10 @@ export function initAgent() {
   _root.appendChild(el('div', { class: 'ai-agent-resize', title: 'Resize' }));
   document.body.appendChild(_root);
 
+  // Start minimized: hide the window, show the icon.
+  _root.hidden = true;
+  minimize();
+
   _sendBtn.addEventListener('click', send);
   _input.addEventListener('keydown', (e) => {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -358,13 +372,15 @@ export function initAgent() {
 /* ---------- minimize / restore ---------- */
 
 function minimize() {
+  _minimized = true;
   _root.hidden = true;
   if (!_icon) {
     _icon = el('button', {
       id: 'ai-agent-icon',
       class: 'ai-agent-icon',
-      title: 'Open AI Agent',
-      text: '🤖',
+      title: ICON_TITLE,
+      'aria-label': ICON_TITLE,
+      html: ICON_SVG,
     });
     _icon.addEventListener('click', restore);
     document.body.appendChild(_icon);
@@ -373,6 +389,7 @@ function minimize() {
 }
 
 function restore() {
+  _minimized = false;
   _root.hidden = false;
   if (_icon) _icon.hidden = true;
 }
@@ -396,8 +413,15 @@ function clearChat() {
 export function setAgentVisible(view) {
   if (!_root) return;
   const visible = VISIBLE_VIEWS.has(view);
-  _root.hidden = !visible;
-  if (_icon) _icon.hidden = !visible;
+  if (!visible) {
+    // Not a supported view: hide both the window and the icon.
+    _root.hidden = true;
+    if (_icon) _icon.hidden = true;
+    return;
+  }
+  // Supported view: show the window if open, otherwise the minimized icon.
+  _root.hidden = _minimized;
+  if (_icon) _icon.hidden = !_minimized;
 }
 
 /* Test hook: drop the cached widget so a fresh page can re-init. */
@@ -413,4 +437,5 @@ export function resetAgent() {
   _agentContext = null;
   _history = [];
   _icon = null;
+  _minimized = true;
 }
