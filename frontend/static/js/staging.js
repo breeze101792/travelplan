@@ -818,6 +818,15 @@ export class Staging {
         try {
           const result = await op.execute(api, { items: this.viewItems(), plan: this.viewPlan(), baseItems: this.base.items, basePlan: this.base.plan });
           this._lastResults[i] = result || null;
+          // Keep the base in sync so the next op for the same item sees
+          // the fresh updated_at (avoids a version-conflict 409 when
+          // multiple ops target the same item, e.g. two hotel-event drags
+          // before a single Save).
+          if (result && result.updatedItem) {
+            const ui = result.updatedItem;
+            const idx = this.base.items.findIndex(x => String(x.id) === String(ui.id));
+            if (idx >= 0) this.base.items[idx] = Object.assign({}, this.base.items[idx], ui);
+          }
         } catch (e) {
           this.failedOpIndex = i;
           this.failedError = (e && e.message) || String(e);
