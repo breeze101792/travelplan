@@ -55,12 +55,19 @@ module is stdlib-only so both the Flask app and the MCP server can import it.
 
 ## In-app floating AI chat window
 
-On the plan pages (board / timeline / map) a draggable, collapsible **AI
-Agent** chat window floats in the corner. Send text and optionally attach an
-image; the plan's AI assistant replies conversationally and may suggest
-itinerary items. Each suggestion is offered as an **Add** button that opens
-the item editor pre-filled for review — Apply stages the change through the
-normal pending bar, so nothing reaches the server until you click Save.
+On the plan pages (board / timeline / map) a draggable, resizable **AI Agent**
+chat window floats in the corner. It starts **minimized** to a small icon
+(bottom-right); click the icon to open it, the **−** button to minimize it
+again, and the **🗑** button to clear the conversation. Send text and
+optionally attach an image (via the **📎** button or by pasting a screenshot);
+the plan's AI assistant replies conversationally (rendered as markdown) and
+may suggest itinerary items. Each suggestion is offered as an **Add** button
+that opens the item editor pre-filled for review — Apply stages the change
+through the normal pending bar, so nothing reaches the server until you click
+Save.
+
+The window and its minimized icon are shown only on board / timeline / map;
+navigating to any other page hides both.
 
 - **Endpoints** (`backend/blueprints/ai.py`):
   - `POST /api/plans/<id>/ai/chat` — conversational turn. Body `{messages:
@@ -142,8 +149,12 @@ fields, and inserts the item.
   reply/items, missing messages, not-configured, viewer allowed).
 - `tests/backend/test_mcp.py` — all seven tools against a temp data dir
   (create/update round-trip, validation errors, missing rows).
-- `frontend/tests/ai-agent.test.mjs` — the chat widget (init, visibility per
-  view, chat submit flow, suggestion add, no-context guard).
+- `frontend/tests/ai-agent.test.mjs` — the chat widget (init + default-minimized,
+  per-view visibility, minimize/restore, resize, typing indicator, chat submit
+  flow, image attach + paste, suggestion add, read-only gating, clear chat,
+  no-context guard).
+- `frontend/tests/markdown.test.mjs` — the markdown renderer (headings, bold/
+  italic, code, lists, links, paragraphs, XSS safety, edge cases).
 
 Run with `./tests/run-tests.sh --backend` (or the two files directly via
 pytest) and `bash frontend/tests/run.sh`.
