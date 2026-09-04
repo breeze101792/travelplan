@@ -116,7 +116,7 @@ def test_members_remove_member(admin_desktop, server):
 def test_settings_page_renders(admin_desktop, server):
     p = admin_desktop
     p.goto(server["base_url"] + "/auth/settings")
-    assert "Your account" in p.locator(".card-title").first.text_content()
+    assert "Display name" in p.locator(".card-title").first.text_content()
     # The display-name input is pre-filled with the current name.
     assert p.locator("#display_name").input_value() == "Admin"
 

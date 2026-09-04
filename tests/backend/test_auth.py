@@ -145,7 +145,7 @@ class TestSettings:
         login("alice")
         r = client.get("/auth/settings")
         assert r.status_code == 200
-        assert b"Your account" in r.data
+        assert b"Display name" in r.data
         # Member management UI is on the members page, not here.
         assert b"Create member" not in r.data
 
@@ -361,6 +361,7 @@ class TestAISettings:
             "base_url": "https://api.example.com/v1",
             "api_key": "sk-test",
             "model": "test-model",
+            "searxng_url": "http://localhost:8888",
         }, follow_redirects=False)
         assert r.status_code == 302
         assert "info=" in r.headers["Location"]
@@ -369,6 +370,7 @@ class TestAISettings:
         assert cfg["base_url"] == "https://api.example.com/v1"
         assert cfg["api_key"] == "sk-test"
         assert cfg["model"] == "test-model"
+        assert cfg["searxng_url"] == "http://localhost:8888"
         # load_ai_config now succeeds.
         assert ai_mod.load_ai_config()["model"] == "test-model"
 
@@ -381,3 +383,37 @@ class TestAISettings:
         assert r.status_code == 200
         assert b"base_url and model are required" in r.data
         assert not cfg_path.exists()
+
+    def test_ai_test_admin_only(self, client, login):
+        login("alice")
+        assert client.post("/api/ai/test", json={}).status_code == 403
+
+    def test_ai_test_returns_connection_status(self, client, login, monkeypatch):
+        from backend import ai as ai_mod
+        monkeypatch.setattr(ai_mod, "test_connections",
+                            lambda cfg: {"ai": {"ok": True, "detail": "ok"},
+                                         "searxng": {"ok": False, "detail": "nope"}})
+        login("admin")
+        r = client.post("/api/ai/test", json={
+            "base_url": "https://api.example.com/v1",
+            "model": "test-model",
+            "searxng_url": "http://localhost:8888",
+        })
+        assert r.status_code == 200
+        data = r.get_json()
+        assert data["ai"]["ok"] is True
+        assert data["searxng"]["ok"] is False
+
+    def test_ai_test_service_filter(self, client, login, monkeypatch):
+        from backend import ai as ai_mod
+        monkeypatch.setattr(ai_mod, "test_connections",
+                            lambda cfg: {"ai": {"ok": True, "detail": "ok"},
+                                         "searxng": {"ok": False, "detail": "nope"}})
+        login("admin")
+        r = client.post("/api/ai/test", json={"service": "ai"})
+        assert r.status_code == 200
+        data = r.get_json()
+        assert "ai" in data and "searxng" not in data
+        r2 = client.post("/api/ai/test", json={"service": "searxng"})
+        data2 = r2.get_json()
+        assert "searxng" in data2 and "ai" not in data2

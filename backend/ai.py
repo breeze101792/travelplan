@@ -10,16 +10,20 @@ Config file ``data/config/ai.json`` (gitignored, mirrors ``secret_key``):
     {
       "base_url": "https://api.openai.com/v1",
       "api_key": "sk-...",
-      "model": "gpt-4o-mini"
+      "model": "gpt-4o-mini",
+      "searxng_url": "http://localhost:8888"
     }
 
-If the file is missing or empty, :func:`extract_item` / :func:`chat` raise
-:class:`AIConfigError` so callers can report "AI not configured".
+``searxng_url`` is optional: when set, the chat agent can search the web via
+a SearXNG instance (``/search?q=...&format=json``). If the file is missing or
+empty, :func:`extract_item` / :func:`chat` raise :class:`AIConfigError` so
+callers can report "AI not configured".
 """
 from __future__ import annotations
 
 import json
 import re
+import urllib.parse
 import urllib.request
 from pathlib import Path
 
@@ -34,6 +38,11 @@ _HTTP_TIMEOUT = 60
 # Retries when the model returns an empty / non-JSON reply (intermittent with
 # image input). Each attempt is a fresh HTTP request.
 _MAX_RETRIES = 3
+
+# Max web-search rounds in a single chat turn (each round is one LLM call plus
+# one SearXNG query). Bounded so a model that keeps asking to search cannot
+# loop forever.
+_MAX_SEARCH_ROUNDS = 3
 
 
 class AIConfigError(Exception):
@@ -59,7 +68,9 @@ def load_ai_config() -> dict:
     model = (cfg.get("model") or "").strip()
     if not base_url or not model:
         raise AIConfigError("AI config must set base_url and model")
-    return {"base_url": base_url, "api_key": api_key, "model": model}
+    searxng_url = (cfg.get("searxng_url") or "").strip().rstrip("/")
+    return {"base_url": base_url, "api_key": api_key, "model": model,
+            "searxng_url": searxng_url or None}
 
 
 def read_ai_config() -> dict:
@@ -192,6 +203,93 @@ def _call_chat_completions(cfg: dict, messages: list[dict], json_mode: bool = Tr
     raise ValueError(last_err or "AI request failed")
 
 
+def web_search(query: str, searxng_url: str | None = None, max_results: int = 5) -> list[dict]:
+    """Search the web via a SearXNG instance and return the top hits.
+
+    ``searxng_url`` is the base URL of a SearXNG instance (e.g.
+    ``http://localhost:8888``). If omitted it is read from the AI config.
+    Returns a list of ``{title, url, content}`` dicts (content is the snippet).
+    Raises :class:`AIConfigError` if no SearXNG URL is configured, and
+    ``ValueError`` on a transport/parse error.
+    """
+    if not searxng_url:
+        searxng_url = load_ai_config().get("searxng_url")
+    if not searxng_url:
+        raise AIConfigError("web search is not configured: set searxng_url in data/config/ai.json")
+    url = f"{searxng_url}/search?q={urllib.parse.quote(query)}&format=json"
+    req = urllib.request.Request(url, headers={"Accept": "application/json"})
+    try:
+        with urllib.request.urlopen(req, timeout=_HTTP_TIMEOUT) as resp:
+            body = json.loads(resp.read().decode("utf-8", errors="replace"))
+    except (OSError, ValueError) as e:
+        raise ValueError(f"web search failed: {e}")
+    results = body.get("results") or []
+    out = []
+    for r in results[:max_results]:
+        title = (r.get("title") or "").strip()
+        link = (r.get("url") or "").strip()
+        content = (r.get("content") or "").strip()
+        if title or link:
+            out.append({"title": title, "url": link, "content": content})
+    return out
+
+
+def test_connections(cfg: dict | None = None) -> dict:
+    """Verify the AI provider and SearXNG endpoints are reachable.
+
+    ``cfg`` is an optional config dict (as returned by :func:`load_ai_config`).
+    If omitted it is loaded from disk. Returns a dict with one entry per
+    service: ``{"ai": {"ok": bool, "detail": str}, "searxng": {...}}``. Never
+    raises; each service reports its own status.
+    """
+    if cfg is None:
+        try:
+            cfg = load_ai_config()
+        except AIConfigError as e:
+            cfg = {"error": str(e)}
+    result: dict = {}
+
+    # ---- AI provider: hit the OpenAI-compatible /models endpoint ----
+    base_url = (cfg.get("base_url") or "").strip().rstrip("/")
+    model = (cfg.get("model") or "").strip()
+    if not base_url or not model:
+        result["ai"] = {"ok": False, "detail": "base_url and model are required"}
+    else:
+        url = f"{base_url}/models"
+        headers = {}
+        if cfg.get("api_key"):
+            headers["Authorization"] = f"Bearer {cfg['api_key']}"
+        req = urllib.request.Request(url, headers=headers, method="GET")
+        try:
+            with urllib.request.urlopen(req, timeout=_HTTP_TIMEOUT) as resp:
+                body = json.loads(resp.read().decode("utf-8", errors="replace"))
+            models = [m.get("id") for m in (body.get("data") or []) if isinstance(m, dict)]
+            if model in models:
+                result["ai"] = {"ok": True, "detail": f"model '{model}' available"}
+            elif models:
+                avail = ", ".join(str(m) for m in models[:5])
+                result["ai"] = {"ok": False,
+                                "detail": f"model '{model}' not found (available: {avail})"}
+            else:
+                result["ai"] = {"ok": True, "detail": "endpoint reachable (no model list returned)"}
+        except (OSError, ValueError) as e:
+            result["ai"] = {"ok": False, "detail": f"connection failed: {e}"}
+
+    # ---- SearXNG: run a trivial search ----
+    searxng_url = (cfg.get("searxng_url") or "").strip().rstrip("/")
+    if not searxng_url:
+        result["searxng"] = {"ok": False, "detail": "searxng_url not configured"}
+    else:
+        try:
+            hits = web_search("test", searxng_url=searxng_url, max_results=1)
+            result["searxng"] = {"ok": True,
+                                 "detail": f"reachable ({len(hits)} result(s) for 'test')"}
+        except (AIConfigError, ValueError) as e:
+            result["searxng"] = {"ok": False, "detail": str(e)}
+
+    return result
+
+
 def _item_type_schema(settings: dict) -> str:
     """Render the item-type field schema as a prompt fragment."""
     types = settings.get("item_types") or {}
@@ -228,7 +326,7 @@ def _build_extract_prompt(settings: dict, item_type: str | None = None) -> str:
     return "\n".join(lines)
 
 
-def _build_chat_prompt(settings: dict, plan_context: str) -> str:
+def _build_chat_prompt(settings: dict, plan_context: str, can_search: bool = False) -> str:
     """System prompt for the conversational chat flow."""
     types = settings.get("item_types") or {}
     lines = [
@@ -251,6 +349,16 @@ def _build_chat_prompt(settings: dict, plan_context: str) -> str:
         "Allowed item types and their fields:",
         _item_type_schema(settings),
     ]
+    if can_search:
+        lines += [
+            "",
+            "You can search the web for up-to-date information. When the user asks "
+            "about something that may have changed recently (weather, opening hours, "
+            "prices, events, transport status, etc.), or when you are unsure, set:",
+            '  "search": "a concise search query"',
+            "  and leave \"reply\" and \"items\" empty. The search results will be "
+            "provided to you, and you will then answer with a final reply.",
+        ]
     return "\n".join(lines)
 
 
@@ -330,7 +438,8 @@ def chat(plan_context: str, messages: list[dict], image_url: str | None = None,
     if settings is None:
         settings = _load_settings()
     cfg = load_ai_config()
-    system = _build_chat_prompt(settings, plan_context)
+    can_search = bool(cfg.get("searxng_url"))
+    system = _build_chat_prompt(settings, plan_context, can_search=can_search)
     llm_messages: list[dict] = [{"role": "system", "content": system}]
     last_idx = len(messages) - 1
     for i, m in enumerate(messages):
@@ -343,9 +452,29 @@ def chat(plan_context: str, messages: list[dict], image_url: str | None = None,
             llm_messages.append({"role": "user", "content": parts})
         else:
             llm_messages.append({"role": "assistant", "content": content})
-    raw = _call_chat_completions(cfg, llm_messages)
-    if not isinstance(raw, dict):
-        raise ValueError("AI returned a non-object response")
+
+    # Tool-calling loop: the model may request a web search; we run it and
+    # feed the results back, then let the model produce the final answer.
+    raw: dict = {}
+    for _ in range(_MAX_SEARCH_ROUNDS):
+        raw = _call_chat_completions(cfg, llm_messages)
+        if not isinstance(raw, dict):
+            raise ValueError("AI returned a non-object response")
+        query = raw.get("search")
+        if not query or not can_search:
+            break
+        results = web_search(str(query), searxng_url=cfg.get("searxng_url"))
+        if not results:
+            llm_messages.append({
+                "role": "system",
+                "content": "Web search returned no results. Answer from your own knowledge.",
+            })
+        else:
+            lines = ["Web search results for the query above:"]
+            for i, r in enumerate(results, 1):
+                lines.append(f"{i}. {r['title']} — {r['url']}\n   {r['content']}")
+            llm_messages.append({"role": "system", "content": "\n".join(lines)})
+
     reply = raw.get("reply") or ""
     items = []
     for it in raw.get("items") or []:

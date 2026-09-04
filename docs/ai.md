@@ -14,22 +14,33 @@ an API key). It is read on every call, so edits take effect without a restart.
 {
   "base_url": "https://api.openai.com/v1",
   "api_key": "sk-...",
-  "model": "gpt-4o-mini"
+  "model": "gpt-4o-mini",
+  "searxng_url": "http://localhost:8888"
 }
 ```
 
 `base_url` is any OpenAI-compatible `/chat/completions` endpoint — OpenAI, a
 local Ollama (`http://localhost:11434/v1`), a gateway, etc. `api_key` is
-optional (omit for local models that need no auth). If the file is missing or
-incomplete, extraction raises `AIConfigError` and the caller reports "AI is
-not configured".
+optional (omit for local models that need no auth). `searxng_url` is optional:
+when set, the in-app chat agent can search the web through that SearXNG
+instance (see **Web search** below). If the file is missing or incomplete,
+extraction raises `AIConfigError` and the caller reports "AI is not
+configured".
 
 ### Admin UI
 
 Admins can edit the provider from the **AI Agent** page (`/auth/ai`, linked in
-the topbar dropdown). It saves `base_url`, `api_key`, and `model` to
-`data/config/ai.json`. The API key is shown as a password field and never
-exposed to non-admins.
+the topbar dropdown). It saves `base_url`, `api_key`, `model`, and
+`searxng_url` to `data/config/ai.json`. The API key is shown as a password
+field and never exposed to non-admins.
+
+A **Test AI provider** button and a **Test SearXNG** button verify each
+endpoint against the values currently in the form (not yet saved). The AI test
+hits the provider's `/models` endpoint to confirm the model is available; the
+SearXNG test runs a trivial search. Results are shown inline next to each
+button. The underlying check is `test_connections(cfg)` in `backend/ai.py`,
+exposed as `POST /api/ai/test` (admin-only) with a `service` field
+(`"ai"` or `"searxng"`).
 
 ## Extraction core — `backend/ai.py`
 
@@ -91,6 +102,29 @@ plan is not archived:
 - **MCP server** — `create_item` / `update_item` raise `ValueError("plan is
   archived and read-only")` on archived plans; read tools still work.
 
+## Web search
+
+When `searxng_url` is set in `ai.json`, the in-app chat agent can search the
+web for up-to-date information (weather, opening hours, prices, events,
+transport status, etc.). The chat runs a small **tool-calling loop**:
+
+1. The model is told it may request a search and returns `{"search": "query"}`.
+2. The backend calls `web_search(query)` against the SearXNG JSON endpoint
+   (`/search?q=...&format=json`), which returns the top hits
+   (`{title, url, content}`).
+3. The results are appended to the conversation and the model produces the
+   final `{reply, items}`.
+
+The loop is bounded (`_MAX_SEARCH_ROUNDS = 3`) so a model that keeps asking to
+search cannot loop forever. If no `searxng_url` is configured, the model is not
+told it can search and any stray `search` key in its reply is ignored.
+
+- **Core:** `web_search(query, searxng_url=None, max_results=5)` in
+  `backend/ai.py` — stdlib-only, raises `AIConfigError` if no SearXNG URL is
+  configured and `ValueError` on a transport/parse error.
+- **Config:** `searxng_url` in `data/config/ai.json`, editable on the admin
+  **AI Agent** page.
+
 ## MCP server — `backend/mcp_server.py`
 
 Runs over stdio and reads/writes the SQLite DB directly (no Flask request
@@ -140,10 +174,14 @@ fields, and inserts the item.
 ## Testing
 
 - `tests/backend/test_auth.py` — the admin AI settings page (admin-only 403,
-  save persists config, missing fields rejected).
+  save persists config, missing fields rejected; the `/api/ai/test` endpoint:
+  admin-only 403, returns connection status, `service` filter).
 - `tests/backend/test_ai.py` — extraction core + chat with a stubbed `urlopen`
   (valid, invalid type, config-missing, type constraint, title default, chat
-  reply/items, invalid-item skipping).
+  reply/items, invalid-item skipping; web search hits/encoding/not-configured/
+  transport-error; chat search loop with results and with no results;
+  `test_connections` all-ok / model-missing / unreachable / missing-fields /
+  searxng-unreachable).
 - `tests/backend/test_ai_endpoint.py` — the web endpoints (extract happy path,
   missing text, not-configured, invalid type, login 401, viewer 403; chat
   reply/items, missing messages, not-configured, viewer allowed).

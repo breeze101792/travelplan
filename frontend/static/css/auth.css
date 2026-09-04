@@ -1,8 +1,7 @@
-/* auth.css — centered narrow card forms for login/setup/members pages. */
+/* auth.css — centered narrow card forms for login/setup pages. */
 
 body[data-page="login"],
-body[data-page="setup"],
-body[data-page="members"] {
+body[data-page="setup"] {
   min-height: 100vh;
   background: var(--bg);
 }
@@ -37,34 +36,6 @@ body[data-page="members"] {
 }
 .auth-card .form-actions { margin-top: 18px; }
 .auth-card .form-actions .btn { width: 100%; padding: 11px 14px; }
-
-/* Members page uses a wider layout than the pure auth pages. */
-body[data-page="members"] #view {
-  max-width: 760px;
-}
-body[data-page="members"] #view .auth-view {
-  max-width: 760px;
-  justify-content: flex-start;
-  padding-top: 32px;
-}
-.members-section { margin-top: 24px; }
-.members-section h2 {
-  font-size: 16px;
-  margin-bottom: 12px;
-}
-
-/* Settings page is wider still (member table) and uses the same card
- * sections as the members page. */
-body[data-page="settings"] #view {
-  max-width: 820px;
-}
-body[data-page="settings"] #view .auth-view {
-  max-width: 820px;
-  justify-content: flex-start;
-  padding-top: 32px;
-}
-body[data-page="settings"] .members-section .field-row { gap: 16px; }
-body[data-page="settings"] .members-section .field { min-width: 0; }
 
 @media (max-width: 640px) {
   .auth-card { padding: 20px; }

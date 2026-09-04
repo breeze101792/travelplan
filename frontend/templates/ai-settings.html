@@ -2,10 +2,10 @@
 {% block title %}AI Agent · TravelPlan{% endblock %}
 {% block page %}ai-settings{% endblock %}
 
-{% block styles %}<link rel="stylesheet" href="/static/css/auth.css?v={{ static_version }}">{% endblock %}
+{% block styles %}<link rel="stylesheet" href="/static/css/settings.css?v={{ static_version }}">{% endblock %}
 
 {% block content %}
-<div class="auth-view">
+<div class="page-shell">
   <div class="page-header">
     <div>
       <h1>AI Agent</h1>
@@ -16,21 +16,21 @@
   {% if error %}<div class="error-msg">{{ error }}</div>{% endif %}
   {% if info %}<div class="notice">{{ info }}</div>{% endif %}
 
-  <section class="card members-section">
+  <section class="card">
     <h2 class="card-title">Provider</h2>
-    <p class="muted" style="margin-bottom: 16px;">
+    <p class="section-desc">
       Any OpenAI-compatible <code>/chat/completions</code> endpoint. The API key is stored in
       <code>data/config/ai.json</code> (gitignored) and is never exposed to the browser.
     </p>
     <form method="post" action="/auth/ai">
       <div class="field-row">
-        <div class="field" style="flex: 2;">
+        <div class="field field--wide">
           <label for="base_url">Base URL</label>
           <input id="base_url" name="base_url" type="text" required
                  placeholder="https://api.openai.com/v1"
                  value="{{ cfg.get('base_url', '') }}">
         </div>
-        <div class="field" style="flex: 1;">
+        <div class="field">
           <label for="model">Model</label>
           <input id="model" name="model" type="text" required
                  placeholder="gpt-4o-mini"
@@ -39,15 +39,91 @@
       </div>
       <div class="field-row">
         <div class="field">
-          <label for="api_key">API key <span class="muted">(optional for local models)</span></label>
+          <label for="api_key">API key <span class="label-hint">(optional for local models)</span></label>
           <input id="api_key" name="api_key" type="password" autocomplete="off"
                  placeholder="sk-…" value="{{ cfg.get('api_key', '') }}">
         </div>
       </div>
+      <div class="test-action">
+        <button class="btn" type="button" id="ai-test-ai">Test AI provider</button>
+        <p class="test-result" id="ai-test-ai-result" role="status" aria-live="polite"></p>
+      </div>
+
+      <hr class="form-divider">
+
+      <div class="field-row">
+        <div class="field">
+          <label for="searxng_url">SearXNG URL <span class="label-hint">(optional — enables web search)</span></label>
+          <input id="searxng_url" name="searxng_url" type="text"
+                 placeholder="http://localhost:8888"
+                 value="{{ cfg.get('searxng_url', '') }}">
+          <p class="field-hint">
+            When set, the AI agent can search the web through this SearXNG instance
+            (e.g. for weather, opening hours, prices, or transport status).
+          </p>
+        </div>
+      </div>
+      <div class="test-action">
+        <button class="btn" type="button" id="ai-test-searxng">Test SearXNG</button>
+        <p class="test-result" id="ai-test-searxng-result" role="status" aria-live="polite"></p>
+      </div>
+
       <div class="form-actions">
         <button class="btn btn-primary" type="submit">Save</button>
       </div>
     </form>
   </section>
 </div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function () {
+  function setResult(el, text, state) {
+    el.className = 'test-result ' + state;
+    el.textContent = text;
+  }
+
+  function test(service, btn, resultEl, label) {
+    btn.disabled = true;
+    btn.setAttribute('aria-busy', 'true');
+    btn.textContent = 'Testing…';
+    setResult(resultEl, 'Testing…', 'is-testing');
+    fetch('/api/ai/test', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        service: service,
+        base_url: document.getElementById('base_url').value,
+        api_key: document.getElementById('api_key').value,
+        model: document.getElementById('model').value,
+        searxng_url: document.getElementById('searxng_url').value,
+      }),
+    })
+      .then((res) => res.json().catch(() => ({})))
+      .then((data) => {
+        const r = data[service] || {};
+        setResult(resultEl, (r.ok ? '✓ ' : '✗ ') + (r.detail || 'no result'),
+                  r.ok ? 'is-ok' : 'is-err');
+      })
+      .catch((e) => setResult(resultEl, '✗ Test failed: ' + e.message, 'is-err'))
+      .finally(() => {
+        btn.disabled = false;
+        btn.removeAttribute('aria-busy');
+        btn.textContent = label;
+      });
+  }
+
+  const aiBtn = document.getElementById('ai-test-ai');
+  const sxBtn = document.getElementById('ai-test-searxng');
+  if (aiBtn) {
+    aiBtn.addEventListener('click', () =>
+      test('ai', aiBtn, document.getElementById('ai-test-ai-result'), 'Test AI provider'));
+  }
+  if (sxBtn) {
+    sxBtn.addEventListener('click', () =>
+      test('searxng', sxBtn, document.getElementById('ai-test-searxng-result'), 'Test SearXNG'));
+  }
+})();
+</script>
 {% endblock %}

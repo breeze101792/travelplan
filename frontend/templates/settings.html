@@ -2,10 +2,10 @@
 {% block title %}Settings · TravelPlan{% endblock %}
 {% block page %}settings{% endblock %}
 
-{% block styles %}<link rel="stylesheet" href="/static/css/auth.css?v={{ static_version }}">{% endblock %}
+{% block styles %}<link rel="stylesheet" href="/static/css/settings.css?v={{ static_version }}">{% endblock %}
 
 {% block content %}
-<div class="auth-view">
+<div class="page-shell">
   <div class="page-header">
     <div>
       <h1>Settings</h1>
@@ -21,15 +21,14 @@
   {% if error %}<div class="error-msg">{{ error }}</div>{% endif %}
   {% if info %}<div class="notice">{{ info }}</div>{% endif %}
 
-  <section class="card members-section">
-    <h2 class="card-title">Your account</h2>
-    <p class="muted" style="margin-bottom: 16px;">
+  <section class="card">
+    <h2 class="card-title">Display name</h2>
+    <p class="section-desc">
       Signed in as <strong>{{ me.username }}</strong>{% if me.role == 'admin' %} (admin){% endif %}.
     </p>
-
-    <form method="post" action="/auth/settings/profile" style="margin-bottom: 24px;">
+    <form method="post" action="/auth/settings/profile">
       <div class="field-row">
-        <div class="field" style="flex: 1;">
+        <div class="field">
           <label for="display_name">Display name</label>
           <input id="display_name" name="display_name" type="text" required value="{{ me.display_name }}">
         </div>
@@ -38,7 +37,11 @@
         <button class="btn btn-primary" type="submit">Save name</button>
       </div>
     </form>
+  </section>
 
+  <section class="card">
+    <h2 class="card-title">Password</h2>
+    <p class="section-desc">Choose a new password of at least 8 characters.</p>
     <form method="post" action="/auth/settings/password">
       <div class="field-row">
         <div class="field">

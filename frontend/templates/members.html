@@ -2,10 +2,10 @@
 {% block title %}Members · TravelPlan{% endblock %}
 {% block page %}members{% endblock %}
 
-{% block styles %}<link rel="stylesheet" href="/static/css/auth.css?v={{ static_version }}">{% endblock %}
+{% block styles %}<link rel="stylesheet" href="/static/css/settings.css?v={{ static_version }}">{% endblock %}
 
 {% block content %}
-<div class="auth-view">
+<div class="page-shell">
   <div class="page-header">
     <div>
       <h1>Members</h1>
@@ -16,8 +16,9 @@
   {% if error %}<div class="error-msg">{{ error }}</div>{% endif %}
   {% if info %}<div class="notice">{{ info }}</div>{% endif %}
 
-  <section class="card members-section">
+  <section class="card">
     <h2 class="card-title">Create member</h2>
+    <p class="section-desc">Add a new account that can be shared into plans.</p>
     <form method="post" action="/auth/members">
       <input type="hidden" name="action" value="create">
       <div class="field-row">
@@ -40,61 +41,69 @@
     </form>
   </section>
 
-  <section class="card members-section">
+  <section class="card card--table">
     <h2 class="card-title">Existing accounts</h2>
-    <table>
-      <thead>
-        <tr>
-          <th>Username</th>
-          <th>Display name</th>
-          <th>Role</th>
-          <th>Created</th>
-          <th></th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for m in members %}
-        <tr>
-          <td>{{ m.username }}</td>
-          <td>{{ m.display_name }}</td>
-          <td><span class="badge">{{ m.role }}</span></td>
-          <td class="muted">{{ m.created_at }}</td>
-          <td style="white-space: nowrap;">
-            <button type="button" class="btn btn-sm" data-action="members-edit" data-user-id="{{ m.id }}">Edit</button>
-            {% if m.role != 'admin' %}
-            <form method="post" action="/auth/members" style="display:inline"
-                  onsubmit="return confirm('Delete member {{ m.username|e }}?');">
-              <input type="hidden" name="action" value="delete">
-              <input type="hidden" name="member_id" value="{{ m.id }}">
-              <button class="btn btn-danger btn-sm" type="submit">Delete</button>
-            </form>
-            {% endif %}
-          </td>
-        </tr>
-        <tr id="members-edit-row-{{ m.id }}" data-members-edit-row="{{ m.id }}" hidden>
-          <td colspan="5" style="background: var(--surface-2, #f1f5f9); padding: 16px;">
-            <form method="post" action="/auth/members/edit" class="edit-member-form">
-              <input type="hidden" name="user_id" value="{{ m.id }}">
-              <div class="field-row">
-                <div class="field" style="flex: 2;">
-                  <label>Display name</label>
-                  <input name="display_name" type="text" value="{{ m.display_name }}">
+    <div class="table-scroll">
+      <table>
+        <thead>
+          <tr>
+            <th scope="col">Username</th>
+            <th scope="col">Display name</th>
+            <th scope="col">Role</th>
+            <th scope="col">Created</th>
+            <th class="cell-actions" scope="col"><span class="visually-hidden">Actions</span></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for m in members %}
+          <tr>
+            <td class="cell-primary">{{ m.username }}</td>
+            <td>{{ m.display_name }}</td>
+            <td><span class="badge{% if m.role == 'admin' %} role-admin{% endif %}">{{ m.role }}</span></td>
+            <td class="muted">{{ m.created_at }}</td>
+            <td class="cell-actions">
+              <button type="button" class="btn btn-sm" data-action="members-edit"
+                      data-user-id="{{ m.id }}" aria-expanded="false">Edit</button>
+              {% if m.role != 'admin' %}
+              <form method="post" action="/auth/members"
+                    onsubmit="return confirm('Delete member {{ m.username|e }}?');">
+                <input type="hidden" name="action" value="delete">
+                <input type="hidden" name="member_id" value="{{ m.id }}">
+                <button class="btn btn-ghost-danger btn-sm" type="submit"
+                        aria-label="Delete member {{ m.username|e }}">Delete</button>
+              </form>
+              {% endif %}
+            </td>
+          </tr>
+          <tr class="edit-row" id="members-edit-row-{{ m.id }}" hidden>
+            <td colspan="5">
+              <form method="post" action="/auth/members/edit" class="edit-member-form">
+                <input type="hidden" name="user_id" value="{{ m.id }}">
+                <div class="field-row">
+                  <div class="field">
+                    <label for="edit-display-name-{{ m.id }}">Display name</label>
+                    <input id="edit-display-name-{{ m.id }}" name="display_name" type="text" value="{{ m.display_name }}">
+                  </div>
+                  <div class="field">
+                    <label for="edit-new-password-{{ m.id }}">New password</label>
+                    <input id="edit-new-password-{{ m.id }}" name="new_password" type="password" minlength="8" autocomplete="new-password">
+                    <p class="field-hint">Leave blank to keep the current password.</p>
+                  </div>
                 </div>
-                <div class="field" style="flex: 2;">
-                  <label>New password (leave blank to keep)</label>
-                  <input name="new_password" type="password" minlength="8" autocomplete="new-password">
+                <div class="form-actions">
+                  <button class="btn btn-primary btn-sm" type="submit">Save</button>
+                  <button type="button" class="btn btn-ghost btn-sm"
+                          data-action="members-edit-cancel" data-user-id="{{ m.id }}">Cancel</button>
                 </div>
-              </div>
-              <div class="form-actions">
-                <button class="btn btn-primary" type="submit">Save</button>
-                <button type="button" class="btn btn-ghost" data-action="members-edit-cancel" data-user-id="{{ m.id }}">Cancel</button>
-              </div>
-            </form>
-          </td>
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table>
+              </form>
+            </td>
+          </tr>
+          {% else %}
+          <tr class="empty-row"><td colspan="5"><p class="empty">No members yet.</p></td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
   </section>
 </div>
 {% endblock %}
@@ -107,6 +116,7 @@
       const row = document.getElementById('members-edit-row-' + id);
       if (row) row.hidden = false;
       btn.disabled = true;
+      btn.setAttribute('aria-expanded', 'true');
       const firstInput = row && row.querySelector('input[name="display_name"]');
       if (firstInput) firstInput.focus();
     });
@@ -118,7 +128,10 @@
       if (row) row.hidden = true;
       const editBtn = document.querySelector(
         '[data-action="members-edit"][data-user-id="' + id + '"]');
-      if (editBtn) editBtn.disabled = false;
+      if (editBtn) {
+        editBtn.disabled = false;
+        editBtn.setAttribute('aria-expanded', 'false');
+      }
     });
   }
 </script>

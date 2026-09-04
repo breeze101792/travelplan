@@ -1,0 +1,102 @@
+/* settings.css — shared layout for the authenticated account/admin pages
+ * (Settings, Members, AI Agent). One 760px shell for all three so they
+ * share the same width, rhythm, and component language. auth.css stays
+ * scoped to the anonymous login/setup pages.
+ */
+
+/* ---- page shell: one width for every page ---- */
+.page-shell {
+  max-width: 760px;
+  margin: 0 auto;
+  padding: 12px 0 48px;   /* #view already adds 20px top */
+}
+.page-shell .card + .card { margin-top: 20px; }
+.page-shell [hidden] { display: none !important; }  /* beats flex/grid parents */
+
+/* ---- section card description ---- */
+.section-desc {
+  margin: -2px 0 18px;      /* .card-title already adds 10px above */
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--muted);
+}
+.section-desc code {
+  font-size: 13px;
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  padding: 1px 5px;
+}
+
+/* ---- form field helpers (replace inline style=) ---- */
+.page-shell .field--wide { flex: 2 1 0; min-width: 220px; }
+.label-hint { font-weight: 400; color: var(--muted); }
+.field-hint {
+  margin: 6px 0 0;
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--muted);
+}
+.form-divider {
+  border: 0;
+  border-top: 1px solid var(--line);
+  margin: 4px 0 20px;
+}
+
+/* ---- test action: button + inline live-region result ---- */
+.test-action {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin: 0 0 20px;
+}
+.page-shell .field:has(+ .test-action) { margin-bottom: 12px; }
+
+.test-result {
+  flex: 1 1 200px;
+  min-height: 35px;          /* matches .btn height, keeps the row even */
+  display: inline-flex;
+  align-items: center;
+  padding: 8px 12px;
+  border-radius: var(--radius-sm);
+  font-size: 14px;
+  line-height: 1.4;
+  word-break: break-word;
+}
+.test-result:empty { display: none; }  /* no message, no box, no shift */
+.test-result.is-testing { background: var(--surface-2); color: var(--muted); }
+.test-result.is-ok     { background: var(--ok-weak);     color: var(--ok-strong); }
+.test-result.is-err    { background: var(--danger-weak); color: var(--danger-strong); }
+
+/* ---- table card + inline edit row ---- */
+.card--table { padding: 0; }
+.card--table > .card-title { margin: 0; padding: 16px 18px 12px; }
+.card--table .table-scroll { overflow-x: auto; }
+.card--table th { border-top: 1px solid var(--line); padding: 9px 18px; }
+.card--table td { padding: 11px 18px; }
+.card--table tbody tr:not(.edit-row):hover td { background: var(--surface-2); }
+
+.cell-primary { font-weight: 600; }
+.cell-actions {
+  text-align: right;
+  white-space: nowrap;
+  width: 1%;
+}
+.cell-actions .btn { margin-left: 6px; }
+.cell-actions form { display: inline; margin: 0; }
+
+.edit-row > td {
+  background: var(--surface-2);
+  padding: 14px 18px 16px;
+}
+.edit-row .form-actions { margin-bottom: 0; }
+
+.badge.role-admin { background: var(--accent-weak); color: var(--accent-strong); }
+
+/* ---- responsive ---- */
+@media (max-width: 640px) {
+  .page-shell { padding-top: 4px; }
+  .test-result { flex-basis: 100%; }
+  .card--table th, .card--table td { padding-left: 12px; padding-right: 12px; }
+}

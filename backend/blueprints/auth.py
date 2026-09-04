@@ -247,10 +247,38 @@ def ai_settings():
         base_url = (request.form.get("base_url") or "").strip().rstrip("/")
         api_key = (request.form.get("api_key") or "").strip()
         model = (request.form.get("model") or "").strip()
+        searxng_url = (request.form.get("searxng_url") or "").strip().rstrip("/")
         if not base_url or not model:
             return render_template("ai-settings.html", error="base_url and model are required.",
                                    cfg=read_ai_config())
-        write_ai_config({"base_url": base_url, "api_key": api_key, "model": model})
+        write_ai_config({"base_url": base_url, "api_key": api_key, "model": model,
+                         "searxng_url": searxng_url})
         return redirect(url_for("auth.ai_settings", info="AI provider saved."))
     return render_template("ai-settings.html", error=None, info=request.args.get("info"),
                            cfg=read_ai_config())
+
+
+@auth_bp.route("/api/ai/test", methods=["POST"])
+@admin_required
+def ai_test():
+    """Test the AI provider and/or SearXNG connections.
+
+    Body: {service: "ai" | "searxng", base_url?, api_key?, model?,
+    searxng_url?} — the values currently in the form (not yet saved).
+    Returns {ai: {ok, detail}} and/or {searxng: {ok, detail}}. Admin-only.
+    """
+    from ..ai import test_connections
+    data = request.get_json(force=True, silent=True) or {}
+    cfg = {
+        "base_url": (data.get("base_url") or "").strip().rstrip("/"),
+        "api_key": (data.get("api_key") or "").strip(),
+        "model": (data.get("model") or "").strip(),
+        "searxng_url": (data.get("searxng_url") or "").strip().rstrip("/"),
+    }
+    service = data.get("service")
+    result = test_connections(cfg)
+    if service == "ai":
+        return jsonify({"ai": result["ai"]})
+    if service == "searxng":
+        return jsonify({"searxng": result["searxng"]})
+    return jsonify(result)

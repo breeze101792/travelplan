@@ -140,7 +140,7 @@ def test_load_config_ok(ai_config):
 
 def test_call_uses_v1_when_base_url_lacks_it(ai_config, monkeypatch):
     # base_url without /v1 -> the request URL must be <base>/v1/chat/completions
-    ai_config(base_url="http://10.31.1.9:30068")
+    ai_config(base_url="http://llm.example.com")
     seen = {}
     class _Resp:
         def __enter__(self): return self
@@ -152,11 +152,11 @@ def test_call_uses_v1_when_base_url_lacks_it(ai_config, monkeypatch):
         return _Resp()
     monkeypatch.setattr(ai_mod.urllib.request, "urlopen", fake_urlopen)
     ai_mod._call_chat_completions(ai_mod.load_ai_config(), [{"role": "user", "content": "x"}])
-    assert seen["url"] == "http://10.31.1.9:30068/v1/chat/completions"
+    assert seen["url"] == "http://llm.example.com/v1/chat/completions"
 
 
 def test_call_keeps_v1_when_base_url_has_it(ai_config, monkeypatch):
-    ai_config(base_url="http://10.31.1.9:30068/v1")
+    ai_config(base_url="http://llm.example.com/v1")
     seen = {}
     class _Resp:
         def __enter__(self): return self
@@ -168,7 +168,7 @@ def test_call_keeps_v1_when_base_url_has_it(ai_config, monkeypatch):
         return _Resp()
     monkeypatch.setattr(ai_mod.urllib.request, "urlopen", fake_urlopen)
     ai_mod._call_chat_completions(ai_mod.load_ai_config(), [{"role": "user", "content": "x"}])
-    assert seen["url"] == "http://10.31.1.9:30068/v1/chat/completions"
+    assert seen["url"] == "http://llm.example.com/v1/chat/completions"
 
 
 # ---------------------------------------------------------------- retry on empty / non-JSON
@@ -337,3 +337,244 @@ def test_chat_not_configured(tmp_path, monkeypatch):
     monkeypatch.setattr(ai_mod, "CONFIG_PATH", tmp_path / "missing.json")
     with pytest.raises(ai_mod.AIConfigError):
         ai_mod.chat("Title: Trip", [{"role": "user", "content": "x"}], settings=SETTINGS)
+
+
+# ---------------------------------------------------------------- web search
+
+def test_web_search_returns_hits(ai_config, monkeypatch):
+    ai_config(searxng_url="http://localhost:8888")
+    seen = {}
+
+    class _Resp:
+        def __enter__(self): return self
+        def __exit__(self, *a): return False
+        def read(self):
+            return json.dumps({
+                "results": [
+                    {"title": "Kyoto weather", "url": "https://w.example/kyoto",
+                     "content": "Sunny, 24C."},
+                    {"title": "No url", "content": "snippet only"},
+                    {"title": "", "url": "", "content": "empty"},
+                ]
+            }).encode("utf-8")
+
+    def fake_urlopen(req, timeout):
+        seen["url"] = req.full_url
+        return _Resp()
+
+    monkeypatch.setattr(ai_mod.urllib.request, "urlopen", fake_urlopen)
+    out = ai_mod.web_search("kyoto weather")
+    assert seen["url"] == "http://localhost:8888/search?q=kyoto%20weather&format=json"
+    assert len(out) == 2
+    assert out[0]["title"] == "Kyoto weather"
+    assert out[0]["url"] == "https://w.example/kyoto"
+    assert out[1]["title"] == "No url"
+
+
+def test_web_search_encodes_query(ai_config, monkeypatch):
+    ai_config(searxng_url="http://localhost:8888")
+    seen = {}
+
+    class _Resp:
+        def __enter__(self): return self
+        def __exit__(self, *a): return False
+        def read(self):
+            return json.dumps({"results": []}).encode("utf-8")
+
+    def fake_urlopen(req, timeout):
+        seen["url"] = req.full_url
+        return _Resp()
+
+    monkeypatch.setattr(ai_mod.urllib.request, "urlopen", fake_urlopen)
+    ai_mod.web_search("opening hours & prices")
+    assert "opening%20hours%20%26%20prices" in seen["url"]
+
+
+def test_web_search_not_configured(tmp_path, monkeypatch):
+    monkeypatch.setattr(ai_mod, "CONFIG_PATH", tmp_path / "missing.json")
+    with pytest.raises(ai_mod.AIConfigError):
+        ai_mod.web_search("anything")
+
+
+def test_web_search_transport_error(ai_config, monkeypatch):
+    ai_config(searxng_url="http://localhost:8888")
+
+    def fake_urlopen(req, timeout):
+        raise OSError("connection refused")
+
+    monkeypatch.setattr(ai_mod.urllib.request, "urlopen", fake_urlopen)
+    with pytest.raises(ValueError, match="web search failed"):
+        ai_mod.web_search("anything")
+
+
+# ---------------------------------------------------------------- chat search loop
+
+def test_chat_searches_then_answers(ai_config, monkeypatch):
+    """Model requests a search; results are fed back; model answers."""
+    ai_config(searxng_url="http://localhost:8888")
+    llm_responses = [
+        {"search": "kyoto weather"},
+        {"reply": "It's sunny in Kyoto.", "items": []},
+    ]
+    llm_calls = {"n": 0}
+
+    def _envelope(content):
+        return json.dumps({"choices": [{"message": {"content": content}}]}).encode("utf-8")
+
+    class _Resp:
+        def __init__(self, body):
+            self._body = body
+        def __enter__(self): return self
+        def __exit__(self, *a): return False
+        def read(self):
+            return self._body
+
+    def fake_urlopen(req, timeout):
+        if "/search?" in req.full_url:
+            return _Resp(json.dumps({
+                "results": [{"title": "Kyoto weather", "url": "https://w.example",
+                             "content": "Sunny, 24C."}]
+            }).encode("utf-8"))
+        idx = min(llm_calls["n"], len(llm_responses) - 1)
+        llm_calls["n"] += 1
+        return _Resp(_envelope(json.dumps(llm_responses[idx])))
+
+    monkeypatch.setattr(ai_mod.urllib.request, "urlopen", fake_urlopen)
+    out = ai_mod.chat("Title: Trip", [{"role": "user", "content": "what's the weather?"}],
+                      settings=SETTINGS)
+    assert out["reply"] == "It's sunny in Kyoto."
+    assert out["items"] == []
+
+
+def test_chat_no_search_when_not_configured(ai_config, stub_llm):
+    """Without searxng_url the model is not told it can search, and a stray
+    'search' key in its reply is ignored."""
+    ai_config()  # no searxng_url
+    stub_llm({"search": "kyoto weather", "reply": "I don't know.", "items": []})
+    out = ai_mod.chat("Title: Trip", [{"role": "user", "content": "weather?"}], settings=SETTINGS)
+    assert out["reply"] == "I don't know."
+    assert out["items"] == []
+
+
+def test_chat_search_returns_no_results(ai_config, monkeypatch):
+    """Search returns nothing; the model still answers from knowledge."""
+    ai_config(searxng_url="http://localhost:8888")
+    llm_responses = [
+        {"search": "obscure thing"},
+        {"reply": "No results, but here's what I know.", "items": []},
+    ]
+    llm_calls = {"n": 0}
+
+    def _envelope(content):
+        return json.dumps({"choices": [{"message": {"content": content}}]}).encode("utf-8")
+
+    class _Resp:
+        def __init__(self, body):
+            self._body = body
+        def __enter__(self): return self
+        def __exit__(self, *a): return False
+        def read(self):
+            return self._body
+
+    def fake_urlopen(req, timeout):
+        if "/search?" in req.full_url:
+            return _Resp(json.dumps({"results": []}).encode("utf-8"))
+        idx = min(llm_calls["n"], len(llm_responses) - 1)
+        llm_calls["n"] += 1
+        return _Resp(_envelope(json.dumps(llm_responses[idx])))
+
+    monkeypatch.setattr(ai_mod.urllib.request, "urlopen", fake_urlopen)
+    out = ai_mod.chat("Title: Trip", [{"role": "user", "content": "x"}], settings=SETTINGS)
+    assert out["reply"] == "No results, but here's what I know."
+
+
+# ---------------------------------------------------------------- test_connections
+
+def test_connections_all_ok(ai_config, monkeypatch):
+    ai_config(searxng_url="http://localhost:8888")
+    seen = {}
+
+    class _Resp:
+        def __init__(self, body):
+            self._body = body
+        def __enter__(self): return self
+        def __exit__(self, *a): return False
+        def read(self):
+            return self._body
+
+    def fake_urlopen(req, timeout):
+        seen["url"] = req.full_url
+        if "/search?" in req.full_url:
+            return _Resp(json.dumps({"results": [{"title": "t", "url": "u", "content": "c"}]}).encode())
+        return _Resp(json.dumps({"data": [{"id": "test-model"}, {"id": "other"}]}).encode())
+
+    monkeypatch.setattr(ai_mod.urllib.request, "urlopen", fake_urlopen)
+    out = ai_mod.test_connections()
+    assert out["ai"]["ok"] is True
+    assert "test-model" in out["ai"]["detail"]
+    assert out["searxng"]["ok"] is True
+    assert "1 result" in out["searxng"]["detail"]
+
+
+def test_connections_ai_model_missing(ai_config, monkeypatch):
+    ai_config(searxng_url="http://localhost:8888")
+
+    class _Resp:
+        def __enter__(self): return self
+        def __exit__(self, *a): return False
+        def read(self):
+            return json.dumps({"data": [{"id": "other-model"}]}).encode()
+
+    monkeypatch.setattr(ai_mod.urllib.request, "urlopen", lambda *a, **k: _Resp())
+    out = ai_mod.test_connections()
+    assert out["ai"]["ok"] is False
+    assert "not found" in out["ai"]["detail"]
+
+
+def test_connections_ai_unreachable(ai_config, monkeypatch):
+    ai_config(searxng_url="http://localhost:8888")
+
+    def fake_urlopen(req, timeout):
+        if "/search?" in req.full_url:
+            class _Resp:
+                def __enter__(self): return self
+                def __exit__(self, *a): return False
+                def read(self):
+                    return json.dumps({"results": []}).encode()
+            return _Resp()
+        raise OSError("connection refused")
+
+    monkeypatch.setattr(ai_mod.urllib.request, "urlopen", fake_urlopen)
+    out = ai_mod.test_connections()
+    assert out["ai"]["ok"] is False
+    assert "connection failed" in out["ai"]["detail"]
+    assert out["searxng"]["ok"] is True
+
+
+def test_connections_missing_fields():
+    out = ai_mod.test_connections({"base_url": "", "model": "", "searxng_url": ""})
+    assert out["ai"]["ok"] is False
+    assert out["searxng"]["ok"] is False
+    assert "required" in out["ai"]["detail"]
+    assert "not configured" in out["searxng"]["detail"]
+
+
+def test_connections_searxng_unreachable(ai_config, monkeypatch):
+    ai_config(searxng_url="http://localhost:8888")
+
+    class _Resp:
+        def __enter__(self): return self
+        def __exit__(self, *a): return False
+        def read(self):
+            return json.dumps({"data": [{"id": "test-model"}]}).encode()
+
+    def fake_urlopen(req, timeout):
+        if "/search?" in req.full_url:
+            raise OSError("connection refused")
+        return _Resp()
+
+    monkeypatch.setattr(ai_mod.urllib.request, "urlopen", fake_urlopen)
+    out = ai_mod.test_connections()
+    assert out["ai"]["ok"] is True
+    assert out["searxng"]["ok"] is False
+    assert "web search failed" in out["searxng"]["detail"]
