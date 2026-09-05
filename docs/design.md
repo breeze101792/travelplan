@@ -243,6 +243,18 @@ buffer.
 The timeline's `renderDay` skips the hour gridlines for buffer days (no
 schedule, just a holding area) and shows the same × close chip.
 
+### Time-grid alignment
+
+The left hour gutter (`.hour-col`) must share the same vertical origin as the
+24-hour grid so gutter labels and item bars line up. The day column has card
+padding, a border, a sticky header, and a gap above the grid, so the grid's
+0:00 line does not start at the column top. Those offsets are described once
+as named CSS tokens in `timeline.css` (`--tl-day-pad-t`, `--tl-day-gap`,
+`--tl-day-border-w`, `--tl-head-h`), and `.hour-col::before` drops the gutter
+labels by `calc(...)` of them. If any of those values (or the header height)
+changes, keep the `::before` spacer in sync — otherwise bars and hour labels
+drift apart.
+
 ## Plan header
 
 The header at the top of all six plan pages (Board / Timeline / Map /

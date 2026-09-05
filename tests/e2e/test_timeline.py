@@ -114,6 +114,34 @@ def test_timeline_desktop_untimed_items_as_chips(desktop, server):
         f"untimed chip shows 'Chip note': {chip_titles}"
 
 
+def test_timeline_desktop_bar_aligned_to_hour_gutter(desktop, server):
+    """An item bar sits on the same hour line as its gutter label.
+
+    Regression: the hour gutter used to start at the very top of the column
+    while the grid (and the bars) started below the day header + card padding,
+    so a 09:00 bar appeared a few hours away from the "09" gutter label. The
+    gutter is now anchored to the grid via named CSS tokens in timeline.css."""
+    p = desktop
+    pid = _create_plan_api(server)
+    _create_item(server, pid, item_type="activity", title="Alpha",
+                 item_date="2026-09-10",
+                 details={"when": {"start_at": "2026-09-10T09:00",
+                                   "end_at": "2026-09-10T11:00"}})
+    p.goto(server["base_url"] + f"/plans/{pid}/timeline")
+    p.wait_for_selector(".tl-item.activity")
+    diff = p.evaluate("""() => {
+        const bar = document.querySelector('.tl-item.activity');
+        const label = [...document.querySelectorAll('.hour-col .hour-label')]
+            .find(l => l.textContent.trim() === '09');
+        if (!bar || !label) return null;
+        // The label is translateY(-6px)-anchored to its gridline; undo that so
+        // we compare the label's layout line to the bar's top edge.
+        return bar.getBoundingClientRect().top - (label.getBoundingClientRect().top + 6);
+    }""")
+    assert diff is not None, "bar and 09:00 gutter label both rendered"
+    assert abs(diff) <= 3, f"bar should sit on the 09:00 gutter line (diff={diff:.1f}px)"
+
+
 # ------------------------------------------------------------------ iPhone
 
 

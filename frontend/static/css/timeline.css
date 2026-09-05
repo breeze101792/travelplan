@@ -13,6 +13,15 @@
   --tl-bar-radius: 4px;
   --tl-hour-color: #94a3b8;
   --tl-half-color: #cbd5e1;
+  /* The day column carries a card-style padding and the header row sits
+   * above the grid (plus the column's own border), so the grid's 0:00 line
+   * does not start at the column top. These named tokens describe that
+   * vertical structure once so the hour gutter can be anchored to the grid
+   * (see .hour-col::before) instead of being measured at runtime. */
+  --tl-day-pad-t: 12px;  /* day column top padding (card style) */
+  --tl-day-gap: 10px;    /* gap between the day header and the grid */
+  --tl-day-border-w: 1px;/* day column border width */
+  --tl-head-h: 37px;     /* day header height (date row) */
 }
 
 /* Outer scroll container: scrolls horizontally if many days don't fit.
@@ -57,6 +66,14 @@
   font-size: 11px;
   color: var(--tl-muted);
 }
+/* Each day column has a sticky header and card padding that push the 24-hour
+ * grid down, so the gridline for 0:00 does not sit at the top of the column.
+ * This spacer drops the gutter labels by the same amount, keeping them
+ * anchored to the grid's 0:00 line (and therefore to the item bars). */
+.timeline .hour-col::before {
+  content: '';
+  flex: 0 0 calc(var(--tl-day-border-w) + var(--tl-day-pad-t) + var(--tl-head-h) + var(--tl-day-gap));
+}
 .timeline .hour-col .hour-label {
   height: var(--tl-h);
   display: flex;
@@ -74,6 +91,8 @@
   width: 300px !important;
   display: flex;
   flex-direction: column;
+  gap: var(--tl-day-gap);
+  padding: var(--tl-day-pad-t);
   border: var(--tl-border);
   border-radius: 10px;
   background: var(--surface, #fff);
@@ -101,6 +120,8 @@
   background: var(--surface, #fff);
   padding: 8px 10px 6px;
   border-bottom: var(--tl-border);
+  min-height: var(--tl-head-h); /* keep the header height fixed so the grid
+    (and the hour gutter anchored to it) stay in sync */
   display: flex; align-items: center; justify-content: space-between; gap: 6px;
 }
 .timeline .day-head .date { font-weight: 600; font-size: .92rem; }
