@@ -21,6 +21,7 @@ import { apiGet } from '/static/js/api.js';
 import { el, clear } from '/static/js/util.js';
 import { openExpenseFormModal } from '/static/js/expense-form.js';
 import { lockBodyScroll, unlockBodyScroll } from '/static/js/page-utils.js';
+import { confirmDiscard } from '/static/js/guard.js';
 import {
   saveItemOp, uploadImageOp, addLinkOp, deleteAttachmentOp, addExpenseOp, updateAttachmentOp, deleteItemOp,
 } from '/static/js/staging.js';
@@ -64,7 +65,7 @@ export function openItemEditor(ctx, { plan, item, settings, members, staging, se
 
   modal.appendChild(el('div', { class: 'modal-header' }, [
     el('h3', { text: ti.label + (readOnly ? ' (read-only)' : '') }),
-    el('button', { class: 'modal-close', text: '×', onclick: onCancel }),
+    el('button', { class: 'modal-close', text: '×', 'aria-label': 'Close', onclick: onRequestClose }),
   ]));
 
   const body = el('div', { class: 'modal-body' });
@@ -559,6 +560,11 @@ export function openItemEditor(ctx, { plan, item, settings, members, staging, se
     renderAttachments();
   });
 
+  // Capture the editor's initial state for dirty-detection. Closing the
+  // window (X / backdrop) compares the live form against this to decide
+  // whether to warn the user about unsaved changes.
+  const initialSnapshotKey = snapshotKey(buildSnapshot());
+
   document.body.appendChild(backdrop);
   // Lock the page scroll while the modal is open. Without this, iOS
   // Safari's elastic overscroll on the modal's body can still scroll
@@ -569,7 +575,7 @@ export function openItemEditor(ctx, { plan, item, settings, members, staging, se
   // touch-driven pull-to-refresh that pulltorefresh.js reads the
   // `has-open-modal` class for.
   lockBodyScroll();
-  backdrop.addEventListener('click', (e) => { if (e.target === backdrop) onCancel(); });
+  backdrop.addEventListener('click', (e) => { if (e.target === backdrop) onRequestClose(); });
 
   /* ----- helpers ----- */
 
@@ -601,6 +607,79 @@ export function openItemEditor(ctx, { plan, item, settings, members, staging, se
 
   /* ----- handlers ----- */
 
+  // Build the full snapshot the form currently represents. Mirrors what
+  // onApply stages, so dirty-detection and the applied change stay in sync.
+  // The unified when object: the server derives item_date / end_date from
+  // these values on save, so the client doesn't need to compute them. A
+  // schedule item always has a duration — if the user leaves the end blank
+  // we default to start + 1h so the when object is complete.
+  function buildSnapshot() {
+    const details = Object.assign({}, item.details || {});
+    for (const [k, inp] of Object.entries(fieldInputs)) {
+      const v = inp.value;
+      if (v !== null && v !== undefined && String(v).trim() !== '') details[k] = v;
+      else delete details[k];
+    }
+    details.is_backup = !!backupInput.checked;
+    if (todos.length) {
+      details.todos = todos;
+    } else {
+      delete details.todos;
+    }
+    const when = {};
+    if (whenStart.value) {
+      when.start_at = whenStart.value;
+      when.end_at = whenEnd.value ? whenEnd.value : defaultEndFor(whenStart.value);
+    }
+    if (Object.keys(when).length) details.when = when;
+    else delete details.when;
+    // Derive item_date / end_date from when so the local view (board /
+    // timeline) re-renders immediately on Apply, without waiting for Save.
+    const derivedItemDate = when.start_at ? String(when.start_at).slice(0, 10) : null;
+    const derivedEndDate = when.end_at ? String(when.end_at).slice(0, 10) : null;
+    return {
+      id: item.id,
+      item_type: item.item_type,
+      title: titleInput.value.trim() || item.title || '(Untitled)',
+      item_date: derivedItemDate || item.item_date || null,
+      end_date: derivedEndDate || item.end_date || null,
+      status: statusSel.value,
+      details,
+      geocodes: selectedGeocodes.slice(),
+      attachments: attachments.slice(),
+    };
+  }
+
+  function snapshotKey(snap) {
+    return JSON.stringify(snap);
+  }
+
+  function snapshotChanged() {
+    if (readOnly) return false;
+    return snapshotKey(buildSnapshot()) !== initialSnapshotKey;
+  }
+
+  // Close via the X button or a backdrop click. If the user has edited the
+  // form but hasn't applied the change, warn before discarding. The Cancel
+  // button is the explicit discard action and stays silent. The busy flag
+  // prevents stacking a second dialog if the user clicks X / backdrop again
+  // while the confirm is showing.
+  let onRequestCloseBusy = false;
+  async function onRequestClose() {
+    if (onRequestCloseBusy) return;
+    if (!snapshotChanged()) {
+      onCancel();
+      return;
+    }
+    onRequestCloseBusy = true;
+    const discard = await confirmDiscard(
+      'You have unsaved changes in this item. Discard them?',
+      { confirmText: 'Discard', cancelText: 'Keep editing' }
+    );
+    onRequestCloseBusy = false;
+    if (discard) onCancel();
+  }
+
   function onCancel() {
     // Discard the entire session: any ops staged during this editor session
     // (including a CREATE_BLANK_ITEM from the global Add button, a
@@ -630,59 +709,10 @@ export function openItemEditor(ctx, { plan, item, settings, members, staging, se
   }
 
   function onApply() {
-    // Build the snapshot from the form.
-    const details = Object.assign({}, item.details || {});
-    for (const [k, inp] of Object.entries(fieldInputs)) {
-      const v = inp.value;
-      if (v !== null && v !== undefined && String(v).trim() !== '') details[k] = v;
-      else delete details[k];
-    }
-    details.is_backup = !!backupInput.checked;
-    if (todos.length) {
-      details.todos = todos;
-    } else {
-      delete details.todos;
-    }
-    // The unified when object. The server derives item_date / end_date
-    // from these values on save, so the client doesn't need to compute
-    // them — but we still pass them as a fallback for types whose day
-    // grouping the user might want to override (the server trusts the
-    // explicit value if present and the when object if not).
-    // Schedule items always have a duration: if the user leaves the
-    // end blank, default to start + 1h so the saved when object is
-    // complete (the server also enforces this; doing it client-side
-    // too means the input shows the real value the user is about to
-    // save). The start must be set — if it's not, omit the whole
-    // when object so the user keeps a shape-less item.
-    const when = {};
-    if (whenStart.value) {
-      when.start_at = whenStart.value;
-      if (whenEnd.value) {
-        when.end_at = whenEnd.value;
-      } else {
-        when.end_at = defaultEndFor(whenStart.value);
-      }
-    }
-    if (Object.keys(when).length) details.when = when;
-    else delete details.when;
-    // Derive item_date / end_date from when so the local view (board /
-    // timeline) re-renders immediately on Apply, without waiting for Save.
-    // The server still treats when as the single source of truth and
-    // ignores these columns when a when object is present, so sending
-    // them is safe and keeps the optimistic view in sync.
-    const derivedItemDate = when.start_at ? String(when.start_at).slice(0, 10) : null;
-    const derivedEndDate = when.end_at ? String(when.end_at).slice(0, 10) : null;
-    const snapshot = {
-      id: item.id,
-      item_type: item.item_type,
-      title: titleInput.value.trim() || item.title || '(Untitled)',
-      item_date: derivedItemDate || item.item_date || null,
-      end_date: derivedEndDate || item.end_date || null,
-      status: statusSel.value,
-      details,
-      geocodes: selectedGeocodes,
-      attachments: attachments.slice(),
-    };
+    // Snapshot the current form. buildSnapshot() mirrors this exact shape,
+    // so the dirty-detection in onRequestClose stays in sync with what gets
+    // staged here.
+    const snapshot = buildSnapshot();
     // For non-new items, also propagate the type (the backend may need it
     // for some fields, but PATCH currently doesn't accept it; safe to omit).
     // Detect edited existing attachments (mutated in-place by openLinkEditModal).

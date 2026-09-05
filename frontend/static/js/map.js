@@ -8,6 +8,7 @@ import { expandHotelEvents } from '/static/js/hotel-events.js';
 import { clipboardGet, clipboardSet, serializeItem } from '/static/js/clipboard.js';
 import { createItemFromExtraction, editItemFromExtraction } from '/static/js/ai-extract.js';
 import { registerAgentContext } from '/static/js/ai-agent.js';
+import { setActiveStaging } from '/static/js/guard.js';
 
 const DAY_COLORS = [
   '#e74c3c', '#3498db', '#2ecc71', '#f39c12',
@@ -656,6 +657,7 @@ export async function initMap(c) {
       renderEditBarCtl();
     },
   });
+  setActiveStaging(staging);
 
   let blockError = null;
   function setBlockError(msg) { blockError = msg || null; renderEditBarCtl(); }
@@ -735,6 +737,19 @@ export async function initMap(c) {
       return it ? it.title : null;
     },
   });
+
+  // ----- beforeunload guard -----
+  // Prompt on tab close / full-page navigation / refresh with unsaved
+  // changes. SPA navigation within the plan shell is guarded separately by
+  // plan-shell.js.
+  function onBeforeUnload(e) {
+    if (staging && staging.hasPending) {
+      e.preventDefault();
+      e.returnValue = '';
+      return '';
+    }
+  }
+  window.addEventListener('beforeunload', onBeforeUnload);
 }
 
 

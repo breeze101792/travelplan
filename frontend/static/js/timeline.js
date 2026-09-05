@@ -33,6 +33,7 @@ import { expandHotelEvents } from '/static/js/hotel-events.js';
 import { enableGrabScroll } from '/static/js/page-utils.js';
 import { createItemFromExtraction, editItemFromExtraction } from '/static/js/ai-extract.js';
 import { registerAgentContext } from '/static/js/ai-agent.js';
+import { setActiveStaging } from '/static/js/guard.js';
 
 let HOUR_PX = 36;     // recalculated by updateScale() to fill viewport
 
@@ -869,6 +870,7 @@ export async function initTimeline(ctx) {
   // (itinerary.js); the timeline needs the same so resize / drag
   // gestures on the timeline actually surface in the pending bar.
   staging.subscribe(() => renderEditBarCtl());
+  setActiveStaging(staging);
 
   // Blocked-action status (e.g. "trim would orphan an item"). Shown in
   // the edit bar's status text.

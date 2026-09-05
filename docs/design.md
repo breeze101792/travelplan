@@ -145,6 +145,39 @@ listener (`window.addEventListener('beforeunload', …)`) calls
 `preventDefault` when `staging.hasPending`, so the browser prompts
 before the user navigates away with unsaved changes.
 
+## Unsaved-changes guard
+
+`static/js/guard.js` is the single source of truth for "unsaved changes"
+prompts. It keeps two pieces of state and one reusable dialog:
+
+- **Active staging registry.** Each editable view (board / timeline /
+  map) registers its `Staging` engine with `setActiveStaging(staging)`
+  after it is created; the plan shell clears it before loading a view
+  that doesn't own one. `hasPendingChanges()` reads `staging.hasPending`
+  from whatever is currently registered.
+- **`confirmDiscard(message, { confirmText, cancelText })`.** A modal
+  that resolves `true` when the user picks the affirmative (destructive)
+  button, `false` on the safe button or a backdrop click. It reuses the
+  `editor-backdrop` / `expense-modal` classes and focuses the safe
+  choice so Enter doesn't accidentally discard.
+
+It guards two paths:
+
+1. **Leaving the page.** `plan-shell.js` checks `hasPendingChanges()`
+   before every SPA navigation (nav-link click and browser back/forward).
+   If there are pending ops, it shows the dialog with "Stay / Leave"; a
+   decline returns the user to the view they were on. On a back/forward
+   decline it restores the URL so the address bar matches the rendered
+   view. This covers the Board / Timeline / Map (editable) views plus the
+   ones without a staging engine. Leaving the plan entirely (e.g. "All
+   plans") is a full page load and falls to the `beforeunload` listener.
+2. **Closing the item editor.** The editor's `×` button and backdrop
+   click route through `onRequestClose()`. It compares the live form
+   (`buildSnapshot()`) against the snapshot captured at open
+   (`snapshotChanged()`); if the user edited anything without applying,
+   the dialog shows "Keep editing / Discard". The Cancel button stays
+   silent — it is already the explicit discard action.
+
 ## Drag and drop
 
 Board. Native HTML5 drag-and-drop wired by `enableDragDrop` in

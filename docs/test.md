@@ -5,15 +5,15 @@ flake, start here.
 
 ## What's covered
 
-724 tests, split across three layers. Every layer catches a different
+1075 tests, split across three layers. Every layer catches a different
 class of bug; you usually want all three to pass before declaring a
 change done.
 
 | Layer | Path | Count | What it catches |
 | --- | --- | --- | --- |
-| Backend | `tests/backend/` | 149 | route handlers, auth, plan/item/expense/upload logic, util, access control. Hits Flask over the test client with a real DB in a temp dir. |
-| Frontend node | `frontend/tests/` | 504 | staging engine ops, itinerary/timeline/navigation/map page boot under a DOM shim, viewport-responsive rendering, touch swipe, `fmtDate` parity with the server. No browser, no npm. |
-| E2E browser | `tests/e2e/` | 71 | what the user actually sees: setup, login, dashboard, board, timeline, map sidebar, navigation day bar + swipe, expenses, members, settings, touch long-press on iPhone. Real Chromium via Playwright. |
+| Backend | `tests/backend/` | 313 | route handlers, auth, plan/item/expense/upload logic, util, access control. Hits Flask over the test client with a real DB in a temp dir. |
+| Frontend node | `frontend/tests/` | 679 | staging engine ops, itinerary/timeline/navigation/map page boot under a DOM shim, viewport-responsive rendering, touch swipe, `fmtDate` parity with the server, the unsaved-changes guard. No browser, no npm. |
+| E2E browser | `tests/e2e/` | 83 | what the user actually sees: setup, login, dashboard, board, timeline, map sidebar, navigation day bar + swipe, expenses, members, settings, touch long-press on iPhone. Real Chromium via Playwright. |
 
 ## Run
 
@@ -85,6 +85,14 @@ module reads a global the shim doesn't implement yet, the symptom is
 called between boots in a test that re-installs fetch with a different
 `/api/settings` response — otherwise the second boot sees the cached
 settings from the first.
+
+`guard.test.mjs` covers the unsaved-changes guard (`static/js/guard.js`):
+the active-staging registry (`hasPendingChanges` after staging an op /
+undo / redo) and the shared `confirmDiscard` dialog (affirmative button,
+cancel button, backdrop dismiss). The item-editor dirty-close prompt is
+exercised in `itinerary.test.mjs` — opening the editor, editing the
+title, then closing via the `×` shows the confirm, and "Keep editing" /
+"Discard" behave correctly.
 
 When adding a test:
 

@@ -1,6 +1,8 @@
 // plan-shell.js — SPA shell for plan sub-pages.
 // Handles client-side routing, view lifecycle, and nav link interception.
 
+import { hasPendingChanges, clearActiveStaging, confirmDiscard } from '/static/js/guard.js';
+
 const VIEWS = {
   overview:   () => import('/static/js/views/overview.js'),
   board:      () => import('/static/js/views/board.js'),
@@ -13,12 +15,29 @@ const VIEWS = {
 
 let _currentView = null;
 let _currentCleanup = null;
+let _navigating = false;
 
 function viewNameFromPath(path) {
   const m = path.match(/^\/plans\/\d+\/(\w+)/);
   if (m && VIEWS[m[1]]) return m[1];
   if (/^\/plans\/\d+$/.test(path)) return 'board';
   return null;
+}
+
+function urlForView(view) {
+  const base = `/plans/${window.__CONTEXT__.planId}`;
+  return view === 'board' ? base : `${base}/${view}`;
+}
+
+/* Prompt before leaving the current view when there are unsaved (pending)
+ * changes. Resolves true when navigation may proceed: either there is nothing
+ * pending, or the user confirmed they want to leave. */
+async function confirmLeave() {
+  if (!hasPendingChanges()) return true;
+  return confirmDiscard(
+    'You have unsaved changes that will be lost if you leave this page. Continue?',
+    { confirmText: 'Leave', cancelText: 'Stay' }
+  );
 }
 
 function updateNav(view) {
@@ -32,38 +51,55 @@ function updateNav(view) {
 
 export async function navigate(view, pushState = true) {
   if (view === _currentView) return;
+  if (_navigating) return;
 
-  const editBar = document.getElementById('edit-bar');
-  if (editBar) editBar.hidden = true;
-
-  if (_currentCleanup) {
-    _currentCleanup();
-    _currentCleanup = null;
-  }
-  _currentView = view;
-
-  const container = document.getElementById('plan-view');
-  if (!container) return;
-
-  container.innerHTML = '';
-  updateNav(view);
-
-  // Show the AI agent only on the board / timeline / map views.
-  const { setAgentVisible } = await import('/static/js/ai-agent.js');
-  setAgentVisible(view);
-
-  if (pushState) {
-    const base = `/plans/${window.__CONTEXT__.planId}`;
-    const url = view === 'board' ? base : `${base}/${view}`;
-    history.pushState({ view }, '', url);
+  if (!(await confirmLeave())) {
+    // Declined: on a browser back/forward (pushState=false) the address bar
+    // has already moved, so restore it to the view we're actually showing.
+    if (!pushState && window.__CONTEXT__) {
+      history.pushState({ view: _currentView }, '', urlForView(_currentView));
+    }
+    return;
   }
 
+  _navigating = true;
   try {
-    const mod = await VIEWS[view]();
-    _currentCleanup = await mod.init(container, window.__CONTEXT__);
-  } catch (e) {
-    console.error(`Failed to load view "${view}":`, e);
-    container.innerHTML = `<div class="error">Failed to load ${view} view</div>`;
+    const editBar = document.getElementById('edit-bar');
+    if (editBar) editBar.hidden = true;
+
+    // The outgoing view's staging is no longer the active one. The incoming
+    // view registers its own staging during init (board/timeline/map only).
+    clearActiveStaging();
+
+    if (_currentCleanup) {
+      _currentCleanup();
+      _currentCleanup = null;
+    }
+    _currentView = view;
+
+    const container = document.getElementById('plan-view');
+    if (!container) return;
+
+    container.innerHTML = '';
+    updateNav(view);
+
+    // Show the AI agent only on the board / timeline / map views.
+    const { setAgentVisible } = await import('/static/js/ai-agent.js');
+    setAgentVisible(view);
+
+    if (pushState) {
+      history.pushState({ view }, '', urlForView(view));
+    }
+
+    try {
+      const mod = await VIEWS[view]();
+      _currentCleanup = await mod.init(container, window.__CONTEXT__);
+    } catch (e) {
+      console.error(`Failed to load view "${view}":`, e);
+      container.innerHTML = `<div class="error">Failed to load ${view} view</div>`;
+    }
+  } finally {
+    _navigating = false;
   }
 }
 

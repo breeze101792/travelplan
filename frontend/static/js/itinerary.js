@@ -24,6 +24,7 @@ import { createMultiSelect } from '/static/js/multi-select.js';
 import { doSave as sharedSave, showToast, batchSessionId } from '/static/js/page-utils.js';
 import { createItemFromExtraction, editItemFromExtraction } from '/static/js/ai-extract.js';
 import { registerAgentContext } from '/static/js/ai-agent.js';
+import { setActiveStaging } from '/static/js/guard.js';
 
 /* JPY/KRW have 0 minor units; everything else uses 2. Matches backend. */
 function decimalsFor(cur) {
@@ -212,6 +213,7 @@ export async function initItinerary(ctx) {
     onChange: () => render(),
   });
   staging.subscribe(() => renderEditBarCtl());
+  setActiveStaging(staging);
 
   function isSelectable(item) {
     if (!item) return false;

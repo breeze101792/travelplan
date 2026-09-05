@@ -1015,6 +1015,65 @@ const ownerStub = await boot('owner');
          'spanning hotel card must NOT show a time range: ' + JSON.stringify(spanningLines));
 }
 
+/* =============== owner: closing a dirty editor warns first =============== */
+{
+  const stub = await boot('owner');
+  stub.restore();
+  const board = document.getElementById('board');
+  const activity = [...board.querySelectorAll('.card.item')].find(
+    c => c.dataset.type === 'activity'
+  );
+  assert(!!activity, 'dirty-close: activity card on the board');
+
+  // Clean close: open the editor, change nothing, X → closes with no confirm.
+  activity.dispatch('dblclick', { button: 0, detail: 2, target: activity });
+  assert(!!document.body.querySelector('.item-editor'), 'dirty-close: editor opened');
+  document.body.querySelector('.item-editor .modal-close').click();
+  assert(!document.body.querySelector('.item-editor'),
+         'dirty-close: unchanged editor closes without a confirm');
+  eq(document.body.querySelectorAll('.editor-backdrop').length, 0,
+     'dirty-close: no backdrop left after clean close');
+
+  // Dirty close: open again, edit the title, X → confirm appears.
+  const activity2 = [...board.querySelectorAll('.card.item')].find(
+    c => c.dataset.type === 'activity'
+  );
+  activity2.dispatch('dblclick', { button: 0, detail: 2, target: activity2 });
+  const editor = document.body.querySelector('.item-editor');
+  assert(!!editor, 'dirty-close: editor reopened');
+  const titleInput = [...editor.querySelectorAll('input')].find(i => i.type === 'text');
+  titleInput.value = 'Fushimi Inari (changed)';
+  editor.querySelector('.modal-close').click();
+  const backdrops = document.body.querySelectorAll('.editor-backdrop');
+  eq(backdrops.length, 2, 'dirty-close: confirm dialog layered above the editor');
+  const confirmBd = backdrops[backdrops.length - 1];
+  const keepBtn = [...confirmBd.querySelectorAll('button')].find(b => b.textContent === 'Keep editing');
+  assert(!!keepBtn, 'dirty-close: confirm has a Keep editing button');
+  keepBtn.click();
+  assert(!!document.body.querySelector('.item-editor'),
+         'dirty-close: Keep editing leaves the editor open');
+  eq(document.body.querySelectorAll('.editor-backdrop').length, 1,
+     'dirty-close: confirm dismissed after Keep editing');
+  // Let the guard's async onRequestClose finish (resets its busy flag) so a
+  // second X click is treated as a fresh request.
+  await new Promise((r) => setTimeout(r, 0));
+
+  // Now discard: X again, then confirm Discard → the editor closes.
+  document.body.querySelector('.item-editor .modal-close').click();
+  const backdrops2 = document.body.querySelectorAll('.editor-backdrop');
+  eq(backdrops2.length, 2, 'dirty-close: confirm reappears on second X');
+  const confirmBd2 = backdrops2[backdrops2.length - 1];
+  const discardBtn = [...confirmBd2.querySelectorAll('button')].find(b => b.textContent === 'Discard');
+  assert(!!discardBtn, 'dirty-close: confirm has a Discard button');
+  discardBtn.click();
+  // Let the guard's async onRequestClose continue past its await so onCancel
+  // runs and removes the editor backdrop.
+  await new Promise((r) => setTimeout(r, 0));
+  assert(!document.body.querySelector('.item-editor'), 'dirty-close: Discard closes the editor');
+  eq(document.body.querySelectorAll('.editor-backdrop').length, 0,
+     'dirty-close: all backdrops removed after Discard');
+}
+
 /* =============== viewer: bar hidden, board renders =============== */
 {
   const stub = await boot('viewer');
