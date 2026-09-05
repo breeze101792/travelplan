@@ -25,6 +25,7 @@ import json
 import re
 import urllib.parse
 import urllib.request
+import urllib.error
 from pathlib import Path
 
 from .blueprints.items import _coerce_when, ITEM_TYPES
@@ -151,6 +152,51 @@ def _parse_json_content(content: str) -> dict:
     raise ValueError("no JSON object found in AI reply")
 
 
+def _openai_url(cfg: dict, path: str) -> str:
+    """Build an OpenAI-compatible URL, inserting ``/v1`` if missing.
+
+    Some gateways expose the routes under ``/v1`` and some don't. If the
+    configured ``base_url`` already ends in ``/v1`` (or ``/v1/``), keep it;
+    otherwise insert ``/v1`` so both ``http://host:port`` and
+    ``http://host:port/v1`` resolve to the same real path. Used by every
+    provider call (chat + connectivity test) so they agree.
+    """
+    base = (cfg.get("base_url") or "").strip().rstrip("/")
+    if not base.endswith("/v1"):
+        base = base + "/v1"
+    return f"{base}/{path}"
+
+
+def _probe_chat_completions(cfg: dict, headers: dict) -> dict:
+    """Minimal real chat call to confirm the provider works.
+
+    Used as a fallback when ``/models`` is not exposed (404) but the
+    ``/chat/completions`` route is what actual usage hits. Sends one short
+    message so the model id and endpoint are both validated, mirroring a
+    real chat request instead of trusting a metadata endpoint.
+    """
+    payload = {
+        "model": cfg.get("model"),
+        "messages": [{"role": "user", "content": "ping"}],
+        "max_tokens": 1,
+        "temperature": 0,
+    }
+    req = urllib.request.Request(
+        _openai_url(cfg, "chat/completions"),
+        data=json.dumps(payload).encode("utf-8"),
+        headers={**headers, "Content-Type": "application/json"},
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=_HTTP_TIMEOUT) as resp:
+            resp.read()
+        return {"ok": True, "detail": f"model '{cfg.get('model')}' responded"}
+    except urllib.error.HTTPError as e:
+        return {"ok": False, "detail": f"connection failed: {e.code} {e.reason}"}
+    except (OSError, ValueError) as e:
+        return {"ok": False, "detail": f"connection failed: {e}"}
+
+
 def _call_chat_completions(cfg: dict, messages: list[dict], json_mode: bool = True) -> dict:
     """Call the OpenAI-compatible chat completions endpoint.
 
@@ -162,13 +208,7 @@ def _call_chat_completions(cfg: dict, messages: list[dict], json_mode: bool = Tr
     clear :class:`ValueError` — never a raw ``json.JSONDecodeError`` or an
     ``IndexError``/``KeyError``.
     """
-    url = f"{cfg['base_url']}/chat/completions"
-    # Some gateways expose the OpenAI-compatible route under /v1 and some
-    # don't. If the configured base_url already ends in /v1, keep it;
-    # otherwise insert /v1 so both "http://host:port" and
-    # "http://host:port/v1" work.
-    if not cfg["base_url"].endswith("/v1"):
-        url = f"{cfg['base_url']}/v1/chat/completions"
+    url = _openai_url(cfg, "chat/completions")
     payload = {
         "model": cfg["model"],
         "messages": messages,
@@ -264,11 +304,10 @@ def test_connections(cfg: dict | None = None) -> dict:
     if not base_url or not model:
         result["ai"] = {"ok": False, "detail": "base_url and model are required"}
     else:
-        url = f"{base_url}/models"
         headers = {}
         if cfg.get("api_key"):
             headers["Authorization"] = f"Bearer {cfg['api_key']}"
-        req = urllib.request.Request(url, headers=headers, method="GET")
+        req = urllib.request.Request(_openai_url(cfg, "models"), headers=headers, method="GET")
         try:
             with urllib.request.urlopen(req, timeout=_HTTP_TIMEOUT) as resp:
                 body = json.loads(resp.read().decode("utf-8", errors="replace"))
@@ -281,6 +320,14 @@ def test_connections(cfg: dict | None = None) -> dict:
                                 "detail": f"model '{model}' not found (available: {avail})"}
             else:
                 result["ai"] = {"ok": True, "detail": "endpoint reachable (no model list returned)"}
+        except urllib.error.HTTPError as e:
+            if e.code == 404:
+                # Many providers (Ollama, private gateways) expose /chat/completions
+                # but not /models. Verify the real route instead so the "Test AI
+                # provider" button reflects actual chat behavior.
+                result["ai"] = _probe_chat_completions(cfg, headers)
+            else:
+                result["ai"] = {"ok": False, "detail": f"connection failed: {e.code} {e.reason}"}
         except (OSError, ValueError) as e:
             result["ai"] = {"ok": False, "detail": f"connection failed: {e}"}
 

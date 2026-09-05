@@ -806,6 +806,59 @@ def test_connections_ai_unreachable(ai_config, monkeypatch):
     assert out["searxng"]["ok"] is True
 
 
+def test_connections_ai_404_falls_back_to_chat(ai_config, monkeypatch):
+    # Providers that expose only /chat/completions (no /models) must report ok
+    # via a real chat probe instead of a hard 404 failure.
+    ai_config(searxng_url="http://localhost:8888")
+    calls = []
+
+    def fake_urlopen(req, timeout):
+        calls.append(req.full_url)
+        if "/search?" in req.full_url:
+            class _Resp:
+                def __enter__(self): return self
+                def __exit__(self, *a): return False
+                def read(self):
+                    return json.dumps({"results": []}).encode()
+            return _Resp()
+        if "/models" in req.full_url:
+            raise ai_mod.urllib.error.HTTPError(req.full_url, 404, "Not Found", {}, None)
+        class _Resp:
+            def __enter__(self): return self
+            def __exit__(self, *a): return False
+            def read(self):
+                return b"{}"
+        return _Resp()
+
+    monkeypatch.setattr(ai_mod.urllib.request, "urlopen", fake_urlopen)
+    out = ai_mod.test_connections()
+    assert out["ai"]["ok"] is True
+    assert "responded" in out["ai"]["detail"]
+    assert any(u.endswith("/v1/chat/completions") for u in calls)
+
+
+def test_connections_ai_404_chat_fails(ai_config, monkeypatch):
+    # Fallback must also report failure when the chat probe errors out.
+    ai_config(searxng_url="http://localhost:8888")
+
+    def fake_urlopen(req, timeout):
+        if "/search?" in req.full_url:
+            class _Resp:
+                def __enter__(self): return self
+                def __exit__(self, *a): return False
+                def read(self):
+                    return json.dumps({"results": []}).encode()
+            return _Resp()
+        if "/models" in req.full_url:
+            raise ai_mod.urllib.error.HTTPError(req.full_url, 404, "Not Found", {}, None)
+        raise ai_mod.urllib.error.HTTPError(req.full_url, 401, "Unauthorized", {}, None)
+
+    monkeypatch.setattr(ai_mod.urllib.request, "urlopen", fake_urlopen)
+    out = ai_mod.test_connections()
+    assert out["ai"]["ok"] is False
+    assert "401" in out["ai"]["detail"]
+
+
 def test_connections_missing_fields():
     out = ai_mod.test_connections({"base_url": "", "model": "", "searxng_url": ""})
     assert out["ai"]["ok"] is False
