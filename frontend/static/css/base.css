@@ -54,8 +54,8 @@ a:hover { text-decoration: underline; }
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 0 20px;
-  height: 52px;
+  padding: env(safe-area-inset-top, 0) 20px 0 20px;
+  min-height: 52px;
   background: var(--card);
   border-bottom: 1px solid var(--line);
   position: sticky;
@@ -195,7 +195,7 @@ a:hover { text-decoration: underline; }
 #view {
   max-width: 1600px;
   margin: 0 auto;
-  padding: 20px clamp(16px, 3vw, 44px);
+  padding: 20px clamp(16px, 3vw, 44px) calc(20px + env(safe-area-inset-bottom, 0));
 }
 
 /* Page header */
@@ -673,8 +673,8 @@ tr:last-child td { border-bottom: none; }
 
 /* Responsive */
 @media (max-width: 640px) {
-  #view { padding: 16px; }
-  .topbar { padding: 0 14px; gap: 10px; height: 48px; }
+  #view { padding: 16px 16px calc(16px + env(safe-area-inset-bottom, 0)); }
+  .topbar { padding: env(safe-area-inset-top, 0) 14px 0 14px; gap: 10px; min-height: 48px; }
   .topbar--plan { gap: 4px; }
   .tp-plan-name { font-size: 16px; max-width: 120px; }
   .tp-plan-dates { display: none; }
@@ -691,7 +691,7 @@ tr:last-child td { border-bottom: none; }
 
 /* Pull-to-refresh */
 #ptr {
-  position: fixed; top: 0; left: 0; right: 0; z-index: 9999;
+  position: fixed; top: env(safe-area-inset-top, 0); left: 0; right: 0; z-index: 9999;
   display: flex; justify-content: center; overflow: hidden;
   height: var(--ptr-pull, 0px); transition: height .3s;
   pointer-events: none;
