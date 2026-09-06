@@ -56,6 +56,13 @@ def create_app(config: dict | None = None) -> Flask:
     app.register_blueprint(expenses_bp)
     app.register_blueprint(ai_bp)
 
+    @app.errorhandler(401)
+    def handle_unauthorized(e):
+        from flask import request as req, redirect as redir, url_for as uf, jsonify
+        if req.path.startswith("/api/") or req.accept_mimetypes.best == "application/json":
+            return jsonify({"error": "unauthorized"}), 401
+        return redir(uf("auth.login", next=req.path))
+
     @app.context_processor
     def inject_user():
         import subprocess

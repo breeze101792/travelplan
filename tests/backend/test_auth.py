@@ -417,3 +417,73 @@ class TestAISettings:
         r2 = client.post("/api/ai/test", json={"service": "searxng"})
         data2 = r2.get_json()
         assert "searxng" in data2 and "ai" not in data2
+
+
+# ---------------------------------------------------------------- 401 handler
+#
+# The app-level @app.errorhandler(401) decides how an unauthenticated request
+# is answered: browser/page requests get a 302 to /auth/login?next=<path>,
+# while API/JSON requests get a 401 JSON body. The decorators in backend/auth.py
+# (login_required, admin_required, check_plan_access) all funnel through
+# abort(401), so this handler is the single choke point for anonymous access.
+class TestUnauthorizedHandler:
+    def test_browser_page_redirects_to_login(self, client):
+        # /plans/1 is protected by plan_access -> check_plan_access -> abort(401).
+        r = client.get("/plans/1", follow_redirects=False)
+        assert r.status_code == 302
+        assert r.headers["Location"].startswith("/auth/login")
+
+    def test_redirect_location_includes_next_with_original_path(self, client):
+        r = client.get("/plans/42", follow_redirects=False)
+        assert r.status_code == 302
+        assert r.headers["Location"] == "/auth/login?next=/plans/42"
+
+    def test_redirect_next_drops_query_string(self, client):
+        # The handler uses request.path, which excludes the query string, so
+        # the `next` target is the bare path. Documented so a future change to
+        # preserve the query string is caught.
+        r = client.get("/plans/1?tab=timeline", follow_redirects=False)
+        assert r.status_code == 302
+        assert r.headers["Location"] == "/auth/login?next=/plans/1"
+
+    def test_api_path_returns_401_json(self, client):
+        # /api/plans/1 is protected by plan_access -> abort(401); the handler
+        # sees the /api/ prefix and returns JSON instead of redirecting.
+        r = client.get("/api/plans/1", follow_redirects=False)
+        assert r.status_code == 401
+        assert r.get_json() == {"error": "unauthorized"}
+
+    def test_api_path_returns_401_json_for_post(self, client):
+        r = client.post("/api/plans/1/items", json={"item_type": "note", "title": "T"},
+                        follow_redirects=False)
+        assert r.status_code == 401
+        assert r.get_json() == {"error": "unauthorized"}
+
+    def test_page_with_json_accept_returns_401_json(self, client):
+        # A page path but the client asks for JSON -> the handler honors the
+        # Accept header and returns a 401 JSON body rather than a redirect.
+        r = client.get("/plans/1", headers={"Accept": "application/json"},
+                       follow_redirects=False)
+        assert r.status_code == 401
+        assert r.get_json() == {"error": "unauthorized"}
+
+    def test_api_path_with_html_accept_still_returns_401_json(self, client):
+        # The /api/ prefix wins over the Accept header: even a browser-style
+        # Accept on an API path must not be redirected to the login page.
+        r = client.get("/api/plans/1", headers={"Accept": "text/html"},
+                       follow_redirects=False)
+        assert r.status_code == 401
+        assert r.get_json() == {"error": "unauthorized"}
+
+    def test_redirect_round_trip_lands_on_original_page(self, client, login):
+        # Follow the redirect: after logging in the user is sent back to the
+        # page they originally tried to reach.
+        r = client.get("/plans/1", follow_redirects=False)
+        assert r.status_code == 302
+        nxt = r.headers["Location"]
+        assert nxt == "/auth/login?next=/plans/1"
+        # Log in via the login page (the `next` is carried in the form).
+        r = client.post(nxt, data={"username": "alice", "password": "pw12345"},
+                        follow_redirects=False)
+        assert r.status_code == 302
+        assert r.headers["Location"] == "/plans/1"
