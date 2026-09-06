@@ -2,6 +2,7 @@
 // Handles client-side routing, view lifecycle, and nav link interception.
 
 import { hasPendingChanges, clearActiveStaging, confirmDiscard } from '/static/js/guard.js';
+import { init as initNotifications, onSSEEvent } from '/static/js/notifications.js';
 
 const VIEWS = {
   overview:   () => import('/static/js/views/overview.js'),
@@ -123,6 +124,12 @@ function initShell(context) {
   window.__CONTEXT__ = context;
   document.querySelector('.plan-nav')?.addEventListener('click', handleNavClick);
   window.addEventListener('popstate', handlePopState);
+
+  // Initialize the notification system
+  initNotifications({ planId: context.planId, currentUserId: context.userId });
+  import('/static/js/plan-store.js').then(({ onSSEEvent: storeOnSSE }) => {
+    storeOnSSE((event) => onSSEEvent(event, context.userId));
+  });
 
   // Boot the floating AI agent widget (hidden until a board/timeline/map view).
   import('/static/js/ai-agent.js').then(({ initAgent }) => initAgent());

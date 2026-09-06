@@ -20,7 +20,7 @@
 {% endblock %}
 
 {% block scripts %}
-<script>window.__CONTEXT__ = { planId: {{ plan.id }}, role: {{ plan_role|tojson|safe }} };</script>
+<script>window.__CONTEXT__ = { planId: {{ plan.id }}, role: {{ plan_role|tojson|safe }}, userId: {{ current_user.id }} };</script>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
 <script type="module" src="/static/js/plan-shell.js?v={{ static_version }}"></script>
 {% endblock %}

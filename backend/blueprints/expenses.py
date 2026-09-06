@@ -17,6 +17,7 @@ from ..auth import plan_access, login_required, check_item_access, check_expense
 from ..db import get_db
 from ..util import parse_amount_to_cents, format_cents, check_version
 from .. import expense as ex
+from ..sse import publish_event
 
 expenses_bp = Blueprint("expenses", __name__)
 
@@ -92,6 +93,7 @@ def create_expense(plan_id):
             item_id=data.get("item_id"), created_by=g.current_user["id"], decimals=decimals)
     except ValueError as ve:
         return jsonify({"error": str(ve)}), 400
+    publish_event(plan_id, {"type": "expense.created", "entity_id": eid})
     return jsonify({"expense": _serialize_expense(eid)})
 
 
@@ -158,6 +160,10 @@ def update_expense(expense_id):
                           item_id=data.get("item_id"), decimals=decimals)
     except ValueError as ve:
         return jsonify({"error": str(ve)}), 400
+    # Fetch plan_id for the event (expense may belong to a different plan context)
+    exp_row = get_db().execute("SELECT plan_id FROM expenses WHERE id = ?", (expense_id,)).fetchone()
+    if exp_row:
+        publish_event(exp_row["plan_id"], {"type": "expense.updated", "entity_id": expense_id})
     return jsonify({"expense": _serialize_expense(expense_id)})
 
 
@@ -166,8 +172,11 @@ def update_expense(expense_id):
 def delete_expense(expense_id):
     check_expense_access(expense_id, write=True)
     db = get_db()
+    exp_row = db.execute("SELECT plan_id FROM expenses WHERE id = ?", (expense_id,)).fetchone()
     db.execute("DELETE FROM expenses WHERE id = ?", (expense_id,))
     db.commit()
+    if exp_row:
+        publish_event(exp_row["plan_id"], {"type": "expense.deleted", "entity_id": expense_id})
     return jsonify({"deleted": expense_id})
 
 
@@ -285,6 +294,7 @@ def record_payment(plan_id):
            VALUES (?, ?, ?, ?, ?, ?)""",
         (plan_id, from_user, to_user, amount, currency, data.get("note")))
     get_db().commit()
+    publish_event(plan_id, {"type": "payment.created", "entity_id": cur.lastrowid})
     return jsonify({"payment": dict(get_db().execute(
         "SELECT * FROM payments WHERE id = ?", (cur.lastrowid,)).fetchone())})
 
@@ -310,6 +320,7 @@ def update_payment(payment_id):
            WHERE id=?""",
         (from_user, to_user, amount, currency, note, payment_id))
     db.commit()
+    publish_event(row["plan_id"], {"type": "payment.updated", "entity_id": payment_id})
     return jsonify({"payment": dict(db.execute(
         "SELECT * FROM payments WHERE id = ?", (payment_id,)).fetchone())})
 
@@ -319,6 +330,9 @@ def update_payment(payment_id):
 def delete_payment(payment_id):
     check_payment_access(payment_id, write=True)
     db = get_db()
+    pay_row = db.execute("SELECT plan_id FROM payments WHERE id = ?", (payment_id,)).fetchone()
     db.execute("DELETE FROM payments WHERE id = ?", (payment_id,))
     db.commit()
+    if pay_row:
+        publish_event(pay_row["plan_id"], {"type": "payment.deleted", "entity_id": payment_id})
     return jsonify({"deleted": payment_id})

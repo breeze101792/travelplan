@@ -361,6 +361,7 @@ def api_add_member(plan_id):
         (plan_id, user_id, role),
     )
     db.commit()
+    publish_event(plan_id, {"type": "member.added", "entity_id": user_id})
     return jsonify({"ok": True})
 
 
@@ -377,6 +378,7 @@ def api_update_member_role(plan_id, user_id):
     db.execute("UPDATE plan_members SET role = ? WHERE plan_id = ? AND user_id = ?",
                (role, plan_id, user_id))
     db.commit()
+    publish_event(plan_id, {"type": "member.updated", "entity_id": user_id})
     return jsonify({"ok": True})
 
 
@@ -388,6 +390,7 @@ def api_remove_member(plan_id, user_id):
     db = get_db()
     db.execute("DELETE FROM plan_members WHERE plan_id = ? AND user_id = ?", (plan_id, user_id))
     db.commit()
+    publish_event(plan_id, {"type": "member.removed", "entity_id": user_id})
     return jsonify({"ok": True})
 
 
@@ -420,6 +423,7 @@ def api_transfer_ownership(plan_id):
     )
     db.execute("DELETE FROM plan_members WHERE plan_id = ? AND user_id = ?", (plan_id, new_owner_id))
     db.commit()
+    publish_event(plan_id, {"type": "plan.updated", "entity_id": plan_id})
     return jsonify({"ok": True})
 
 

@@ -39,10 +39,28 @@ function defaultEndFor(startAt) {
   return `${m[1]}T${String(h).padStart(2, '0')}:${m[3]}`;
 }
 
-export function openItemEditor(ctx, { plan, item, settings, members, staging, sessionId, onApplied, onClose }) {
+export async function openItemEditor(ctx, { plan, item, settings, members, staging, sessionId, onApplied, onClose }) {
+  // Fetch fresh item data from server for existing (non-draft) items to
+  // avoid opening the editor with stale cached data.
+  const isNew = !!item.isNew || (typeof item.id === 'string' && item.id.startsWith('_-'));
+  if (!isNew) {
+    try {
+      const fresh = await apiGet(`/api/items/${item.id}`, { forceRefresh: true });
+      if (fresh && fresh.item) {
+        // Merge fresh server data into the item object. Preserve client-only
+        // fields (isNew, _draftId) that the staging engine relies on.
+        const clientOnly = {};
+        for (const k of Object.keys(item)) {
+          if (!(k in fresh.item)) clientOnly[k] = item[k];
+        }
+        Object.assign(item, fresh.item, clientOnly);
+      }
+    } catch {
+      // Non-fatal: fall back to the item from the store
+    }
+  }
   const ti = settings.item_types[item.item_type] || { label: item.item_type, fields: [] };
   const readOnly = ctx.role === 'viewer';
-  const isNew = !!item.isNew || (typeof item.id === 'string' && item.id.startsWith('_-'));
   // Local in-editor state. The user can add attachments, upload images, and
   // add an expense here; they are bundled into the SAVE_ITEM op on Apply.
   // Existing attachments (with real ids) are also tracked here so we can
@@ -337,7 +355,7 @@ export function openItemEditor(ctx, { plan, item, settings, members, staging, se
     const isRealItem = typeof item.id === 'number' || !(String(item.id).startsWith('_'));
     if (!isRealItem) return;
     try {
-      const res = await apiGet(`/api/items/${item.id}/expenses`);
+      const res = await apiGet(`/api/items/${item.id}/expenses`, { forceRefresh: true });
       const exps = res.expenses || [];
       clear(existingList);
       if (!exps.length) {

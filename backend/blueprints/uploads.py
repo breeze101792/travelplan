@@ -15,6 +15,7 @@ from werkzeug.utils import secure_filename
 
 from ..auth import login_required, check_item_access
 from ..db import get_db
+from ..sse import publish_event
 
 uploads_bp = Blueprint("uploads", __name__)
 
@@ -72,6 +73,8 @@ def upload_item_image(item_id):
         "INSERT INTO attachments (item_id, kind, value, caption) VALUES (?, 'image', ?, ?)",
         (item_id, stored, f.filename))
     get_db().commit()
+    if item is not None:
+        publish_event(item["plan_id"], {"type": "item.updated", "entity_id": item_id})
     att = dict(get_db().execute(
         "SELECT * FROM attachments WHERE id = ?", (cur.lastrowid,)).fetchone())
     att["url"] = f"/uploads/{stored}"

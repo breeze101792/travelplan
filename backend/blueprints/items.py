@@ -364,6 +364,7 @@ def add_link_attachment(item_id):
         "INSERT INTO attachments (item_id, kind, value, caption) VALUES (?, ?, ?, ?)",
         (item_id, kind, value, data.get("caption")))
     get_db().commit()
+    publish_event(item["plan_id"], {"type": "item.updated", "entity_id": item_id})
     return jsonify({"attachment": dict(get_db().execute(
         "SELECT * FROM attachments WHERE id = ?", (cur.lastrowid,)).fetchone())})
 
@@ -392,6 +393,10 @@ def update_attachment(att_id):
     db = get_db()
     db.execute(f"UPDATE attachments SET {', '.join(sets)} WHERE id = ?", args)
     db.commit()
+    if att is not None:
+        item = _load_item(att["item_id"])
+        if item is not None:
+            publish_event(item["plan_id"], {"type": "item.updated", "entity_id": att["item_id"]})
     return jsonify({"attachment": dict(db.execute(
         "SELECT * FROM attachments WHERE id = ?", (att_id,)).fetchone())})
 
@@ -408,4 +413,8 @@ def delete_attachment(att_id):
     db = get_db()
     db.execute("DELETE FROM attachments WHERE id = ?", (att_id,))
     db.commit()
+    if att is not None:
+        item = _load_item(att["item_id"])
+        if item is not None:
+            publish_event(item["plan_id"], {"type": "item.updated", "entity_id": att["item_id"]})
     return jsonify({"deleted": att_id})

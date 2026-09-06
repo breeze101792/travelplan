@@ -18,6 +18,9 @@ let _state = {
 let _fetchPromise = null;
 let _eventSource = null;
 let _pollTimer = null;
+let _periodicTimer = null;
+let _periodicTick = 0;
+let _onSSECallbacks = new Set();
 
 function notify() {
   for (const cb of _subscribers) cb(_state);
@@ -36,6 +39,11 @@ export function getPlanId() {
   return _planId;
 }
 
+export function onSSEEvent(cb) {
+  _onSSECallbacks.add(cb);
+  return () => _onSSECallbacks.delete(cb);
+}
+
 function update(partial) {
   Object.assign(_state, partial);
   notify();
@@ -52,11 +60,11 @@ export async function fetchPlan(planId) {
   _fetchPromise = (async () => {
     try {
       const [settings, plan, items, members, expByItem] = await Promise.all([
-        apiGet('/api/settings').catch(() => null),
-        apiGet(`/api/plans/${planId}`).catch(() => null),
-        apiGet(`/api/plans/${planId}/items`).catch(() => null),
-        apiGet(`/api/plans/${planId}/members`).catch(() => null),
-        apiGet(`/api/plans/${planId}/expenses/by-item`).catch(() => ({ items: [] })),
+        apiGet('/api/settings', { forceRefresh: true }).catch(() => null),
+        apiGet(`/api/plans/${planId}`, { forceRefresh: true }).catch(() => null),
+        apiGet(`/api/plans/${planId}/items`, { forceRefresh: true }).catch(() => null),
+        apiGet(`/api/plans/${planId}/members`, { forceRefresh: true }).catch(() => null),
+        apiGet(`/api/plans/${planId}/expenses/by-item`, { forceRefresh: true }).catch(() => ({ items: [] })),
       ]);
       update({
         settings: settings || _state.settings,
@@ -68,6 +76,7 @@ export async function fetchPlan(planId) {
         error: null,
       });
       connectSSE(planId);
+      startPeriodicRefresh();
     } catch (e) {
       update({ status: 'error', error: e.message });
     }
@@ -82,6 +91,7 @@ function tagsForEvent(event) {
   if (t.startsWith('plan.')) return ['plan'];
   if (t.startsWith('item.')) return ['item'];
   if (t.startsWith('expense.')) return ['expense'];
+  if (t.startsWith('payment.')) return ['expense'];
   if (t.startsWith('member.')) return ['member'];
   if (t.startsWith('rate.')) return ['rate', 'expense'];
   return ['*'];
@@ -96,6 +106,10 @@ function connectSSE(planId) {
     _eventSource.onmessage = (e) => {
       try {
         const event = JSON.parse(e.data);
+        // Notify SSE event subscribers (e.g. notification system)
+        for (const cb of _onSSECallbacks) {
+          try { cb(event); } catch { /* non-fatal */ }
+        }
         if (_state.status === 'ready') {
           refresh(tagsForEvent(event));
         }
@@ -135,6 +149,33 @@ function stopPolling() {
   if (_pollTimer) {
     clearInterval(_pollTimer);
     _pollTimer = null;
+  }
+}
+
+/* Periodic background refresh as a safety net alongside SSE.
+ * Items refresh every 2 minutes (most likely to change);
+ * plan/members/expenses refresh every 5 minutes. */
+function startPeriodicRefresh() {
+  stopPeriodicRefresh();
+  _periodicTick = 0;
+  _periodicTimer = setInterval(() => {
+    if (_state.status !== 'ready') return;
+    _periodicTick++;
+    // Items every 2 minutes (tick 0, 2, 4, 6, ...)
+    if (_periodicTick % 2 === 0) {
+      refresh(['item']);
+    }
+    // Plan, members, expenses every 5 minutes (tick 0, 5, 10, ...)
+    if (_periodicTick % 5 === 0) {
+      refresh(['plan', 'member', 'expense']);
+    }
+  }, 60000); // check every 60 seconds
+}
+
+function stopPeriodicRefresh() {
+  if (_periodicTimer) {
+    clearInterval(_periodicTimer);
+    _periodicTimer = null;
   }
 }
 
@@ -179,6 +220,7 @@ onDataRefreshed((_path, tags) => {
 export function reset() {
   disconnectSSE();
   stopPolling();
+  stopPeriodicRefresh();
   _planId = null;
   _state = { plan: null, items: null, members: null, expensesByItem: null, settings: null, status: 'idle' };
   _fetchPromise = null;
