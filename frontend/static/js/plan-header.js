@@ -710,7 +710,7 @@ export function renderEditBar({ days, settings, staging, ctx, setBlockError, get
             : 'All changes saved',
   });
 
-  bar.append(undoBtn, redoBtn, cancelBtn, saveBtn, status);
+  bar.append(status, undoBtn, redoBtn, cancelBtn, saveBtn);
 
   // On small screens, only show the bar when there are unsaved changes to save.
   if (window.matchMedia('(max-width: 640px)').matches) {
