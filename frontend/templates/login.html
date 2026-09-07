@@ -5,6 +5,9 @@
 {% block styles %}<link rel="stylesheet" href="/static/css/auth.css?v={{ static_version }}">{% endblock %}
 
 {% block content %}
+<script>
+indexedDB.deleteDatabase('travelplan-cache');
+</script>
 <div class="auth-view">
   <div class="auth-card">
     <h1>Sign in</h1>

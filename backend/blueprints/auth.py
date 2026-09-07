@@ -91,7 +91,14 @@ def login():
 @auth_bp.route("/auth/logout")
 def logout():
     logout_user()
-    return redirect(url_for("auth.login"))
+    return (
+        '<!DOCTYPE html><html><head><title>Signing out…</title></head><body>'
+        '<script>'
+        'indexedDB.deleteDatabase("travelplan-cache").onsuccess=function(){'
+        'location.replace("/auth/login")};'
+        'setTimeout(function(){location.replace("/auth/login")},500);'
+        '</script></body></html>'
+    ), 200, {"Content-Type": "text/html"}
 
 
 @auth_bp.route("/auth/members", methods=["GET", "POST"])
