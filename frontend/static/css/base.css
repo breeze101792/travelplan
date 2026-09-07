@@ -198,6 +198,13 @@ a:hover { text-decoration: underline; }
   padding: 20px clamp(16px, 3vw, 44px) calc(20px + env(safe-area-inset-bottom, 0));
 }
 
+/* Small screens (phones) — use full width */
+@media (max-width: 640px) {
+  #view {
+    max-width: 100%;
+  }
+}
+
 /* Page header */
 .page-header {
   display: flex;

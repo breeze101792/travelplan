@@ -172,6 +172,37 @@ def test_iphone_viewport_is_narrow(iphone):
     assert iphone.viewport_size["width"] == 390
 
 
+def test_iphone_view_uses_full_width(iphone, server):
+    """On a small screen the main view (#view) must span the full page
+    width, not the desktop 80% cap. Regression for the layout that left
+    a wide empty gutter on phones."""
+    p = iphone
+    pid = _create_trip_api(server, start="2026-09-10", end="2026-09-12")
+    p.goto(server["base_url"] + f"/plans/{pid}")
+    p.wait_for_selector("#view")
+    vw = p.evaluate("window.innerWidth")
+    view_w = p.evaluate(
+        "document.getElementById('view').getBoundingClientRect().width")
+    # Full width: the view spans the whole viewport (within a small
+    # tolerance for the horizontal padding).
+    assert view_w >= vw - 1, \
+        f"iPhone: #view width {view_w:.0f} should be ~full viewport {vw}"
+
+
+def test_desktop_view_caps_at_80_percent(desktop, server):
+    """On a wide desktop screen the main view (#view) is capped at 80% of
+    the viewport so boards/tables don't stretch edge to edge."""
+    p = desktop
+    pid = _create_trip_api(server, start="2026-09-10", end="2026-09-12")
+    p.goto(server["base_url"] + f"/plans/{pid}")
+    p.wait_for_selector("#view")
+    vw = p.evaluate("window.innerWidth")
+    view_w = p.evaluate(
+        "document.getElementById('view').getBoundingClientRect().width")
+    assert view_w <= vw * 0.8 + 1, \
+        f"desktop: #view width {view_w:.0f} should be capped at 80% of {vw}"
+
+
 # ---------------------------------------------------------------------------
 # Modal scroll containment (iPhone regression)
 #
