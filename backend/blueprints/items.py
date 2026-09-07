@@ -65,6 +65,19 @@ def _parse_dt(s: str | None):
     return d, int(m.group(1)), int(m.group(2))
 
 
+def _shift_date(s: str, new_date: str) -> str:
+    """Replace the date part of a 'YYYY-MM-DDTHH:MM' string with ``new_date``.
+
+    Keeps the time-of-day unchanged. Used when a drag-and-drop move changes
+    an item's date so the ``when`` object (the source of truth) stays in sync
+    with the item_date / end_date columns.
+    """
+    m = _HHMM_RE.search(str(s))
+    if not m:
+        return f"{new_date}T00:00"
+    return f"{new_date}T{m.group(1)}:{m.group(2)}"
+
+
 def _add_hour(date: str, hour: int, minute: int) -> str:
     """Return 'YYYY-MM-DDTHH:MM' for the given date + time, +1h.
 
@@ -337,9 +350,21 @@ def move_item(item_id):
         new_key = m + 1.0
     else:
         new_key = (key_before + key_after) / 2.0
+    # The ``when`` object is the single source of truth for dates, so a move
+    # must shift it too — otherwise _attach() reconciles item_date/end_date
+    # back from the stale when and the move is silently reverted. Preserve
+    # the existing times and only move the date parts.
+    details = json.loads(item["details"]) if item.get("details") else {}
+    when = details.get("when") or {}
+    if when.get("start_at"):
+        when["start_at"] = _shift_date(when["start_at"], item_date)
+    if when.get("end_at") and end_date:
+        when["end_at"] = _shift_date(when["end_at"], end_date)
+    if when:
+        details["when"] = when
     db.execute(
-        "UPDATE items SET item_date = ?, end_date = ?, sort_key = ?, updated_at = datetime('now') WHERE id = ?",
-        (item_date, end_date, new_key, item_id))
+        "UPDATE items SET item_date = ?, end_date = ?, sort_key = ?, details = ?, updated_at = datetime('now') WHERE id = ?",
+        (item_date, end_date, new_key, json.dumps(details), item_id))
     db.commit()
     publish_event(item["plan_id"], {"type": "item.moved", "entity_id": item_id})
     return jsonify({"item": _attach(_load_item(item_id))})

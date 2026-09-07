@@ -279,6 +279,41 @@ class TestItemMove:
         ordered = [i for i in items if i["item_date"] == "2026-07-01"]
         assert [i["title"] for i in ordered] == ["A", "B"]
 
+    def test_move_timed_item_keeps_when_in_sync(self, member_client, plan_id):
+        """A move must shift the when object too, or the reconciliation in
+        _attach() reverts item_date back to the stale when.start_at date."""
+        a = member_client.post(f"/api/plans/{plan_id}/items", json={
+            "item_type": "note", "title": "A", "item_date": "2026-07-01",
+            "details": {"when": {"start_at": "2026-07-01T09:00"}}}).get_json()["item"]
+        r = member_client.post(f"/api/items/{a['id']}/move", json={"item_date": "2026-07-02"})
+        assert r.status_code == 200
+        moved = r.get_json()["item"]
+        assert moved["item_date"] == "2026-07-02"
+        assert moved["details"]["when"]["start_at"] == "2026-07-02T09:00"
+        # Re-list: the move must not be reverted by when reconciliation.
+        items = member_client.get(f"/api/plans/{plan_id}/items").get_json()["items"]
+        it = [i for i in items if i["id"] == a["id"]][0]
+        assert it["item_date"] == "2026-07-02"
+        assert it["details"]["when"]["start_at"] == "2026-07-02T09:00"
+
+    def test_move_hotel_keeps_when_in_sync(self, member_client, plan_id):
+        """Moving a spanning hotel shifts both when.start_at and when.end_at."""
+        a = member_client.post(f"/api/plans/{plan_id}/items", json={
+            "item_type": "hotel", "title": "H", "item_date": "2026-07-01", "end_date": "2026-07-03",
+            "details": {"when": {"start_at": "2026-07-01T15:00", "end_at": "2026-07-03T11:00"}}}).get_json()["item"]
+        r = member_client.post(f"/api/items/{a['id']}/move", json={
+            "item_date": "2026-07-02", "end_date": "2026-07-04"})
+        assert r.status_code == 200
+        moved = r.get_json()["item"]
+        assert moved["item_date"] == "2026-07-02"
+        assert moved["end_date"] == "2026-07-04"
+        assert moved["details"]["when"]["start_at"] == "2026-07-02T15:00"
+        assert moved["details"]["when"]["end_at"] == "2026-07-04T11:00"
+        items = member_client.get(f"/api/plans/{plan_id}/items").get_json()["items"]
+        it = [i for i in items if i["id"] == a["id"]][0]
+        assert it["item_date"] == "2026-07-02"
+        assert it["end_date"] == "2026-07-04"
+
 
 # ------------------------------------------------------------------ attachments
 class TestAttachments:
