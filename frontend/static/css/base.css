@@ -193,7 +193,7 @@ a:hover { text-decoration: underline; }
 
 /* Main view — use most of the page width so boards/tables show more info */
 #view {
-  max-width: 1600px;
+  max-width: 80%;
   margin: 0 auto;
   padding: 20px clamp(16px, 3vw, 44px) calc(20px + env(safe-area-inset-bottom, 0));
 }
