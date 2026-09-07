@@ -404,7 +404,8 @@ def _build_chat_prompt(settings: dict, plan_context: str, can_search: bool = Fal
         plan_context,
         "",
         "Respond with a single JSON object:",
-        '  "reply": a friendly, concise answer to the user.',
+        '  "reply": a friendly, concise answer to the user. This must always be '
+        "a non-empty string, even when you search the web or suggest nothing.",
         '  "items": an array of suggested itinerary items to add. Each item:',
         '    {"item_type": one of ' + ", ".join(sorted(types.keys())) + ", "
         '"title": "...", "details": {...}, "when": {"start_at": "...", "end_at": "..."}, '
@@ -431,8 +432,9 @@ def _build_chat_prompt(settings: dict, plan_context: str, can_search: bool = Fal
             "about something that may have changed recently (weather, opening hours, "
             "prices, events, transport status, etc.), or when you are unsure, set:",
             '  "search": "a concise search query"',
-            "  and leave \"reply\" and \"items\" empty. The search results will be "
-            "provided to you, and you will then answer with a final reply.",
+            "  and leave \"items\" and \"edits\" empty. The search results will be "
+            "provided to you, and you will then answer with a final reply. "
+            "Always set a non-empty \"reply\" in your final answer.",
         ]
     return "\n".join(lines)
 
@@ -589,25 +591,21 @@ def chat(plan_context: str, messages: list[dict], image_url: str | None = None,
 
     # Tool-calling loop: the model may request a web search; we run it and
     # feed the results back, then let the model produce the final answer.
+    # If the model returns an all-empty turn (no reply, items, or edits), we
+    # nudge it once with a corrective message and re-run the loop so the user
+    # never sees a blank response.
     raw: dict = {}
-    for _ in range(_MAX_SEARCH_ROUNDS):
-        raw = _call_chat_completions(cfg, llm_messages)
+    for _attempt in range(2):
+        raw = _run_chat_loop(cfg, llm_messages, can_search)
         if not isinstance(raw, dict):
             raise ValueError("AI returned a non-object response")
-        query = raw.get("search")
-        if not query or not can_search:
+        if _has_content(raw):
             break
-        results = web_search(str(query), searxng_url=cfg.get("searxng_url"))
-        if not results:
-            llm_messages.append({
-                "role": "system",
-                "content": "Web search returned no results. Answer from your own knowledge.",
-            })
-        else:
-            lines = ["Web search results for the query above:"]
-            for i, r in enumerate(results, 1):
-                lines.append(f"{i}. {r['title']} — {r['url']}\n   {r['content']}")
-            llm_messages.append({"role": "system", "content": "\n".join(lines)})
+        llm_messages.append({
+            "role": "user",
+            "content": "Your previous reply was empty. Respond with a single JSON "
+                       "object that has a non-empty \"reply\".",
+        })
 
     reply = raw.get("reply") or ""
     items = []
@@ -626,7 +624,45 @@ def chat(plan_context: str, messages: list[dict], image_url: str | None = None,
             edits.append(_normalize_edit(ed))
         except ValueError:
             continue
+    if not reply and not items and not edits:
+        reply = "I couldn't find anything to add. Try pasting a ticket or being more specific."
     return {"reply": reply, "items": items, "edits": edits}
+
+
+def _has_content(raw: dict) -> bool:
+    """True if the model's reply carries any user-visible content."""
+    if raw.get("reply"):
+        return True
+    if raw.get("items"):
+        return True
+    if raw.get("edits"):
+        return True
+    return False
+
+
+def _run_chat_loop(cfg: dict, llm_messages: list[dict], can_search: bool) -> dict:
+    """Run the search/answer loop once, returning the model's final JSON object."""
+    working = list(llm_messages)
+    raw: dict = {}
+    for _ in range(_MAX_SEARCH_ROUNDS):
+        raw = _call_chat_completions(cfg, working)
+        if not isinstance(raw, dict):
+            raise ValueError("AI returned a non-object response")
+        query = raw.get("search")
+        if not query or not can_search:
+            break
+        results = web_search(str(query), searxng_url=cfg.get("searxng_url"))
+        if not results:
+            working.append({
+                "role": "system",
+                "content": "Web search returned no results. Answer from your own knowledge.",
+            })
+        else:
+            lines = ["Web search results for the query above:"]
+            for i, r in enumerate(results, 1):
+                lines.append(f"{i}. {r['title']} — {r['url']}\n   {r['content']}")
+            working.append({"role": "system", "content": "\n".join(lines)})
+    return raw
 
 
 def _load_settings() -> dict:

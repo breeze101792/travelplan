@@ -415,6 +415,30 @@ def test_chat_empty_items(ai_config, stub_llm):
     assert out["items"] == []
 
 
+def test_chat_retries_empty_turn(ai_config, stub_llm_sequence):
+    """An all-empty turn (no reply/items/edits) is nudged once and retried."""
+    ai_config()
+    stub_llm_sequence([
+        {"reply": "", "items": [], "edits": []},
+        {"reply": "Here's a flight suggestion.", "items": [
+            {"item_type": "transit", "title": "Flight", "details": {"mode": "Flight"}},
+        ]},
+    ])
+    out = ai_mod.chat("Title: Trip", [{"role": "user", "content": "add a flight"}], settings=SETTINGS)
+    assert out["reply"] == "Here's a flight suggestion."
+    assert len(out["items"]) == 1
+
+
+def test_chat_fallback_when_still_empty(ai_config, stub_llm):
+    """If the model keeps returning an all-empty turn, a fallback reply is used."""
+    ai_config()
+    stub_llm({"reply": "", "items": [], "edits": []})
+    out = ai_mod.chat("Title: Trip", [{"role": "user", "content": "hi"}], settings=SETTINGS)
+    assert out["reply"]
+    assert out["items"] == []
+    assert out["edits"] == []
+
+
 def test_chat_skips_invalid_items(ai_config, stub_llm):
     ai_config()
     stub_llm({
