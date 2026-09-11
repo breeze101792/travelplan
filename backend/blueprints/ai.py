@@ -30,6 +30,10 @@ def _plan_context(plan_id: int) -> str:
         "WHERE plan_id = ? ORDER BY item_date, sort_key, id",
         (plan_id,),
     ).fetchall()
+    buffer_days = get_db().execute(
+        "SELECT date FROM plan_buffer_days WHERE plan_id = ? ORDER BY date",
+        (plan_id,),
+    ).fetchall()
     lines = [
         f"Title: {plan.get('title')}",
         f"Dates: {plan.get('start_date')} to {plan.get('end_date')}",
@@ -39,6 +43,12 @@ def _plan_context(plan_id: int) -> str:
     for it in items:
         it = dict(it)
         lines.append(f"- id {it['id']}: {it['item_date']} {it['item_type']}: {it['title']}")
+    if buffer_days:
+        dates = ", ".join(r["date"] for r in buffer_days)
+        lines.append(
+            "Buffer days (scratchpad for parking items you're not sure about yet, "
+            f"outside the trip; these 9999 dates are intentional, not a mistake): {dates}"
+        )
     return "\n".join(lines)
 
 

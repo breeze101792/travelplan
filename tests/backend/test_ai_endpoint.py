@@ -138,6 +138,41 @@ def test_chat_requires_messages(admin_client, ai_config):
     assert r.status_code == 400
 
 
+def test_chat_context_includes_buffer_days(admin_client, ai_config, monkeypatch):
+    """The plan context sent to the LLM lists the plan's buffer days."""
+    pid = _make_plan(admin_client)
+    admin_client.patch(f"/api/plans/{pid}",
+                       json={"buffer_days_add": ["9999-12-31", "9999-12-30"]})
+
+    seen = {}
+
+    class _Resp:
+        def __enter__(self):
+            return self
+        def __exit__(self, *a):
+            return False
+        def read(self):
+            return json.dumps({
+                "choices": [{"message": {"content": json.dumps({"reply": "ok", "items": []})}}]
+            }).encode("utf-8")
+
+    def fake_urlopen(req, timeout):
+        seen["body"] = json.loads(req.data.decode("utf-8"))
+        return _Resp()
+
+    monkeypatch.setattr(ai_mod.urllib.request, "urlopen", fake_urlopen)
+
+    r = admin_client.post(f"/api/plans/{pid}/ai/chat",
+                          json={"messages": [{"role": "user", "content": "hi"}]})
+    assert r.status_code == 200, r.data
+
+    system = seen["body"]["messages"][0]["content"]
+    assert "9999-12-31" in system
+    assert "9999-12-30" in system
+    assert "Buffer days" in system
+    assert "not sure about yet" in system
+
+
 def test_chat_not_configured(admin_client, tmp_path, monkeypatch):
     monkeypatch.setattr(ai_mod, "CONFIG_PATH", tmp_path / "missing.json")
     pid = _make_plan(admin_client)

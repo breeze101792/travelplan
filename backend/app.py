@@ -56,6 +56,18 @@ def create_app(config: dict | None = None) -> Flask:
     app.register_blueprint(expenses_bp)
     app.register_blueprint(ai_bp)
 
+    @app.after_request
+    def set_no_cache_for_auth(response):
+        from flask import session as sess
+        if "user_id" in sess:
+            response.headers["Cache-Control"] = (
+                "no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0"
+            )
+            response.headers["Pragma"] = "no-cache"
+            response.headers["Expires"] = "0"
+            response.headers["Surrogate-Control"] = "no-store"
+        return response
+
     @app.errorhandler(401)
     def handle_unauthorized(e):
         from flask import request as req, redirect as redir, url_for as uf, jsonify
