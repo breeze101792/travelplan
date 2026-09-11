@@ -134,6 +134,26 @@ def test_create_item_missing_plan(mcp_env):
         mcp_mod.create_item(9999, {"item_type": "note", "title": "x"})
 
 
+def test_create_item_rejects_missing_when(mcp_env):
+    """Every item needs a when block with start_at (mirrors the web API)."""
+    pid = _make_plan(mcp_env)
+    with pytest.raises(ValueError):
+        mcp_mod.create_item(pid, {
+            "item_type": "note", "title": "N", "details": {},
+        })
+
+
+def test_create_item_rejects_missing_required_type_field(mcp_env):
+    """Type-specific mandatory fields (from settings.json) are enforced."""
+    pid = _make_plan(mcp_env)
+    with pytest.raises(ValueError):
+        mcp_mod.create_item(pid, {
+            "item_type": "transit", "title": "Flight",
+            "details": {"mode": "Flight", "from": "Tokyo",
+                        "when": {"start_at": "2026-09-10T09:00"}},
+        })
+
+
 def test_update_item(mcp_env):
     pid = _make_plan(mcp_env)
     created = mcp_mod.create_item(pid, {"item_type": "note", "title": "Old",
@@ -158,6 +178,32 @@ def test_update_item_changes_when(mcp_env):
 def test_update_item_missing(mcp_env):
     with pytest.raises(ValueError):
         mcp_mod.update_item(9999, {"title": "x"})
+
+
+def test_update_item_rejects_removing_required_field(mcp_env):
+    """An update that would leave a mandatory field empty is rejected."""
+    pid = _make_plan(mcp_env)
+    created = mcp_mod.create_item(pid, {
+        "item_type": "transit", "title": "Flight",
+        "details": {"mode": "Flight", "from": "Tokyo", "to": "Osaka",
+                    "when": {"start_at": "2026-09-10T09:00"}},
+    })
+    with pytest.raises(ValueError):
+        mcp_mod.update_item(created["id"], {
+            "details": {"mode": "Flight", "from": "Tokyo", "to": "",
+                        "when": {"start_at": "2026-09-10T09:00"}},
+        })
+
+
+def test_required_fields_note_lists_mandatory_fields(mcp_env):
+    """The MCP tool descriptions advertise each type's mandatory fields."""
+    note = mcp_mod._required_fields_note()
+    assert "transit: mode" in note
+    assert "from" in note and "to" in note
+    assert "hotel: hotel_name" in note
+    assert "address" in note
+    # Non-required fields (note.text) are excluded --- no "note:" line.
+    assert not any(line.startswith("note:") for line in note.split("\n"))
 
 
 def test_create_then_update_roundtrip(mcp_env):
