@@ -324,6 +324,23 @@ def test_extract_item_invalid_type(ai_config, stub_llm):
         ai_mod.extract_item("text", settings=SETTINGS)
 
 
+def test_extract_item_transit_mode_defaulted_when_missing(ai_config, stub_llm):
+    """If the model omits the required transit mode, it is inferred from the
+    title so the add flow doesn't fail on a missing mandatory field."""
+    ai_config()
+    stub_llm({
+        "item_type": "transit",
+        "title": "Shinkansen Tokyo to Kyoto",
+        "details": {"from": "Tokyo", "to": "Kyoto",
+                    "when": {"start_at": "2026-09-10T09:00"}},
+    })
+    out = ai_mod.extract_item("train text", settings=SETTINGS)
+    assert out["item_type"] == "transit"
+    assert out["details"]["mode"] == "Train"
+    assert out["details"]["from"] == "Tokyo"
+    assert out["details"]["to"] == "Kyoto"
+
+
 def test_extract_item_fills_geocodes(ai_config, stub_llm):
     """The model supplies geocodes; they are normalized into the item."""
     ai_config()

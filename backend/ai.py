@@ -347,12 +347,19 @@ def test_connections(cfg: dict | None = None) -> dict:
 
 
 def _item_type_schema(settings: dict) -> str:
-    """Render the item-type field schema as a prompt fragment."""
+    """Render the item-type field schema as a prompt fragment.
+
+    Required fields (declared with ``"required": true`` in settings.json)
+    are marked with an asterisk so the model knows they must be filled.
+    """
     types = settings.get("item_types") or {}
     lines = []
     for t, spec in types.items():
         fields = spec.get("fields") or []
-        labels = ", ".join(f"{f.get('key')} ({f.get('label')})" for f in fields)
+        labels = ", ".join(
+            f"{f.get('key')} ({f.get('label')})" + ("*" if f.get("required") else "")
+            for f in fields
+        )
         lines.append(f"- {t}: {labels or '(no fields)'}")
     return "\n".join(lines)
 
@@ -376,10 +383,14 @@ def _build_extract_prompt(settings: dict, item_type: str | None = None) -> str:
         "",
         "Fill in EVERY field you can infer from the text. Do not leave a field "
         "blank if the information is present or can be reasonably inferred.",
-        "For transit items, always set the mode (one of: Flight, Train, Bus, "
-        "Ferry, Taxi, Rental car) based on the text.",
+        "REQUIRED FIELDS: fields marked with * below are MANDATORY for that item "
+        "type. You MUST include every required field in details, even if you have "
+        "to infer it from the text. Never omit a required field. For transit, "
+        "mode (Type) is required — always set it to one of: Flight, Train, Bus, "
+        "Ferry, Taxi, Rental car. For an activity, name and location are "
+        "required. For a hotel, hotel_name and address are required.",
         "",
-        "Allowed item types and their fields:",
+        "Allowed item types and their fields (fields marked * are required):",
         _item_type_schema(settings),
         "Only include fields that are present in the text. "
         "If the text is not travel-related, set item_type to 'note' and put "
@@ -410,8 +421,13 @@ def _build_chat_prompt(settings: dict, plan_context: str, can_search: bool = Fal
         '    {"item_type": one of ' + ", ".join(sorted(types.keys())) + ", "
         '"title": "...", "details": {...}, "when": {"start_at": "...", "end_at": "..."}, '
         '"geocodes": [{label, lat, lng}]}',
-        "  Fill in EVERY field you can infer (e.g. for transit always set the "
-        "mode; for a hotel set the address). Include geocodes (real coordinates) "
+        "  Fill in EVERY field you can infer. REQUIRED FIELDS: fields marked "
+        "with * below are MANDATORY for that item type — you MUST include every "
+        "required field in details, even if you have to infer it. For transit, "
+        "mode (Type) is required — always set it to one of: Flight, Train, Bus, "
+        "Ferry, Taxi, Rental car. For an activity, name and location are "
+        "required. For a hotel, hotel_name and address are required. "
+        "Include geocodes (real coordinates) "
         "for each location when you know them. Use an empty array [] if no items "
         "are suggested.",
         '  "edits": an array of changes to existing items. Use this when the user '
@@ -422,7 +438,7 @@ def _build_chat_prompt(settings: dict, plan_context: str, can_search: bool = Fal
         "  Only include the fields the user wants to change. Use an empty array [] "
         "if no items are edited.",
         "",
-        "Allowed item types and their fields:",
+        "Allowed item types and their fields (fields marked * are required):",
         _item_type_schema(settings),
     ]
     if can_search:
@@ -474,6 +490,11 @@ def _normalize_item(raw: dict) -> dict:
     details = raw.get("details") or {}
     if not isinstance(details, dict):
         details = {}
+    # Transit mode (Type) is a required field. If the model omitted it, infer
+    # a sensible default from the title so the add flow doesn't fail on a
+    # missing mandatory field.
+    if it_type == "transit" and not (details.get("mode") or "").strip():
+        details["mode"] = _infer_transit_mode(raw.get("title") or "")
     when = _coerce_when(details.get("when") if isinstance(details.get("when"), dict) else raw.get("when"))
     if when:
         details["when"] = when
@@ -494,6 +515,25 @@ def _normalize_item(raw: dict) -> dict:
         "end_date": end_date,
         "geocodes": _normalize_geocodes(raw.get("geocodes")),
     }
+
+
+def _infer_transit_mode(title: str) -> str:
+    """Guess a transit mode from a title, defaulting to Flight.
+
+    Used as a fallback when the model omits the required ``mode`` field.
+    """
+    t = title.lower()
+    if any(k in t for k in ("train", "shinkansen", "rail", "subway", "metro")):
+        return "Train"
+    if any(k in t for k in ("bus", "limo", "coach")):
+        return "Bus"
+    if any(k in t for k in ("ferry", "boat", "ship")):
+        return "Ferry"
+    if any(k in t for k in ("taxi", "cab", "uber", "grab")):
+        return "Taxi"
+    if any(k in t for k in ("rental", "car", "drive", "dacia")):
+        return "Rental car"
+    return "Flight"
 
 
 def _normalize_edit(raw: dict) -> dict:
