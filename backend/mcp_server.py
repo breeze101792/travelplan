@@ -47,6 +47,18 @@ def _load_settings() -> dict:
     return json.loads(SETTINGS_PATH.read_text(encoding="utf-8"))
 
 
+def _required_fields_note() -> str:
+    """Render the mandatory fields per item type for tool descriptions."""
+    spec = _load_settings().get("item_types") or {}
+    lines = []
+    for t, s in sorted(spec.items()):
+        fields = s.get("fields") or []
+        req = [f"{f.get('key')} ({f.get('label')})" for f in fields if f.get("required")]
+        if req:
+            lines.append(f"- {t}: {', '.join(req)}")
+    return "\n".join(lines)
+
+
 def _validate_required(item_type: str, title: str, details: dict) -> str | None:
     """Return an error message if a mandatory field is missing, else None.
 
@@ -192,19 +204,27 @@ def get_item(item_id: int) -> dict:
         conn.close()
 
 
-@mcp.tool()
+@mcp.tool(description=(
+    "Parse raw text (a flight ticket, hotel confirmation, etc.) into a "
+    "structured itinerary item. Returns {item_type, title, details, when, "
+    "item_date, end_date} ready to pass to create_item. "
+    "MANDATORY fields are declared per type and must never be omitted when "
+    "you later call create_item. Required fields by item type:\n"
+) + _required_fields_note())
 def extract_item(text: str, item_type: str | None = None) -> dict:
-    """Parse raw text (a flight ticket, hotel confirmation, etc.) into a
-    structured itinerary item. Returns {item_type, title, details, when,
-    item_date, end_date} ready to pass to create_item."""
+    """Parse raw text into a structured trip itinerary item."""
     return _ai_extract_item(text, item_type=item_type, settings=_load_settings())
 
 
-@mcp.tool()
+@mcp.tool(description=(
+    "Insert a new itinerary item into a plan. ``item`` may be the output of "
+    "extract_item or a hand-built object with item_type, title, details, "
+    "when, item_date, end_date, status. Every item requires a non-empty "
+    "title, a ``when`` block with both start_at and end_at, and all "
+    "MANDATORY fields for its item type. Required fields by item type:\n"
+) + _required_fields_note())
 def create_item(plan_id: int, item: dict) -> dict:
-    """Insert a new itinerary item into a plan. ``item`` may be the output of
-    extract_item or a hand-built object with item_type, title, details, when,
-    item_date, end_date, status."""
+    """Insert a new typed itinerary item into a plan."""
     conn = _connect()
     try:
         _ensure_writable(conn, plan_id)
