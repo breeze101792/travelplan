@@ -272,6 +272,41 @@ const HOTEL = (over = {}) => Object.assign({
   eq(v.find(x => x.id === 1).item_date, '2026-09-11', 'item 1 moved to 09-11');
 }
 
+/* ---------- move keeps the when object in sync ---------- */
+{
+  const s = new Staging({
+    baseItems: [
+      HOTEL({ id: 1, item_type: 'activity', title: 'A', item_date: '2026-09-10', end_date: null, sort_key: 1,
+        details: { when: { start_at: '2026-09-10T09:00', end_at: '2026-09-10T11:00' } } }),
+    ],
+    basePlan: { id: 99, title: 'P' },
+  });
+  s.add(moveItemOp({ itemId: 1, item_date: '2026-09-11' }));
+  const v = s.viewItems();
+  const it = v.find(x => x.id === 1);
+  eq(it.item_date, '2026-09-11', 'item moved to 09-11');
+  eq(it.details.when.start_at, '2026-09-11T09:00', 'when.start_at date shifted, time preserved');
+  eq(it.details.when.end_at, '2026-09-11T11:00', 'when.end_at date shifted, time preserved');
+}
+
+/* ---------- move of a spanning item shifts both when dates ---------- */
+{
+  const s = new Staging({
+    baseItems: [
+      HOTEL({ id: 1, item_type: 'hotel', title: 'H', item_date: '2026-09-10', end_date: '2026-09-12', sort_key: 1,
+        details: { when: { start_at: '2026-09-10T15:00', end_at: '2026-09-12T11:00' } } }),
+    ],
+    basePlan: { id: 99, title: 'P' },
+  });
+  s.add(moveItemOp({ itemId: 1, item_date: '2026-09-11', end_date: '2026-09-13' }));
+  const v = s.viewItems();
+  const it = v.find(x => x.id === 1);
+  eq(it.item_date, '2026-09-11', 'hotel moved to 09-11');
+  eq(it.end_date, '2026-09-13', 'hotel end moved to 09-13');
+  eq(it.details.when.start_at, '2026-09-11T15:00', 'when.start_at shifted to new check-in day');
+  eq(it.details.when.end_at, '2026-09-13T11:00', 'when.end_at shifted to new check-out day');
+}
+
 /* ---------- move on a local (unsaved) item is skipped on save ---------- */
 {
   const s = new Staging({ baseItems: [], basePlan: { id: 99, title: 'P' } });

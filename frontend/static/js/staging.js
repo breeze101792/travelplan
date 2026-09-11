@@ -67,6 +67,17 @@ function trunc(s, n) { s = String(s || ''); return s.length > n ? s.slice(0, n -
 // applied by the upcoming CREATE.
 function isLocalId(id) { return typeof id === 'string' && id.startsWith('_'); }
 
+// Replace the date part of a 'YYYY-MM-DDTHH:MM' string with ``newDate``,
+// keeping the time-of-day unchanged. Used when a move changes an item's
+// date so the ``when`` object (the single source of truth for dates) stays
+// in sync with the item_date / end_date columns — the same reconciliation
+// the backend's move_item performs.
+function shiftDate(s, newDate) {
+  const m = String(s).match(/T(\d{2}:\d{2})/);
+  if (!m) return `${newDate}T00:00`;
+  return `${newDate}T${m[1]}`;
+}
+
 /* ---------- op factories ----------
  *
  * Each factory returns a fresh op object with a stable `kind`, a human `label`
@@ -479,6 +490,18 @@ export function moveItemOp({ itemId, item_date, before_id, after_id, end_date, s
       const spansDays = it.end_date && it.item_date && it.end_date > it.item_date;
       const patch = { item_date: item_date || null };
       if (spansDays && end_date) patch.end_date = end_date;
+      // The ``when`` object is the single source of truth for dates, so a
+      // move must shift it too — otherwise the timeline (which reads
+      // details.when) and the server's reconciliation would keep the old
+      // date. Preserve the existing times and only move the date parts.
+      const details = it.details ? Object.assign({}, it.details) : {};
+      const when = details.when ? Object.assign({}, details.when) : {};
+      if (when.start_at) when.start_at = shiftDate(when.start_at, item_date || it.item_date);
+      // end_at lives on the same day as start_at for single-date items, so
+      // it follows item_date; spanning items shift it to the new end_date.
+      if (when.end_at) when.end_at = shiftDate(when.end_at, end_date || item_date || it.item_date);
+      if (Object.keys(when).length) details.when = when;
+      patch.details = details;
       const moved = reorderForMove(
         items.map(x => String(x.id) === String(itemId) ? Object.assign({}, x, patch) : x),
         itemId, item_date, before_id, after_id);
