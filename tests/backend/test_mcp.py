@@ -25,8 +25,11 @@ def mcp_env(app, monkeypatch):
     (data / "config").mkdir(parents=True, exist_ok=True)
     settings = {
         "item_types": {
-            "transit": {"label": "Transit", "fields": [{"key": "mode", "label": "Type"}]},
-            "hotel": {"label": "Hotel", "fields": [{"key": "hotel_name", "label": "Hotel name"}]},
+            "transit": {"label": "Transit", "fields": [{"key": "mode", "label": "Type", "required": True},
+                                                       {"key": "from", "label": "From", "required": True},
+                                                       {"key": "to", "label": "To", "required": True}]},
+            "hotel": {"label": "Hotel", "fields": [{"key": "hotel_name", "label": "Hotel name", "required": True},
+                                                   {"key": "address", "label": "Address", "required": True}]},
             "note": {"label": "Note", "fields": [{"key": "text", "label": "Note"}]},
         }
     }
@@ -79,7 +82,8 @@ def test_list_items_and_get_item(mcp_env):
     pid = _make_plan(mcp_env)
     created = mcp_mod.create_item(pid, {
         "item_type": "transit", "title": "JL 123",
-        "details": {"mode": "Flight", "when": {"start_at": "2026-09-10T09:00"}},
+        "details": {"mode": "Flight", "from": "Tokyo", "to": "Osaka",
+                    "when": {"start_at": "2026-09-10T09:00"}},
     })
     items = mcp_mod.list_items(pid)
     assert len(items) == 1
@@ -104,7 +108,8 @@ def test_create_item(mcp_env):
     created = mcp_mod.create_item(pid, {
         "item_type": "hotel",
         "title": "Grand Hotel",
-        "details": {"hotel_name": "Grand Hotel", "when": {"start_at": "2026-09-10T15:00", "end_at": "2026-09-12T11:00"}},
+        "details": {"hotel_name": "Grand Hotel", "address": "Tokyo",
+                    "when": {"start_at": "2026-09-10T15:00", "end_at": "2026-09-12T11:00"}},
     })
     assert created["id"] > 0
     assert created["item_date"] == "2026-09-10"
@@ -131,7 +136,8 @@ def test_create_item_missing_plan(mcp_env):
 
 def test_update_item(mcp_env):
     pid = _make_plan(mcp_env)
-    created = mcp_mod.create_item(pid, {"item_type": "note", "title": "Old", "details": {"text": "a"}})
+    created = mcp_mod.create_item(pid, {"item_type": "note", "title": "Old",
+                                        "details": {"text": "a", "when": {"start_at": "2026-09-10T09:00"}}})
     updated = mcp_mod.update_item(created["id"], {"title": "New", "status": "confirmed"})
     assert updated["title"] == "New"
     assert updated["status"] == "confirmed"
@@ -140,7 +146,8 @@ def test_update_item(mcp_env):
 
 def test_update_item_changes_when(mcp_env):
     pid = _make_plan(mcp_env)
-    created = mcp_mod.create_item(pid, {"item_type": "note", "title": "N", "details": {"text": "x"}})
+    created = mcp_mod.create_item(pid, {"item_type": "note", "title": "N",
+                                        "details": {"text": "x", "when": {"start_at": "2026-09-10T09:00"}}})
     updated = mcp_mod.update_item(created["id"], {
         "details": {"text": "x", "when": {"start_at": "2026-09-11T08:00"}},
     })
@@ -155,7 +162,9 @@ def test_update_item_missing(mcp_env):
 
 def test_create_then_update_roundtrip(mcp_env):
     pid = _make_plan(mcp_env)
-    created = mcp_mod.create_item(pid, {"item_type": "transit", "title": "Flight", "details": {"mode": "Flight"}})
+    created = mcp_mod.create_item(pid, {"item_type": "transit", "title": "Flight",
+                                        "details": {"mode": "Flight", "from": "Tokyo", "to": "Osaka",
+                                                   "when": {"start_at": "2026-09-10T09:00"}}})
     mcp_mod.update_item(created["id"], {"status": "done"})
     got = mcp_mod.get_item(created["id"])
     assert got["status"] == "done"
@@ -181,7 +190,8 @@ def test_create_item_blocked_on_archived(mcp_env):
 
 def test_update_item_blocked_on_archived(mcp_env):
     pid = _make_plan(mcp_env)
-    created = mcp_mod.create_item(pid, {"item_type": "note", "title": "Old"})
+    created = mcp_mod.create_item(pid, {"item_type": "note", "title": "Old",
+                                        "details": {"when": {"start_at": "2026-09-10T09:00"}}})
     _archive_plan(mcp_env, pid)
     with pytest.raises(ValueError, match="archived"):
         mcp_mod.update_item(created["id"], {"title": "New"})
@@ -189,7 +199,8 @@ def test_update_item_blocked_on_archived(mcp_env):
 
 def test_read_tools_work_on_archived(mcp_env):
     pid = _make_plan(mcp_env)
-    created = mcp_mod.create_item(pid, {"item_type": "note", "title": "Old"})
+    created = mcp_mod.create_item(pid, {"item_type": "note", "title": "Old",
+                                        "details": {"when": {"start_at": "2026-09-10T09:00"}}})
     _archive_plan(mcp_env, pid)
     # Reads still work on archived plans.
     assert mcp_mod.get_plan(pid)["plan"]["status"] == "archived"

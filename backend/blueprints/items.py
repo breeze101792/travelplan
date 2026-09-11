@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import json
 import re
+from pathlib import Path
 
 from flask import Blueprint, request, g, abort, jsonify
 
@@ -28,6 +29,42 @@ items_bp = Blueprint("items", __name__)
 ITEM_TYPES = {"hotel", "transit", "restaurant",
               "activity", "note"}
 STATUSES = {"planned", "confirmed", "done"}
+
+_SETTINGS_PATH = Path(__file__).resolve().parent.parent.parent / "data" / "config" / "settings.json"
+
+
+def _load_item_type_schema() -> dict:
+    """Load the item-type field schema from settings.json (cached per call)."""
+    try:
+        return json.loads(_SETTINGS_PATH.read_text(encoding="utf-8")).get("item_types") or {}
+    except (OSError, ValueError):
+        return {}
+
+
+def _validate_required(item_type: str, title: str, details: dict) -> str | None:
+    """Return an error message if a mandatory field is missing, else None.
+
+    Title and the ``when`` block (start/end datetime) are required for every
+    item; type-specific required fields come from settings.json's
+    ``"required": true``. Mirrors the frontend's editor validation so the
+    server rejects incomplete items even when the client is bypassed.
+    """
+    if not title or not title.strip():
+        return "title required"
+    when = details.get("when") or {}
+    if not when.get("start_at"):
+        return "when.start_at required"
+    if not when.get("end_at"):
+        return "when.end_at required"
+    schema = _load_item_type_schema()
+    spec = schema.get(item_type) or {}
+    for f in (spec.get("fields") or []):
+        if not f.get("required"):
+            continue
+        v = details.get(f.get("key"))
+        if v is None or str(v).strip() == "":
+            return f"{f.get('key')} required"
+    return None
 
 
 def _ensure_plan_writable(plan_id: int) -> None:
@@ -206,13 +243,20 @@ def create_item(plan_id):
     if item_type not in ITEM_TYPES:
         return jsonify({"error": "invalid item_type"}), 400
     title = (data.get("title") or "").strip()
-    if not title:
-        return jsonify({"error": "title required"}), 400
     details = data.get("details") or {}
     # Coerce the unified when object (the editor always sends it). The
     # item_date / end_date columns are derived from it so the day
     # grouping and the spanning-hotel SQL stay consistent.
     when = _coerce_when(details.get("when"))
+    if when:
+        details["when"] = when
+    else:
+        details.pop("when", None)
+    # Reject incomplete items: title, the when block, and any type-specific
+    # required fields must be present (mirrors the frontend editor).
+    err = _validate_required(item_type, title, details)
+    if err:
+        return jsonify({"error": err}), 400
     item_date = data.get("item_date")
     end_date = data.get("end_date")
     if when.get("start_at"):
@@ -223,10 +267,6 @@ def create_item(plan_id):
         d = _date_part(when["end_at"])
         if d:
             end_date = d
-    if when:
-        details["when"] = when
-    else:
-        details.pop("when", None)
     db = get_db()
     max_key = db.execute(
         "SELECT COALESCE(MAX(sort_key), 0) FROM items WHERE plan_id = ? AND item_date IS ?",
@@ -268,6 +308,19 @@ def mutate_item(item_id):
     conflict = check_version(item, data)
     if conflict:
         return jsonify(conflict), 409
+    # Validate the merged state (existing item + this patch) so a PATCH can't
+    # leave an item missing a required field. Mirrors the frontend editor.
+    merged_details = json.loads(item["details"]) if item.get("details") else {}
+    if "details" in data and isinstance(data["details"], dict):
+        merged_details = {**merged_details, **data["details"]}
+    # Coerce the merged when so a start-only when gets its end_at defaulted
+    # (the same normalization the write path applies) before validating.
+    if isinstance(merged_details.get("when"), dict):
+        merged_details["when"] = _coerce_when(merged_details["when"])
+    merged_title = data.get("title", item["title"])
+    err = _validate_required(item["item_type"], merged_title, merged_details)
+    if err:
+        return jsonify({"error": err}), 400
     sets, args = [], []
     for k in ("title",):
         if k in data:

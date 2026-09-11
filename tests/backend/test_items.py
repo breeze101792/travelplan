@@ -14,6 +14,17 @@ def plan_id(member_client, make_plan):
     return make_plan(start_date="2026-07-01", end_date="2026-07-03")["id"]
 
 
+def _note(member_client, plan_id, title, **extra):
+    """Create a valid note item (title + when block) for test fixtures."""
+    body = {
+        "item_type": "note", "title": title,
+        "details": {"when": {"start_at": "2026-07-01T09:00",
+                             "end_at": "2026-07-01T10:00"}},
+    }
+    body.update(extra)
+    return member_client.post(f"/api/plans/{plan_id}/items", json=body).get_json()["item"]
+
+
 # ------------------------------------------------------------------ create/list
 class TestItemCreate:
     def test_create_item_happy_path(self, member_client, plan_id):
@@ -37,7 +48,8 @@ class TestItemCreate:
         """The when object is the source of truth — item_date is computed from it."""
         r = member_client.post(f"/api/plans/{plan_id}/items", json={
             "item_type": "activity", "title": "Hike",
-            "details": {"when": {"start_at": "2026-08-15T09:00",
+            "details": {"name": "Hike", "location": "Kyoto",
+                        "when": {"start_at": "2026-08-15T09:00",
                                   "end_at": "2026-08-15T12:00"}},
         })
         assert r.status_code == 200
@@ -63,17 +75,18 @@ class TestItemCreate:
         assert item["details"]["when"]["end_at"] == "2026-08-15T09:00"
 
     def test_create_strips_when_when_empty(self, member_client, plan_id):
+        # An empty when object is rejected — every item needs a start/end.
         r = member_client.post(f"/api/plans/{plan_id}/items", json={
             "item_type": "note", "title": "Plain",
             "details": {"when": {}, "text": "hi"},
         })
-        item = r.get_json()["item"]
-        assert "when" not in item["details"]
+        assert r.status_code == 400
 
     def test_create_when_end_at_explicit_is_preserved(self, member_client, plan_id):
         r = member_client.post(f"/api/plans/{plan_id}/items", json={
             "item_type": "activity", "title": "Hike",
-            "details": {"when": {"start_at": "2026-08-15T09:00",
+            "details": {"name": "Hike", "location": "Kyoto",
+                        "when": {"start_at": "2026-08-15T09:00",
                                   "end_at": "2026-08-15T13:00"}}},
         )
         assert r.status_code == 200
@@ -92,10 +105,56 @@ class TestItemCreate:
         })
         assert r.status_code == 400
 
+    def test_create_item_rejects_missing_when(self, member_client, plan_id):
+        """Every item needs a when block (start/end datetime)."""
+        r = member_client.post(f"/api/plans/{plan_id}/items", json={
+            "item_type": "note", "title": "T", "details": {},
+        })
+        assert r.status_code == 400
+        assert r.get_json()["error"] == "when.start_at required"
+
+    def test_create_item_rejects_missing_required_type_field(self, member_client, plan_id):
+        """Type-specific required fields (from settings.json) are enforced."""
+        r = member_client.post(f"/api/plans/{plan_id}/items", json={
+            "item_type": "transit", "title": "Flight",
+            "details": {"mode": "Flight", "from": "Tokyo",
+                        "when": {"start_at": "2026-07-01T09:00",
+                                 "end_at": "2026-07-01T10:00"}},
+        })
+        assert r.status_code == 400
+        assert r.get_json()["error"] == "to required"
+
+    def test_patch_rejects_removing_required_field(self, member_client, plan_id):
+        """A PATCH that would leave a required field empty is rejected."""
+        item = member_client.post(f"/api/plans/{plan_id}/items", json={
+            "item_type": "transit", "title": "Flight",
+            "details": {"mode": "Flight", "from": "Tokyo", "to": "Osaka",
+                        "when": {"start_at": "2026-07-01T09:00",
+                                 "end_at": "2026-07-01T10:00"}},
+        }).get_json()["item"]
+        r = member_client.patch(f"/api/items/{item['id']}", json={
+            "details": {"mode": "Flight", "from": "Tokyo", "to": "",
+                        "when": {"start_at": "2026-07-01T09:00",
+                                 "end_at": "2026-07-01T10:00"}},
+        })
+        assert r.status_code == 400
+        assert r.get_json()["error"] == "to required"
+
     def test_create_item_all_types(self, member_client, plan_id):
+        # Each type's required fields (from settings.json) must be present.
+        required = {
+            "hotel": {"hotel_name": "H", "address": "Tokyo"},
+            "transit": {"mode": "Flight", "from": "Tokyo", "to": "Osaka"},
+            "restaurant": {"name": "R", "address": "Kyoto"},
+            "activity": {"name": "A", "location": "Nara"},
+            "note": {},
+        }
         for t in ("hotel", "transit", "restaurant", "activity", "note"):
             r = member_client.post(f"/api/plans/{plan_id}/items", json={
                 "item_type": t, "title": t.title(),
+                "details": {**required[t],
+                            "when": {"start_at": "2026-07-01T09:00",
+                                     "end_at": "2026-07-01T10:00"}},
             })
             assert r.status_code == 200, f"{t}: {r.data}"
             assert r.get_json()["item"]["item_type"] == t
@@ -103,13 +162,17 @@ class TestItemCreate:
     def test_create_item_with_status(self, member_client, plan_id):
         r = member_client.post(f"/api/plans/{plan_id}/items", json={
             "item_type": "note", "title": "T", "status": "confirmed",
+            "details": {"when": {"start_at": "2026-07-01T09:00",
+                                 "end_at": "2026-07-01T10:00"}},
         })
         assert r.get_json()["item"]["status"] == "confirmed"
 
     def test_list_items_returns_all(self, member_client, plan_id):
         for i in range(3):
             member_client.post(f"/api/plans/{plan_id}/items", json={
-                "item_type": "note", "title": f"item {i}"})
+                "item_type": "note", "title": f"item {i}",
+                "details": {"when": {"start_at": "2026-07-01T09:00",
+                                     "end_at": "2026-07-01T10:00"}}})
         r = member_client.get(f"/api/plans/{plan_id}/items")
         assert r.status_code == 200
         assert len(r.get_json()["items"]) == 3
@@ -118,8 +181,7 @@ class TestItemCreate:
 # ------------------------------------------------------------------ patch/delete
 class TestItemPatchDelete:
     def test_patch_title_and_details(self, member_client, plan_id):
-        item = member_client.post(f"/api/plans/{plan_id}/items", json={
-            "item_type": "note", "title": "Old"}).get_json()["item"]
+        item = _note(member_client, plan_id, "Old")
         r = member_client.patch(f"/api/items/{item['id']}", json={
             "title": "New", "details": {"note": "updated"}})
         assert r.status_code == 200
@@ -128,8 +190,7 @@ class TestItemPatchDelete:
         assert it["details"]["note"] == "updated"
 
     def test_patch_status_validates(self, member_client, plan_id):
-        item = member_client.post(f"/api/plans/{plan_id}/items", json={
-            "item_type": "note", "title": "T"}).get_json()["item"]
+        item = _note(member_client, plan_id, "T")
         r = member_client.patch(f"/api/items/{item['id']}", json={"status": "done"})
         assert r.status_code == 200
         assert r.get_json()["item"]["status"] == "done"
@@ -138,10 +199,12 @@ class TestItemPatchDelete:
         assert r.status_code == 200
 
     def test_patch_dates(self, member_client, plan_id):
-        item = member_client.post(f"/api/plans/{plan_id}/items", json={
-            "item_type": "note", "title": "T", "item_date": "2026-07-01"}).get_json()["item"]
+        item = _note(member_client, plan_id, "T", item_date="2026-07-01")
+        # The when object is the source of truth for dates, so a date change
+        # goes through when.start_at / when.end_at.
         r = member_client.patch(f"/api/items/{item['id']}", json={
-            "item_date": "2026-07-02", "end_date": "2026-07-03"})
+            "details": {"when": {"start_at": "2026-07-02T09:00",
+                                 "end_at": "2026-07-03T10:00"}}})
         assert r.status_code == 200
         it = r.get_json()["item"]
         assert it["item_date"] == "2026-07-02"
@@ -155,8 +218,9 @@ class TestItemPatchDelete:
         item = member_client.post(f"/api/plans/{plan_id}/items", json={
             "item_type": "hotel", "title": "H",
             "item_date": "2026-07-01", "end_date": "2026-07-02",
-            "details": {"when": {"start_at": "2026-07-01T15:00",
-                                 "end_at": "2026-07-02T11:00"}},
+            "details": {"hotel_name": "H", "address": "Tokyo",
+                        "when": {"start_at": "2026-07-01T15:00",
+                                  "end_at": "2026-07-02T11:00"}},
         }).get_json()["item"]
         assert item["item_date"] == "2026-07-01"
         assert item["end_date"] == "2026-07-02"
@@ -176,8 +240,9 @@ class TestItemPatchDelete:
         """Sending a new ``when`` should update item_date and end_date."""
         item = member_client.post(f"/api/plans/{plan_id}/items", json={
             "item_type": "activity", "title": "A",
-            "details": {"when": {"start_at": "2026-07-01T09:00",
-                                 "end_at": "2026-07-01T11:00"}},
+            "details": {"name": "A", "location": "Kyoto",
+                        "when": {"start_at": "2026-07-01T09:00",
+                                  "end_at": "2026-07-01T11:00"}},
         }).get_json()["item"]
         assert item["item_date"] == "2026-07-01"
         r = member_client.patch(f"/api/items/{item['id']}", json={
@@ -197,8 +262,9 @@ class TestItemPatchDelete:
         item = member_client.post(f"/api/plans/{plan_id}/items", json={
             "item_type": "hotel", "title": "H",
             "item_date": "2026-07-01", "end_date": "2026-07-02",
-            "details": {"when": {"start_at": "2026-07-01T15:00",
-                                 "end_at": "2026-07-02T11:00"}},
+            "details": {"hotel_name": "H", "address": "Tokyo",
+                        "when": {"start_at": "2026-07-01T15:00",
+                                  "end_at": "2026-07-02T11:00"}},
         }).get_json()["item"]
         assert item["end_date"] == "2026-07-02"
         r = member_client.patch(f"/api/items/{item['id']}", json={
@@ -227,8 +293,7 @@ class TestItemPatchDelete:
         assert it["details"]["when"]["end_at"] == "2026-07-02T10:00"
 
     def test_delete_item(self, member_client, plan_id):
-        item = member_client.post(f"/api/plans/{plan_id}/items", json={
-            "item_type": "note", "title": "T"}).get_json()["item"]
+        item = _note(member_client, plan_id, "T")
         r = member_client.delete(f"/api/items/{item['id']}")
         assert r.status_code == 200
         items = member_client.get(f"/api/plans/{plan_id}/items").get_json()["items"]
@@ -245,10 +310,8 @@ class TestItemPatchDelete:
 # ------------------------------------------------------------------ move (drag/drop)
 class TestItemMove:
     def test_move_to_end_of_day(self, member_client, plan_id):
-        a = member_client.post(f"/api/plans/{plan_id}/items", json={
-            "item_type": "note", "title": "A", "item_date": "2026-07-01"}).get_json()["item"]
-        b = member_client.post(f"/api/plans/{plan_id}/items", json={
-            "item_type": "note", "title": "B", "item_date": "2026-07-01"}).get_json()["item"]
+        a = _note(member_client, plan_id, "A", item_date="2026-07-01")
+        b = _note(member_client, plan_id, "B", item_date="2026-07-01")
         # Move A to after B (no before_id) — should land after B.
         r = member_client.post(f"/api/items/{a['id']}/move", json={
             "item_date": "2026-07-01", "after_id": b["id"]})
@@ -259,18 +322,15 @@ class TestItemMove:
         assert [i["title"] for i in ordered] == ["B", "A"]
 
     def test_move_between_days(self, member_client, plan_id):
-        a = member_client.post(f"/api/plans/{plan_id}/items", json={
-            "item_type": "note", "title": "A", "item_date": "2026-07-01"}).get_json()["item"]
+        a = _note(member_client, plan_id, "A", item_date="2026-07-01")
         r = member_client.post(f"/api/items/{a['id']}/move", json={
             "item_date": "2026-07-02"})
         assert r.status_code == 200
         assert r.get_json()["item"]["item_date"] == "2026-07-02"
 
     def test_move_before_specific_item(self, member_client, plan_id):
-        a = member_client.post(f"/api/plans/{plan_id}/items", json={
-            "item_type": "note", "title": "A", "item_date": "2026-07-01"}).get_json()["item"]
-        b = member_client.post(f"/api/plans/{plan_id}/items", json={
-            "item_type": "note", "title": "B", "item_date": "2026-07-01"}).get_json()["item"]
+        a = _note(member_client, plan_id, "A", item_date="2026-07-01")
+        b = _note(member_client, plan_id, "B", item_date="2026-07-01")
         # Move A to before B (after_id=None, before_id=b).
         r = member_client.post(f"/api/items/{a['id']}/move", json={
             "item_date": "2026-07-01", "before_id": b["id"]})
@@ -300,7 +360,8 @@ class TestItemMove:
         """Moving a spanning hotel shifts both when.start_at and when.end_at."""
         a = member_client.post(f"/api/plans/{plan_id}/items", json={
             "item_type": "hotel", "title": "H", "item_date": "2026-07-01", "end_date": "2026-07-03",
-            "details": {"when": {"start_at": "2026-07-01T15:00", "end_at": "2026-07-03T11:00"}}}).get_json()["item"]
+            "details": {"hotel_name": "H", "address": "Tokyo",
+                        "when": {"start_at": "2026-07-01T15:00", "end_at": "2026-07-03T11:00"}}}).get_json()["item"]
         r = member_client.post(f"/api/items/{a['id']}/move", json={
             "item_date": "2026-07-02", "end_date": "2026-07-04"})
         assert r.status_code == 200
@@ -318,8 +379,7 @@ class TestItemMove:
 # ------------------------------------------------------------------ attachments
 class TestAttachments:
     def test_add_link_attachment(self, member_client, plan_id):
-        item = member_client.post(f"/api/plans/{plan_id}/items", json={
-            "item_type": "note", "title": "T"}).get_json()["item"]
+        item = _note(member_client, plan_id, "T")
         r = member_client.post(f"/api/items/{item['id']}/attachments", json={
             "kind": "link", "value": "https://example.com/page",
             "caption": "info"})
@@ -330,29 +390,25 @@ class TestAttachments:
         assert att["caption"] == "info"
 
     def test_add_link_rejects_non_http(self, member_client, plan_id):
-        item = member_client.post(f"/api/plans/{plan_id}/items", json={
-            "item_type": "note", "title": "T"}).get_json()["item"]
+        item = _note(member_client, plan_id, "T")
         r = member_client.post(f"/api/items/{item['id']}/attachments", json={
             "kind": "link", "value": "ftp://x"})
         assert r.status_code == 400
 
     def test_add_attachment_rejects_missing_value(self, member_client, plan_id):
-        item = member_client.post(f"/api/plans/{plan_id}/items", json={
-            "item_type": "note", "title": "T"}).get_json()["item"]
+        item = _note(member_client, plan_id, "T")
         r = member_client.post(f"/api/items/{item['id']}/attachments", json={
             "kind": "link", "value": ""})
         assert r.status_code == 400
 
     def test_add_attachment_rejects_bad_kind(self, member_client, plan_id):
-        item = member_client.post(f"/api/plans/{plan_id}/items", json={
-            "item_type": "note", "title": "T"}).get_json()["item"]
+        item = _note(member_client, plan_id, "T")
         r = member_client.post(f"/api/items/{item['id']}/attachments", json={
             "kind": "file", "value": "x"})
         assert r.status_code == 400
 
     def test_update_attachment(self, member_client, plan_id):
-        item = member_client.post(f"/api/plans/{plan_id}/items", json={
-            "item_type": "note", "title": "T"}).get_json()["item"]
+        item = _note(member_client, plan_id, "T")
         att = member_client.post(f"/api/items/{item['id']}/attachments", json={
             "kind": "link", "value": "https://a.com"}).get_json()["attachment"]
         r = member_client.patch(f"/api/attachments/{att['id']}", json={
@@ -363,16 +419,14 @@ class TestAttachments:
         assert a["caption"] == "new"
 
     def test_update_attachment_rejects_non_http(self, member_client, plan_id):
-        item = member_client.post(f"/api/plans/{plan_id}/items", json={
-            "item_type": "note", "title": "T"}).get_json()["item"]
+        item = _note(member_client, plan_id, "T")
         att = member_client.post(f"/api/items/{item['id']}/attachments", json={
             "kind": "link", "value": "https://a.com"}).get_json()["attachment"]
         r = member_client.patch(f"/api/attachments/{att['id']}", json={"value": "ftp://x"})
         assert r.status_code == 400
 
     def test_delete_attachment(self, member_client, plan_id):
-        item = member_client.post(f"/api/plans/{plan_id}/items", json={
-            "item_type": "note", "title": "T"}).get_json()["item"]
+        item = _note(member_client, plan_id, "T")
         att = member_client.post(f"/api/items/{item['id']}/attachments", json={
             "kind": "link", "value": "https://a.com"}).get_json()["attachment"]
         r = member_client.delete(f"/api/attachments/{att['id']}")
@@ -390,8 +444,7 @@ class TestUploads:
         return (io.BytesIO(self.PNG_HEADER), name)
 
     def test_upload_image_creates_attachment(self, member_client, plan_id):
-        item = member_client.post(f"/api/plans/{plan_id}/items", json={
-            "item_type": "note", "title": "T"}).get_json()["item"]
+        item = _note(member_client, plan_id, "T")
         r = member_client.post(f"/api/items/{item['id']}/upload",
                               data={"file": self._png()},
                               content_type="multipart/form-data")
@@ -406,23 +459,20 @@ class TestUploads:
         assert r2.data.startswith(self.PNG_HEADER)
 
     def test_upload_rejects_no_file(self, member_client, plan_id):
-        item = member_client.post(f"/api/plans/{plan_id}/items", json={
-            "item_type": "note", "title": "T"}).get_json()["item"]
+        item = _note(member_client, plan_id, "T")
         r = member_client.post(f"/api/items/{item['id']}/upload",
                               data={}, content_type="multipart/form-data")
         assert r.status_code == 400
 
     def test_upload_rejects_bad_extension(self, member_client, plan_id):
-        item = member_client.post(f"/api/plans/{plan_id}/items", json={
-            "item_type": "note", "title": "T"}).get_json()["item"]
+        item = _note(member_client, plan_id, "T")
         r = member_client.post(f"/api/items/{item['id']}/upload",
                               data={"file": self._png("evil.txt")},
                               content_type="multipart/form-data")
         assert r.status_code == 400
 
     def test_upload_rejects_non_image_content(self, member_client, plan_id):
-        item = member_client.post(f"/api/plans/{plan_id}/items", json={
-            "item_type": "note", "title": "T"}).get_json()["item"]
+        item = _note(member_client, plan_id, "T")
         # Right extension, wrong magic bytes.
         r = member_client.post(f"/api/items/{item['id']}/upload",
                               data={"file": (io.BytesIO(b"not an image"), "fake.png")},
@@ -430,8 +480,7 @@ class TestUploads:
         assert r.status_code == 400
 
     def test_upload_path_traversal_blocked(self, member_client, plan_id):
-        item = member_client.post(f"/api/plans/{plan_id}/items", json={
-            "item_type": "note", "title": "T"}).get_json()["item"]
+        item = _note(member_client, plan_id, "T")
         r = member_client.post(f"/api/items/{item['id']}/upload",
                               data={"file": self._png("../evil.png")},
                               content_type="multipart/form-data")
@@ -463,13 +512,17 @@ class TestItemAccessControl:
         c2 = app.test_client()
         c2.post("/auth/login", data={"username": "bob2", "password": "pw12345"})
         r = c2.post(f"/api/plans/{p['id']}/items", json={
-            "item_type": "note", "title": "X"})
+            "item_type": "note", "title": "X",
+            "details": {"when": {"start_at": "2026-07-01T09:00",
+                                 "end_at": "2026-07-01T10:00"}}})
         assert r.status_code == 200
 
     def test_non_member_cannot_list(self, app, member_client, make_plan, make_user):
         p = make_plan()
         member_client.post(f"/api/plans/{p['id']}/items", json={
-            "item_type": "note", "title": "T"})
+            "item_type": "note", "title": "T",
+            "details": {"when": {"start_at": "2026-07-01T09:00",
+                                 "end_at": "2026-07-01T10:00"}}})
         make_user(username="carol2")
         c2 = app.test_client()
         c2.post("/auth/login", data={"username": "carol2", "password": "pw12345"})
@@ -485,8 +538,7 @@ class TestItemAccessControl:
 # ------------------------------------------------------------------ version conflicts (409)
 class TestItemVersionConflicts:
     def test_patch_conflict_409(self, member_client, plan_id, db):
-        item = member_client.post(f"/api/plans/{plan_id}/items", json={
-            "item_type": "note", "title": "T"}).get_json()["item"]
+        item = _note(member_client, plan_id, "T")
         row = db.one("SELECT updated_at FROM items WHERE id = ?", (item["id"],))
         wrong_ts = "2000-01-01T00:00:00" if row["updated_at"] != "2000-01-01T00:00:00" else "2000-01-02T00:00:00"
         r = member_client.patch(f"/api/items/{item['id']}", json={
@@ -496,8 +548,7 @@ class TestItemVersionConflicts:
         assert body["error"] == "conflict"
 
     def test_delete_conflict_409(self, member_client, plan_id, db):
-        item = member_client.post(f"/api/plans/{plan_id}/items", json={
-            "item_type": "note", "title": "T"}).get_json()["item"]
+        item = _note(member_client, plan_id, "T")
         row = db.one("SELECT updated_at FROM items WHERE id = ?", (item["id"],))
         wrong_ts = "2000-01-01T00:00:00" if row["updated_at"] != "2000-01-01T00:00:00" else "2000-01-02T00:00:00"
         r = member_client.delete(f"/api/items/{item['id']}", json={"expected_updated_at": wrong_ts})
@@ -507,16 +558,14 @@ class TestItemVersionConflicts:
 
     # Correct version lets the request through
     def test_patch_correct_version_succeeds(self, member_client, plan_id, db):
-        item = member_client.post(f"/api/plans/{plan_id}/items", json={
-            "item_type": "note", "title": "T"}).get_json()["item"]
+        item = _note(member_client, plan_id, "T")
         row = db.one("SELECT updated_at FROM items WHERE id = ?", (item["id"],))
         r = member_client.patch(f"/api/items/{item['id']}", json={
             "title": "new", "expected_updated_at": row["updated_at"]})
         assert r.status_code == 200
 
     def test_reorder_conflict_409(self, member_client, plan_id, db):
-        item = member_client.post(f"/api/plans/{plan_id}/items", json={
-            "item_type": "note", "title": "T"}).get_json()["item"]
+        item = _note(member_client, plan_id, "T")
         row = db.one("SELECT updated_at FROM items WHERE id = ?", (item["id"],))
         wrong_ts = "2000-01-01T00:00:00" if row["updated_at"] != "2000-01-01T00:00:00" else "2000-01-02T00:00:00"
         r = member_client.post(f"/api/items/{item['id']}/move", json={

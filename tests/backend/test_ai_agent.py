@@ -52,7 +52,7 @@ CHAT_RESULT = {
     "reply": "Here's a flight suggestion.",
     "items": [
         {"item_type": "transit", "title": "JL 123 Tokyo to Osaka",
-         "details": {"mode": "Flight", "provider": "JAL",
+         "details": {"mode": "Flight", "provider": "JAL", "from": "Tokyo", "to": "Osaka",
                      "when": {"start_at": "2026-09-10T09:00"}}},
     ],
 }
@@ -164,7 +164,8 @@ def test_chat_then_edit_item_flow(member_client, ai_config, stub_llm):
     # Create a hotel item first.
     r = member_client.post(f"/api/plans/{pid}/items", json={
         "item_type": "hotel", "title": "Beverly Hotels Elements",
-        "details": {"when": {"start_at": "2026-09-24T15:00", "end_at": "2026-09-29T11:00"}},
+        "details": {"hotel_name": "Beverly Hotels Elements", "address": "Tokyo",
+                    "when": {"start_at": "2026-09-24T15:00", "end_at": "2026-09-29T11:00"}},
     })
     assert r.status_code == 200, r.data
     item = r.get_json()["item"]
@@ -215,7 +216,10 @@ def test_chat_then_add_item_persists_geocodes(member_client, ai_config, stub_llm
         "reply": "Added the hotel.",
         "items": [
             {"item_type": "hotel", "title": "Beverly Hotels Elements",
-             "details": {"address": "1 Raffles Place, Singapore"},
+             "details": {"hotel_name": "Beverly Hotels Elements",
+                         "address": "1 Raffles Place, Singapore",
+                         "when": {"start_at": "2026-09-24T15:00",
+                                  "end_at": "2026-09-25T11:00"}},
              "geocodes": [{"label": "1 Raffles Place, Singapore",
                            "lat": 1.2844, "lng": 103.8512}]},
         ],

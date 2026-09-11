@@ -244,7 +244,10 @@ class TestExpensesByItem:
     def test_by_item_aggregates_per_item(self, member_client, plan_id, user_ids):
         # Create an item, then attach an expense to it.
         item = member_client.post(f"/api/plans/{plan_id}/items", json={
-            "item_type": "restaurant", "title": "Dinner"}).get_json()["item"]
+            "item_type": "restaurant", "title": "Dinner",
+            "details": {"name": "Dinner", "address": "Tokyo",
+                        "when": {"start_at": "2026-07-01T19:00",
+                                 "end_at": "2026-07-01T20:00"}}}).get_json()["item"]
         member_client.post(f"/api/plans/{plan_id}/expenses", json={
             "description": "Dinner", "currency": "USD", "amount": "20.00",
             "split_method": "EQUAL", "item_id": item["id"],

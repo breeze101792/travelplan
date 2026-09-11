@@ -11,8 +11,8 @@
         "end": "Check-out"
       },
       "fields": [
-        {"key": "hotel_name", "label": "Hotel name", "type": "text"},
-        {"key": "address", "label": "Address", "type": "text"},
+        {"key": "hotel_name", "label": "Hotel name", "type": "text", "required": true},
+        {"key": "address", "label": "Address", "type": "text", "required": true},
         {"key": "booking_ref", "label": "Booking ref", "type": "text"},
         {"key": "note", "label": "Note", "type": "textarea"}
       ],
@@ -31,11 +31,11 @@
         "end": "Arrive"
       },
       "fields": [
-        {"key": "mode", "label": "Type", "type": "select", "options": ["Flight", "Train", "Bus", "Ferry", "Taxi", "Rental car"]},
+        {"key": "mode", "label": "Type", "type": "select", "options": ["Flight", "Train", "Bus", "Ferry", "Taxi", "Rental car"], "required": true},
         {"key": "provider", "label": "Provider / airline", "type": "text"},
         {"key": "ref_no", "label": "Ref / flight no.", "type": "text"},
-        {"key": "from", "label": "From", "type": "text"},
-        {"key": "to", "label": "To", "type": "text"},
+        {"key": "from", "label": "From", "type": "text", "required": true},
+        {"key": "to", "label": "To", "type": "text", "required": true},
         {"key": "seat", "label": "Seat / car", "type": "text"},
         {"key": "confirmation", "label": "Confirmation", "type": "text"},
         {"key": "note", "label": "Note", "type": "textarea"}
@@ -57,8 +57,8 @@
         "end": "End"
       },
       "fields": [
-        {"key": "name", "label": "Name", "type": "text"},
-        {"key": "location", "label": "Location / Venue", "type": "text"},
+        {"key": "name", "label": "Name", "type": "text", "required": true},
+        {"key": "location", "label": "Location / Venue", "type": "text", "required": true},
         {"key": "note", "label": "Note", "type": "textarea"}
       ],
       "rows": [
@@ -75,8 +75,8 @@
         "end": "End"
       },
       "fields": [
-        {"key": "name", "label": "Restaurant name", "type": "text"},
-        {"key": "address", "label": "Address", "type": "text"},
+        {"key": "name", "label": "Restaurant name", "type": "text", "required": true},
+        {"key": "address", "label": "Address", "type": "text", "required": true},
         {"key": "party_size", "label": "Party size", "type": "number"},
         {"key": "note", "label": "Note", "type": "textarea"}
       ],

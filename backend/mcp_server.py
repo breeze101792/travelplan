@@ -47,6 +47,31 @@ def _load_settings() -> dict:
     return json.loads(SETTINGS_PATH.read_text(encoding="utf-8"))
 
 
+def _validate_required(item_type: str, title: str, details: dict) -> str | None:
+    """Return an error message if a mandatory field is missing, else None.
+
+    Mirrors ``blueprints/items.py::_validate_required`` so the MCP server
+    enforces the same required fields (title, the when block, and any
+    type-specific ``"required": true`` fields) as the web API.
+    """
+    if not title or not title.strip():
+        return "title required"
+    when = details.get("when") or {}
+    if not when.get("start_at"):
+        return "when.start_at required"
+    if not when.get("end_at"):
+        return "when.end_at required"
+    schema = _load_settings().get("item_types") or {}
+    spec = schema.get(item_type) or {}
+    for f in (spec.get("fields") or []):
+        if not f.get("required"):
+            continue
+        v = details.get(f.get("key"))
+        if v is None or str(v).strip() == "":
+            return f"{f.get('key')} required"
+    return None
+
+
 def _ensure_writable(conn: sqlite3.Connection, plan_id: int) -> None:
     """Raise if the plan is archived (read-only) or missing."""
     row = conn.execute("SELECT status FROM plans WHERE id = ?", (plan_id,)).fetchone()
@@ -186,8 +211,9 @@ def create_item(plan_id: int, item: dict) -> dict:
         c = _coerce_item(item)
         if c["item_type"] not in ITEM_TYPES:
             raise ValueError(f"invalid item_type: {c['item_type']!r}")
-        if not c["title"]:
-            raise ValueError("title required")
+        err = _validate_required(c["item_type"], c["title"], c["details"])
+        if err:
+            raise ValueError(err)
         if c["status"] not in STATUSES:
             raise ValueError(f"invalid status: {c['status']!r}")
         max_key = conn.execute(
@@ -224,6 +250,9 @@ def update_item(item_id: int, item: dict) -> dict:
         c = _coerce_item(merged)
         if c["item_type"] not in ITEM_TYPES:
             raise ValueError(f"invalid item_type: {c['item_type']!r}")
+        err = _validate_required(c["item_type"], c["title"], c["details"])
+        if err:
+            raise ValueError(err)
         if c["status"] not in STATUSES:
             raise ValueError(f"invalid status: {c['status']!r}")
         conn.execute(
