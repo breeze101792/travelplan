@@ -85,6 +85,12 @@
 .modal.item-editor .field { display: block; font-size: .85rem; font-weight: 600; color: var(--muted, #475569); margin: 14px 0 5px; }
 .modal.item-editor .field:first-child { margin-top: 0; }
 
+/* Mandatory-field markers and validation state. Required labels get an
+ * asterisk; empty required inputs are outlined in red and a summary
+ * message appears above the footer. */
+.modal.item-editor .input-error { border-color: var(--danger, #dc2626) !important; box-shadow: 0 0 0 1px var(--danger, #dc2626); }
+.modal.item-editor .ie-validation-msg { margin: 0 0 10px; padding: 8px 12px; border-radius: 8px; background: rgba(220, 38, 38, .1); color: var(--danger, #dc2626); font-size: .85rem; font-weight: 600; }
+
 /* When block: two datetime-local inputs side by side, with their own
  * labels. Mirrors the right-column date block in the old editor but
  * consolidates time and date into a single set of inputs per type. */

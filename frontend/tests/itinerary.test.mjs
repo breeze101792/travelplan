@@ -1087,4 +1087,71 @@ const ownerStub = await boot('owner');
   eq(card.draggable, false, 'viewer: cards not draggable');
 }
 
+/* =============== owner: mandatory fields block Apply =============== */
+// New items pre-fill the when block (start/end datetime) and the focused
+// day, so the mandatory title is the field the user must fill. Clearing a
+// required field and clicking Apply must keep the editor open, highlight
+// the offending input, and show a validation message.
+{
+  const SETTINGS_REQ = {
+    base_currencies: ['USD', 'JPY'],
+    item_types: {
+      transit: {
+        label: 'Transit', spans_days: false,
+        fields: [
+          { key: 'mode', label: 'Type', type: 'select', options: ['Flight', 'Train'], required: true },
+          { key: 'from', label: 'From', type: 'text', required: true },
+          { key: 'to', label: 'To', type: 'text', required: true },
+        ],
+      },
+    },
+  };
+  const REQ_PLAN = { id: 9, title: 'Req', start_date: '2026-07-01', end_date: '2026-07-03', base_currency: 'JPY' };
+  installDom({ ids: PAGE_IDS });
+  installFetch([
+    ['GET /api/settings', () => SETTINGS_REQ],
+    ['GET /api/plans/9', () => ({ plan: REQ_PLAN })],
+    ['GET /api/plans/9/members', () => ({ owner: { id: 1, username: 'admin', display_name: 'Admin' }, members: [] })],
+    ['GET /api/plans/9/items', () => ({ items: [] })],
+    ['GET /api/plans/9/expenses/by-item', () => ({ items: [] })],
+  ]);
+  const { resetSettingsCache } = await import('/static/js/util.js');
+  resetSettingsCache();
+  const { initItinerary } = await import('/static/js/itinerary.js');
+  await initItinerary({ planId: 9, role: 'owner' });
+  const bar = document.getElementById('edit-bar');
+  const typeBtn = (label) => [...bar.querySelectorAll('.qa-item')].find(b => b.textContent === label);
+  typeBtn('Transit').click();
+  const editor = document.body.querySelector('.item-editor');
+  assert(!!editor, 'req: editor opened for transit');
+  // New item: when block pre-filled with the focused day at 09:00 → 10:00.
+  const dt = [...editor.querySelectorAll('input')].filter(i => i.type === 'datetime-local');
+  eq(dt.length, 2, 'req: two datetime-local inputs');
+  eq(dt[0].value, '2026-07-01T09:00', 'req: start pre-filled to focused day 09:00');
+  eq(dt[1].value, '2026-07-01T10:00', 'req: end pre-filled to focused day 10:00');
+  // Leave the title blank and Apply → blocked, editor stays open.
+  const applyBtn = [...editor.querySelectorAll('button')].find(b => b.textContent === 'Apply');
+  applyBtn.click();
+  assert(!!document.body.querySelector('.item-editor'), 'req: Apply blocked when title empty');
+  assert(!!editor.querySelector('.ie-validation-msg'), 'req: validation message shown');
+  assert(editor.querySelectorAll('.input-error').length >= 1, 'req: offending input highlighted');
+  // Fill the title but clear a required type field (From) → still blocked.
+  const titleInput = [...editor.querySelectorAll('input')].find(i => i.type === 'text');
+  titleInput.value = 'Flight to Osaka';
+  const fromInput = [...editor.querySelectorAll('input')].find(i => i.type === 'text' && i !== titleInput);
+  fromInput.value = '';
+  applyBtn.click();
+  assert(!!document.body.querySelector('.item-editor'), 'req: Apply blocked when required type field empty');
+  assert(editor.querySelector('.ie-validation-msg').textContent.includes('From'),
+         'req: validation message names the missing field');
+  // Fill From and To → Apply succeeds and the editor closes.
+  fromInput.value = 'Tokyo';
+  const toInput = [...editor.querySelectorAll('input')].find(i => i.type === 'text' && i !== titleInput && i !== fromInput);
+  toInput.value = 'Osaka';
+  const modeSel = [...editor.querySelectorAll('select')].find(s => s.value === '');
+  modeSel.value = 'Flight';
+  applyBtn.click();
+  assert(!document.body.querySelector('.item-editor'), 'req: Apply succeeds once required fields are filled');
+}
+
 summary('itinerary.test.mjs');

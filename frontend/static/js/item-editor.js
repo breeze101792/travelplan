@@ -19,6 +19,7 @@
  */
 import { apiGet } from '/static/js/api.js';
 import { el, clear } from '/static/js/util.js';
+import { isoOf } from '/static/js/plan-header.js';
 import { openExpenseFormModal } from '/static/js/expense-form.js';
 import { lockBodyScroll, unlockBodyScroll } from '/static/js/page-utils.js';
 import { confirmDiscard } from '/static/js/guard.js';
@@ -99,7 +100,7 @@ export async function openItemEditor(ctx, { plan, item, settings, members, stagi
   grid.appendChild(colSide);
 
   // title (left col)
-  colMain.appendChild(el('label', { class: 'field', text: 'Title' }));
+  colMain.appendChild(el('label', { class: 'field', text: 'Title *' }));
   const titleInput = document.createElement('input');
   titleInput.type = 'text';
   titleInput.className = 'input';
@@ -136,7 +137,7 @@ export async function openItemEditor(ctx, { plan, item, settings, members, stagi
     for (const k of rowKeysFiltered) {
       const f = fieldByKey[k];
       const grp = el('div', { class: 'field-group' });
-      grp.appendChild(el('label', { class: 'field', text: f.label }));
+      grp.appendChild(el('label', { class: 'field', text: f.label + (f.required ? ' *' : '') }));
       const inp = makeFieldInput(f, item.details, settings, plan);
       if (readOnly) inp.disabled = true;
       fieldInputs[f.key] = inp;
@@ -169,16 +170,37 @@ export async function openItemEditor(ctx, { plan, item, settings, members, stagi
   // when.start_at on save.
   const whenLabels = ti.when_labels || { start: 'Start', end: 'End' };
   const existingWhen = (item.details && item.details.when) || {};
-  colSide.appendChild(el('label', { class: 'field', text: 'When' }));
+  // For a brand-new item, pre-fill the when block with the focused day
+  // (item.item_date) at a sensible default time so the mandatory start/end
+  // are never blank and the user just adjusts them. Spanning items (hotels)
+  // default to a one-night stay (check-in 15:00 → check-out 11:00 next day);
+  // everything else defaults to 09:00 → 10:00 on the focused day.
+  let defaultStart = existingWhen.start_at || '';
+  let defaultEnd = existingWhen.end_at || '';
+  if (isNew && !defaultStart && item.item_date) {
+    if (ti.spans_days) {
+      const endDate = item.end_date || (() => {
+        const d = new Date(item.item_date + 'T00:00:00');
+        d.setDate(d.getDate() + 1);
+        return isoOf(d);
+      })();
+      defaultStart = `${item.item_date}T15:00`;
+      defaultEnd = `${endDate}T11:00`;
+    } else {
+      defaultStart = `${item.item_date}T09:00`;
+      defaultEnd = `${item.item_date}T10:00`;
+    }
+  }
+  colSide.appendChild(el('label', { class: 'field', text: 'When *' }));
   const whenStart = document.createElement('input');
   whenStart.type = 'datetime-local';
   whenStart.className = 'input';
-  whenStart.value = existingWhen.start_at || '';
+  whenStart.value = defaultStart;
   if (readOnly) whenStart.disabled = true;
   const whenEnd = document.createElement('input');
   whenEnd.type = 'datetime-local';
   whenEnd.className = 'input';
-  whenEnd.value = existingWhen.end_at || '';
+  whenEnd.value = defaultEnd;
   if (readOnly) whenEnd.disabled = true;
   // When the user fills the start, auto-fill the end with start + 1h
   // if end is empty (or empty after a user-clear). This keeps the
@@ -677,6 +699,47 @@ export async function openItemEditor(ctx, { plan, item, settings, members, stagi
     return snapshotKey(buildSnapshot()) !== initialSnapshotKey;
   }
 
+  /* Validate the mandatory fields of a snapshot. Returns an array of
+   * { label, input } for every required field that is empty, so the
+   * caller can highlight them and block Apply. Title and the when block
+   * (start/end datetime) are required for every item; type-specific
+   * required fields come from settings.json's "required": true. */
+  function validateRequired(snap) {
+    const missing = [];
+    if (!snap.title || !String(snap.title).trim()) {
+      missing.push({ label: 'Title', input: titleInput });
+    }
+    const when = (snap.details && snap.details.when) || {};
+    if (!when.start_at) missing.push({ label: whenLabels.start || 'Start', input: whenStart });
+    if (!when.end_at) missing.push({ label: whenLabels.end || 'End', input: whenEnd });
+    for (const f of (ti.fields || [])) {
+      if (!f.required) continue;
+      const v = snap.details && snap.details[f.key];
+      if (v === undefined || v === null || String(v).trim() === '') {
+        missing.push({ label: f.label, input: fieldInputs[f.key] });
+      }
+    }
+    return missing;
+  }
+
+  /* Highlight the offending inputs and surface a summary message so the
+   * user knows what to fill in. Clears any previous error state first. */
+  function showValidationErrors(missing) {
+    const editorEl = modal;
+    editorEl.querySelectorAll('.input-error').forEach((n) => n.classList.remove('input-error'));
+    const errEl = editorEl.querySelector('.ie-validation-msg');
+    if (errEl) errEl.remove();
+    for (const m of missing) {
+      if (m.input) m.input.classList.add('input-error');
+    }
+    const labels = [...new Set(missing.map((m) => m.label))];
+    const msg = el('p', { class: 'ie-validation-msg', text: 'Please fill in: ' + labels.join(', ') });
+    const footerEl = editorEl.querySelector('.modal-footer');
+    if (footerEl) footerEl.insertBefore(msg, footerEl.firstChild);
+    const first = missing[0] && missing[0].input;
+    if (first && first.focus) first.focus();
+  }
+
   // Close via the X button or a backdrop click. If the user has edited the
   // form but hasn't applied the change, warn before discarding. The Cancel
   // button is the explicit discard action and stays silent. The busy flag
@@ -731,6 +794,16 @@ export async function openItemEditor(ctx, { plan, item, settings, members, stagi
     // so the dirty-detection in onRequestClose stays in sync with what gets
     // staged here.
     const snapshot = buildSnapshot();
+    // Validate mandatory fields before staging. Title and the when block
+    // (start/end datetime) are required for every item; type-specific
+    // required fields (declared with "required": true in settings.json)
+    // are checked per item type. On failure, highlight the offending
+    // inputs and keep the editor open.
+    const missing = validateRequired(snapshot);
+    if (missing.length) {
+      showValidationErrors(missing);
+      return;
+    }
     // For non-new items, also propagate the type (the backend may need it
     // for some fields, but PATCH currently doesn't accept it; safe to omit).
     // Detect edited existing attachments (mutated in-place by openLinkEditModal).
