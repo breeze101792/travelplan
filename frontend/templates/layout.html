@@ -19,7 +19,10 @@
 <body data-page="{% block page %}{% endblock %}">
   <nav class="topbar{% if plan %} topbar--plan{% endif %}">
     {% if plan %}
-      <span class="tp-plan-name">{{ plan.title }}</span>
+      <a class="tp-home-btn" href="/" title="Back to all plans" aria-label="Back to all plans">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 10.5 12 3l9 7.5"/><path d="M5 9.5V21h14V9.5"/></svg>
+      </a>
+      <a class="tp-plan-name" href="/plans/{{ plan.id }}/overview" title="Go to overview">{{ plan.title }}</a>
       {% if plan.start_date and plan.end_date %}
         <span class="tp-plan-dates">{{ fmt_date(plan.start_date) }} → {{ fmt_date(plan.end_date) }}</span>
       {% endif %}

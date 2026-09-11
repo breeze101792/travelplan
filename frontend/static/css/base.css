@@ -74,6 +74,13 @@ a:hover { text-decoration: underline; }
 
 /* Plan-mode topbar (replaces brand + links with plan identity + nav) */
 .topbar--plan { }
+.tp-home-btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 26px; height: 26px; flex-shrink: 0;
+  color: var(--muted); border-radius: 6px;
+}
+.tp-home-btn:hover { background: var(--surface-2); color: var(--ink); text-decoration: none; }
+.tp-home-btn svg { display: block; }
 .tp-plan-name {
   font-weight: 700; font-size: 18px; color: var(--ink);
   letter-spacing: -0.01em;

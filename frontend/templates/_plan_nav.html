@@ -13,5 +13,4 @@
   {%- if plan_role == 'owner' or (current_user and current_user.role == 'admin') %}
   <a class="pn-link{% if active == 'members' %} active{% endif %}" href="/plans/{{ pid }}/members"{% if active == 'members' %} aria-current="page"{% endif %}>Members</a>
   {%- endif %}
-  <a class="pn-link pn-link--muted" href="/">All plans</a>
 </nav>

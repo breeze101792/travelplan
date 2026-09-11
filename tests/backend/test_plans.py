@@ -430,6 +430,29 @@ class TestPlanHeaderRender:
             assert html.count('aria-current="page"') == 1
             assert f'>{expected}</a>' in html
 
+    def test_topbar_home_button_links_to_dashboard(self, member_client):
+        """A home button sits left of the title and returns to all plans."""
+        r = member_client.get(f"/plans/{self.plan['id']}")
+        html = r.get_data(as_text=True)
+        assert 'class="tp-home-btn"' in html
+        assert 'href="/"' in html
+        assert 'aria-label="Back to all plans"' in html
+
+    def test_title_links_to_overview(self, member_client):
+        """Clicking the plan title opens the project's overview portal."""
+        r = member_client.get(f"/plans/{self.plan['id']}")
+        html = r.get_data(as_text=True)
+        assert "Japan 2026" in html
+        expected = f'class="tp-plan-name" href="/plans/{self.plan["id"]}/overview"'
+        assert expected in html
+
+    def test_all_plans_nav_link_removed(self, member_client):
+        """The redundant 'All plans' tab is gone; going home is via the button."""
+        r = member_client.get(f"/plans/{self.plan['id']}")
+        html = r.get_data(as_text=True)
+        assert "All plans" not in html
+        assert "pn-link--muted" not in html
+
 
 # ------------------------------------------------------------------ fmt_date
 class TestFmtDate:
