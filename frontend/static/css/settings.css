@@ -1,12 +1,11 @@
 /* settings.css — shared layout for the authenticated account/admin pages
- * (Settings, Members, AI Agent). One 760px shell for all three so they
- * share the same width, rhythm, and component language. auth.css stays
- * scoped to the anonymous login/setup pages.
+ * (Settings, Members, AI Agent). They use the same shell width as the plan
+ * pages (#view in base.css) so the layout lines up across the app. auth.css
+ * stays scoped to the anonymous login/setup pages.
  */
 
-/* ---- page shell: one width for every page ---- */
+/* ---- page shell: inherits #view width, matching the plan pages ---- */
 .page-shell {
-  max-width: 760px;
   margin: 0 auto;
   padding: 12px 0 48px;   /* #view already adds 20px top */
 }
