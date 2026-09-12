@@ -80,7 +80,7 @@ a:hover { text-decoration: underline; }
   color: var(--muted); border-radius: 6px;
 }
 .tp-home-btn:hover { background: var(--surface-2); color: var(--ink); text-decoration: none; }
-.tp-home-btn svg { display: block; }
+.tp-home-btn svg { display: block; transform: translateY(-2px); }
 .tp-plan-name {
   font-weight: 700; font-size: 18px; color: var(--ink);
   letter-spacing: -0.01em;
