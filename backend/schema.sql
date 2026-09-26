@@ -68,6 +68,34 @@ CREATE TABLE IF NOT EXISTS plan_day_meta (
   PRIMARY KEY (plan_id, date)
 );
 
+-- Plan-level to-do list. Three scopes:
+--   'project' — a trip task anyone on the plan may tick; owner/editor manage.
+--   'global'  — shared task only owner/editor may tick.
+--   'person'  — preparation item assigned to one member (assignee_id set);
+--               only that member may tick it.
+-- assignee_id is set for 'person' rows and NULL for 'project'/'global';
+-- scope carries the distinction a NULL assignee cannot. Distinct from the
+-- per-item checklist in items.details.todos.
+CREATE TABLE IF NOT EXISTS plan_todos (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  plan_id     INTEGER NOT NULL REFERENCES plans(id) ON DELETE CASCADE,
+  title       TEXT NOT NULL,
+  note        TEXT,
+  scope       TEXT NOT NULL DEFAULT 'global'
+              CHECK (scope IN ('global', 'project', 'person')),
+  assignee_id INTEGER REFERENCES users(id) ON DELETE SET NULL,  -- set only for 'person'
+  done        INTEGER NOT NULL DEFAULT 0 CHECK (done IN (0, 1)),
+  done_by     INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  done_at     TEXT,
+  created_by  INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  created_at  TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at  TEXT NOT NULL DEFAULT (datetime('now'))
+);
+-- Index over columns that exist on both the pre-006 and post-006 table, so
+-- running this file before migrations (init_db's order) cannot fail on an
+-- old DB. Migration 006 rebuilds it to include `scope`.
+CREATE INDEX IF NOT EXISTS idx_plan_todos_plan ON plan_todos(plan_id, assignee_id, id);
+
 CREATE TABLE IF NOT EXISTS attachments (
   id         INTEGER PRIMARY KEY AUTOINCREMENT,
   item_id    INTEGER NOT NULL REFERENCES items(id) ON DELETE CASCADE,

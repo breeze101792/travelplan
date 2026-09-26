@@ -224,6 +224,13 @@ def check_plan_access(plan_id, *, write: bool = False) -> dict:
     return plan
 
 
+def ensure_plan_writable(plan_id: int) -> None:
+    """Abort 403 if the plan is archived (read-only for everyone)."""
+    plan = get_db().execute("SELECT status FROM plans WHERE id = ?", (plan_id,)).fetchone()
+    if plan is not None and plan["status"] == "archived":
+        abort(403)
+
+
 def check_item_access(item_id, *, write: bool = False) -> dict:
     item = get_db().execute("SELECT plan_id FROM items WHERE id = ?", (item_id,)).fetchone()
     if item is None:
@@ -250,6 +257,13 @@ def check_payment_access(payment_id, *, write: bool = False) -> dict:
     if p is None:
         abort(404)
     return check_plan_access(p["plan_id"], write=write)
+
+
+def check_todo_access(todo_id, *, write: bool = False) -> dict:
+    todo = get_db().execute("SELECT plan_id FROM plan_todos WHERE id = ?", (todo_id,)).fetchone()
+    if todo is None:
+        abort(404)
+    return check_plan_access(todo["plan_id"], write=write)
 
 
 def plan_access(plan_id_arg: str = "plan_id", *, write: bool = False):

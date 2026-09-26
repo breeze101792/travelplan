@@ -5,15 +5,35 @@ flake, start here.
 
 ## What's covered
 
-1075 tests, split across three layers. Every layer catches a different
+Tests are split across three layers. Every layer catches a different
 class of bug; you usually want all three to pass before declaring a
 change done.
 
 | Layer | Path | Count | What it catches |
 | --- | --- | --- | --- |
-| Backend | `tests/backend/` | 313 | route handlers, auth, plan/item/expense/upload logic, util, access control. Hits Flask over the test client with a real DB in a temp dir. |
-| Frontend node | `frontend/tests/` | 679 | staging engine ops, itinerary/timeline/navigation/map page boot under a DOM shim, viewport-responsive rendering, touch swipe, `fmtDate` parity with the server, the unsaved-changes guard. No browser, no npm. |
-| E2E browser | `tests/e2e/` | 83 | what the user actually sees: setup, login, dashboard, board, timeline, map sidebar, navigation day bar + swipe, expenses, members, settings, touch long-press on iPhone. Real Chromium via Playwright. |
+| Backend | `tests/backend/` | 418 | route handlers, auth, plan/item/expense/upload/todo logic, util, access control. Hits Flask over the test client with a real DB in a temp dir. |
+| Frontend node | `frontend/tests/` | 767 | staging engine ops, itinerary/timeline/navigation/map page boot under a DOM shim, viewport-responsive rendering, touch swipe, `fmtDate` parity with the server, the unsaved-changes guard, to-do scope grouping/permissions. No browser, no npm. |
+| E2E browser | `tests/e2e/` | 96 | what the user actually sees: setup, login, dashboard, board, timeline, map sidebar, navigation day bar + swipe, expenses, todos, members, settings, touch long-press on iPhone. Real Chromium via Playwright. |
+
+**Baseline failures.** The backend and frontend node suites are green on
+this tree. The e2e suite still has pre-existing failures (stale
+item-creation helpers, timeouts) in other files; `test_todos.py` itself is
+green. The Playwright conftest's default NixOS chromium path may not exist
+on every machine; set `CHROMIUM` and, when needed, `LD_LIBRARY_PATH` to a
+working browser's `lib`. See the run section below.
+
+Two frontend test bugs were fixed alongside the to-do feature, both of
+which had hidden real coverage:
+
+- `base-css.test.mjs` only inspected the **first** `@media (max-width:
+  640px)` block and the first matching selector block. The safe-area rules
+  live in a later block, so 5 correct CSS rules were reported as failures.
+  The extractor now joins all matching blocks.
+- `itinerary.test.mjs` asserted the item editor opened **synchronously**
+  after a double-click, but `openItemEditor()` awaits a fresh item fetch
+  first. Three assertions failed, and the resulting `TypeError` aborted the
+  file, silently skipping the rest of its tests. The checks now flush the
+  pending microtask; the file went from a crash to 174 passing tests.
 
 ## Run
 

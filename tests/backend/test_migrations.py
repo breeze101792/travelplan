@@ -264,6 +264,132 @@ class TestUnifyWhen:
         assert d == {"text": "plain"}
 
 
+# ------------------------------------------------------------------ 005 plan todos
+class TestPlanTodosMigration:
+    def test_creates_plan_todos_table(self, fresh_db):
+        run_pending(fresh_db)
+        r = fresh_db.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='plan_todos'"
+        ).fetchone()
+        assert r is not None
+        # The index the list endpoint sorts by is created too.
+        idx = fresh_db.execute(
+            "SELECT name FROM sqlite_master WHERE type='index' "
+            "AND name='idx_plan_todos_plan'"
+        ).fetchone()
+        assert idx is not None
+
+    def test_done_check_constraint_rejects_2(self, fresh_db):
+        run_pending(fresh_db)
+        fresh_db.execute(
+            "INSERT INTO plan_todos (plan_id, title, done) VALUES (1, 'T', 1)"
+        )
+        with pytest.raises(sqlite3.IntegrityError):
+            fresh_db.execute(
+                "INSERT INTO plan_todos (plan_id, title, done) VALUES (1, 'T', 2)"
+            )
+
+    def test_scope_column_and_check(self, fresh_db):
+        run_pending(fresh_db)
+        cols = [r[1] for r in fresh_db.execute("PRAGMA table_info(plan_todos)").fetchall()]
+        assert "scope" in cols
+        # The default is global, and an unknown scope is rejected.
+        fresh_db.execute(
+            "INSERT INTO plan_todos (plan_id, title, assignee_id) VALUES (1, 'T', NULL)"
+        )
+        row = fresh_db.execute("SELECT scope FROM plan_todos").fetchone()
+        assert row["scope"] == "global"
+        with pytest.raises(sqlite3.IntegrityError):
+            fresh_db.execute(
+                "INSERT INTO plan_todos (plan_id, title, scope) VALUES (1, 'T', 'bogus')"
+            )
+
+
+class TestTodoScopeMigration:
+    """006 adds ``scope`` to a database that already ran the original 005."""
+
+    def _legacy_table(self, conn):
+        """Recreate ``plan_todos`` as migration 005 originally left it
+        (no scope column) and record 005 so only 006 remains to run."""
+        conn.executescript("""
+            DROP TABLE IF EXISTS plan_todos;
+            CREATE TABLE migrations (
+                id TEXT PRIMARY KEY,
+                applied_at TEXT NOT NULL DEFAULT (datetime('now'))
+            );
+            CREATE TABLE plan_todos (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              plan_id INTEGER NOT NULL,
+              title TEXT NOT NULL,
+              note TEXT,
+              assignee_id INTEGER,
+              done INTEGER NOT NULL DEFAULT 0,
+              done_by INTEGER, done_at TEXT, created_by INTEGER,
+              created_at TEXT, updated_at TEXT
+            );
+            CREATE INDEX IF NOT EXISTS idx_plan_todos_plan
+                ON plan_todos(plan_id, assignee_id, id);
+            INSERT INTO migrations (id) VALUES ('005_plan_todos');
+            INSERT INTO plan_todos (plan_id, title, assignee_id)
+                VALUES (1, 'Global old', NULL);
+            INSERT INTO plan_todos (plan_id, title, assignee_id)
+                VALUES (1, 'Person old', 7);
+        """)
+        conn.commit()
+
+    def test_backfills_scope_on_legacy_table(self, fresh_db):
+        self._legacy_table(fresh_db)
+
+        applied = run_pending(fresh_db)
+        assert "006_todo_scope" in applied
+
+        rows = fresh_db.execute(
+            "SELECT title, scope FROM plan_todos ORDER BY id"
+        ).fetchall()
+        assert rows[0]["scope"] == "global"
+        assert rows[1]["scope"] == "person"
+        # The index is rebuilt to include scope.
+        idx = fresh_db.execute(
+            "SELECT sql FROM sqlite_master WHERE name='idx_plan_todos_plan'"
+        ).fetchone()
+        assert "scope" in idx["sql"]
+
+    def test_schema_before_migrations_on_legacy_db_does_not_fail(self, fresh_db):
+        """init_db runs schema.sql before run_pending. On a legacy table whose
+        index is missing, schema.sql must not reference the scope column (or
+        it would raise before 006 can add it)."""
+        self._legacy_table(fresh_db)
+        # Re-run schema.sql, exactly as init_db does before migrations. It is
+        # idempotent and must survive the pre-scope table.
+        schema = (Path(__file__).resolve().parent.parent.parent
+                  / "backend" / "schema.sql").read_text()
+        fresh_db.executescript(schema)
+        fresh_db.commit()
+        applied = run_pending(fresh_db)
+        assert "006_todo_scope" in applied
+        idx = fresh_db.execute(
+            "SELECT sql FROM sqlite_master WHERE name='idx_plan_todos_plan'"
+        ).fetchone()
+        assert "scope" in idx["sql"]
+
+    def test_does_not_reclassify_existing_project_rows(self, fresh_db):
+        """A DB where ``scope`` already exists with a project row must keep it
+        when 006 runs — the backfill only applies to a just-added column."""
+        self._legacy_table(fresh_db)
+        fresh_db.execute(
+            "ALTER TABLE plan_todos ADD COLUMN scope TEXT NOT NULL DEFAULT 'global'"
+        )
+        fresh_db.execute("UPDATE plan_todos SET scope = 'project' WHERE title = 'Global old'")
+        fresh_db.commit()
+
+        run_pending(fresh_db)
+
+        row = fresh_db.execute(
+            "SELECT scope FROM plan_todos WHERE title = 'Global old'"
+        ).fetchone()
+        assert row["scope"] == "project", "an existing project row must not be demoted"
+
+
 # ------------------------------------------------------------------ 003 cleanup
 class TestDetailsCleanup:
     def test_legacy_link_moves_to_attachments(self, fresh_db):

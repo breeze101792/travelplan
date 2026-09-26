@@ -47,6 +47,7 @@ def create_app(config: dict | None = None) -> Flask:
     from .blueprints.items import items_bp
     from .blueprints.uploads import uploads_bp
     from .blueprints.expenses import expenses_bp
+    from .blueprints.todos import todos_bp
     from .blueprints.ai import ai_bp
 
     app.register_blueprint(auth_bp)
@@ -54,6 +55,7 @@ def create_app(config: dict | None = None) -> Flask:
     app.register_blueprint(items_bp)
     app.register_blueprint(uploads_bp)
     app.register_blueprint(expenses_bp)
+    app.register_blueprint(todos_bp)
     app.register_blueprint(ai_bp)
 
     @app.after_request

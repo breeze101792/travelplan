@@ -226,6 +226,10 @@ Current migrations:
 - `002_transit_unify` — merge flight/train/transport into the unified `transit` type
 - `003_details_cleanup` — move `link` from `details` to the `attachments` table, rename `venue`→`location`, strip legacy `qty`/`price`
 - `004_unify_when` — rewrite all time fields into the unified `details.when` object
+- `005_plan_todos` — create the `plan_todos` table (plan-level checklist)
+- `006_todo_scope` — add `plan_todos.scope` (`global` | `project` | `person`)
+  and backfill existing rows, so project tasks (anyone may tick) are
+  distinct from global entries (owner/editor tick)
 
 To add a new migration: create a new `NNN_name.py` file in
 `backend/migrations/`, export `id` and `run(conn)`, and it will be

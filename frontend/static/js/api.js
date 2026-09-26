@@ -23,6 +23,7 @@ function tagsForGet(path) {
   if (/\/items/.test(path) || /\/attachments/.test(path) || /\/upload/.test(path)) return ['item'];
   if (/\/expenses/.test(path) || /\/settlement/.test(path) || /\/payments/.test(path)) return ['expense'];
   if (/\/members/.test(path)) return ['member'];
+  if (/\/todos/.test(path)) return ['todo'];
   if (/\/rates/.test(path)) return ['rate', 'expense'];
   return [];
 }
@@ -37,6 +38,7 @@ function tagsForMutation(path) {
   if (/\/items/.test(path) || /\/attachments/.test(path) || /\/upload/.test(path)) return ['item'];
   if (/\/expenses/.test(path) || /\/settlement/.test(path) || /\/payments/.test(path)) return ['expense'];
   if (/\/members/.test(path)) return ['member'];
+  if (/\/todos/.test(path)) return ['todo'];
   if (/\/rates/.test(path)) return ['rate', 'expense'];
   return ['*'];
 }

@@ -60,6 +60,12 @@ def expenses_page(plan_id):
     return render_template("plan-shell.html", plan=g.plan, plan_role=g.plan_role, plan_active_page='expenses')
 
 
+@plans_bp.route("/plans/<int:plan_id>/todos")
+@plan_access()
+def todos_page(plan_id):
+    return render_template("plan-shell.html", plan=g.plan, plan_role=g.plan_role, plan_active_page='todos')
+
+
 @plans_bp.route("/plans/<int:plan_id>/timeline")
 @plan_access()
 def timeline_page(plan_id):

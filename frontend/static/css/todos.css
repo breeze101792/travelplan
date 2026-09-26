@@ -1,0 +1,202 @@
+/* todos.css — plan-level to-do page styles.
+ *
+ * Every class is prefixed .pt- so it cannot collide with the unrelated
+ * .todo-* checklist classes in item-editor.css, which load on every plan
+ * page. Design tokens come from base.css (--surface, --border, --accent…). */
+
+.pt-page {
+  padding: 24px 0 48px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+/* Section card */
+
+.pt-section {
+  background: var(--surface, #fff);
+  border: 1px solid var(--border, var(--line, #e5e7eb));
+  border-radius: var(--radius, 12px);
+  padding: 16px 20px;
+}
+
+.pt-section-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.pt-section-title {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--text, var(--ink, #1f2929));
+}
+
+.pt-progress {
+  font-size: .82rem;
+  color: var(--muted, #6b7280);
+  white-space: nowrap;
+}
+
+/* Entries */
+
+.pt-list {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0 0 10px;
+  padding: 0;
+}
+
+.pt-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 8px 10px;
+  border: 1px solid var(--border, var(--line, #eef2f7));
+  border-radius: var(--radius-sm, 8px);
+  background: var(--surface-2, #f8fafc);
+}
+
+.pt-check {
+  flex-shrink: 0;
+  margin: 2px 0 0;
+}
+
+.pt-item-body {
+  flex: 1;
+  min-width: 0;
+}
+
+.pt-item-title {
+  display: block;
+  font-size: .92rem;
+  color: var(--text, var(--ink, #1f2430));
+  overflow-wrap: anywhere;
+}
+
+.pt-item-note {
+  margin: 2px 0 0;
+  font-size: .82rem;
+  color: var(--muted, #6b7280);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.pt-item-meta {
+  margin: 2px 0 0;
+  font-size: .78rem;
+  font-style: italic;
+  color: var(--muted, #94a3b8);
+}
+
+.pt-item-actions {
+  display: flex;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.pt-done .pt-item-title {
+  text-decoration: line-through;
+  color: var(--muted, #94a3b8);
+}
+
+.pt-removed {
+  border-color: var(--danger-border, #fca5a5);
+}
+
+/* Add / edit forms */
+
+.pt-add-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  padding: 14px 16px;
+  background: var(--surface, #fff);
+  border: 1px solid var(--border, var(--line, #e5e7eb));
+  border-radius: var(--radius, 12px);
+  border-left: 3px solid var(--accent, #2563eb);
+}
+
+.pt-add-bar .pt-input {
+  flex: 1 1 220px;
+}
+
+.pt-edit-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+
+.pt-edit-row {
+  width: 100%;
+}
+
+.pt-input {
+  flex: 1 1 160px;
+  min-width: 0;
+  padding: 8px 10px;
+  font: inherit;
+  font-size: .9rem;
+  color: var(--text, var(--ink, #1f2430));
+  background: var(--surface, #fff);
+  border: 1px solid var(--border, var(--line, #cbd5e1));
+  border-radius: var(--radius-sm, 8px);
+}
+
+.pt-input:focus-visible {
+  outline: none;
+  border-color: var(--accent, #2563eb);
+  box-shadow: 0 0 0 3px var(--accent-weak, #dbeafe);
+}
+
+.pt-assignee-select {
+  flex: 0 1 auto;
+  padding: 8px 10px;
+  font: inherit;
+  font-size: .9rem;
+  color: var(--text, var(--ink, #1f2430));
+  background: var(--surface, #fff);
+  border: 1px solid var(--border, var(--line, #cbd5e1));
+  border-radius: var(--radius-sm, 8px);
+}
+
+.pt-empty {
+  margin: 0 0 10px;
+  font-size: .88rem;
+  color: var(--muted, #6b7280);
+}
+
+/* Responsive: stack the form controls on narrow screens. */
+
+@media (max-width: 640px) {
+  .pt-page {
+    padding: 16px 0 32px;
+  }
+
+  .pt-section {
+    padding: 14px 14px;
+  }
+
+  .pt-add-bar,
+  .pt-edit-row {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .pt-input,
+  .pt-assignee-select {
+    flex: 1 1 auto;
+    width: 100%;
+  }
+
+  .pt-item-actions {
+    align-self: flex-end;
+  }
+}

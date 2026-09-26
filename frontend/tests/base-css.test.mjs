@@ -16,20 +16,29 @@ const CSS_PATH = fileURLToPath(new URL('../static/css/base.css', import.meta.url
 const css = readFileSync(CSS_PATH, 'utf8');
 
 /* ---- tiny CSS block extractor -----------------------------------------
- * Pulls the declaration block for a top-level selector (e.g. '.topbar' or
- * '#view') or for a selector inside a media query. Returns the raw text of
- * the block (without braces) or '' if not found.
+ * Pulls the declaration blocks for a top-level selector (e.g. '.topbar' or
+ * '#view') or for a selector inside a media query. A selector can appear
+ * more than once (e.g. '#view' sets max-width in one 640px block and padding
+ * in another), so all matching blocks are joined. Returns the raw text of
+ * the blocks (without braces) or '' if not found.
  */
 function blockFor(selector, source = css) {
-  const re = new RegExp(selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\s*\\{([^}]*)\\}', 'm');
-  const m = source.match(re);
-  return m ? m[1] : '';
+  const re = new RegExp(selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\s*\\{([^}]*)\\}', 'g');
+  const out = [];
+  let m;
+  while ((m = re.exec(source)) !== null) out.push(m[1]);
+  return out.join('\n');
 }
 
-/* Extract the body of the first @media (max-width: 640px) block. */
+/* Concatenate the bodies of every @media (max-width: 640px) block. The
+ * stylesheet has more than one such block, so the responsive rules for a
+ * selector can live in any of them; checking only the first hid them. */
 function media640() {
-  const m = css.match(/@media\s*\(max-width:\s*640px\)\s*\{([\s\S]*?)\n\}/);
-  return m ? m[1] : '';
+  const out = [];
+  const re = /@media\s*\(max-width:\s*640px\)\s*\{([\s\S]*?)\n\}/g;
+  let m;
+  while ((m = re.exec(css)) !== null) out.push(m[1]);
+  return out.join('\n');
 }
 
 const topbar = blockFor('.topbar');

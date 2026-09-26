@@ -19,7 +19,7 @@ from pathlib import Path
 from flask import Blueprint, request, g, abort, jsonify
 
 from ..auth import (login_required, plan_access, check_plan_access,
-                    check_item_access, check_attachment_access)
+                    check_item_access, check_attachment_access, ensure_plan_writable)
 from ..db import get_db
 from ..util import check_version
 from ..sse import publish_event
@@ -66,12 +66,6 @@ def _validate_required(item_type: str, title: str, details: dict) -> str | None:
             return f"{f.get('key')} required"
     return None
 
-
-def _ensure_plan_writable(plan_id: int) -> None:
-    """Abort 403 if the plan is archived (read-only for everyone)."""
-    plan = get_db().execute("SELECT status FROM plans WHERE id = ?", (plan_id,)).fetchone()
-    if plan is not None and plan["status"] == "archived":
-        abort(403)
 
 # All items carry a single ``when`` object in ``details``:
 #   { "start_at": "YYYY-MM-DDTHH:MM",   # required (when the item is
@@ -237,7 +231,7 @@ def list_items(plan_id):
 @items_bp.route("/api/plans/<int:plan_id>/items", methods=["POST"])
 @plan_access(write=True)
 def create_item(plan_id):
-    _ensure_plan_writable(plan_id)
+    ensure_plan_writable(plan_id)
     data = request.get_json(force=True, silent=True) or {}
     item_type = data.get("item_type")
     if item_type not in ITEM_TYPES:
@@ -294,7 +288,7 @@ def mutate_item(item_id):
     item = _load_item(item_id)
     if not item:
         abort(404)
-    _ensure_plan_writable(item["plan_id"])
+    ensure_plan_writable(item["plan_id"])
     db = get_db()
     if request.method == "DELETE":
         conflict = check_version(item, request.get_json(force=True, silent=True) or {})
@@ -375,7 +369,7 @@ def move_item(item_id):
     item = _load_item(item_id)
     if not item:
         abort(404)
-    _ensure_plan_writable(item["plan_id"])
+    ensure_plan_writable(item["plan_id"])
     data = request.get_json(force=True, silent=True) or {}
     conflict = check_version(item, data)
     if conflict:
@@ -430,7 +424,7 @@ def add_link_attachment(item_id):
     item = _load_item(item_id)
     if not item:
         abort(404)
-    _ensure_plan_writable(item["plan_id"])
+    ensure_plan_writable(item["plan_id"])
     data = request.get_json(force=True, silent=True) or {}
     kind = data.get("kind")
     value = (data.get("value") or "").strip()
@@ -455,7 +449,7 @@ def update_attachment(att_id):
     if att is not None:
         item = _load_item(att["item_id"])
         if item is not None:
-            _ensure_plan_writable(item["plan_id"])
+            ensure_plan_writable(item["plan_id"])
     data = request.get_json(force=True, silent=True) or {}
     sets, args = [], []
     if "value" in data:
@@ -487,7 +481,7 @@ def delete_attachment(att_id):
     if att is not None:
         item = _load_item(att["item_id"])
         if item is not None:
-            _ensure_plan_writable(item["plan_id"])
+            ensure_plan_writable(item["plan_id"])
     db = get_db()
     db.execute("DELETE FROM attachments WHERE id = ?", (att_id,))
     db.commit()

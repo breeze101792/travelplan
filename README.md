@@ -33,7 +33,28 @@ Plan pages (all share the `_plan_header.html` partial):
 - **Map** (`plan-map.html`) — Leaflet map with item geocodes
 - **Navigate** (`navigation.html`) — turn-by-turn directions for transit items
 - **Expenses** (`expenses.html`) — per-item ledger + multi-currency settlement
+- **To-dos** (`/plans/<id>/todos`) — plan checklist: trip tasks, a shared
+  global list, and a per-member preparation list
 - **Members** (`plan-members.html`) — share the plan with members, transfer ownership
+
+Each plan has a **To-dos** tab with three lists:
+
+- **Trip tasks** — the project's own tasks (book the rental car, confirm
+  the Airbnb). Owner/editor add, edit, and delete them; **any member can
+  tick one off**, and the app records who did. This is the list for work
+  anyone can pick up.
+- **Everyone** — the shared list. Owner/editor add, edit, delete, *and*
+  tick; other members only view.
+- **Per-user preparation** — entries assigned by owner/editor to a member;
+  only that member can tick their own entry, so the check mark is the
+  assignee's own confirmation. Owner/editor reassign or delete a stuck
+  task rather than ticking it for someone else.
+
+Every member can see all lists and progress. Owner/editor add entries
+through a single form at the top of the page, whose "for" select chooses
+the list (Trip tasks, Everyone, or a member) — the sections below are
+list-only. The to-do list is plan-level; it is separate from the per-item
+to-do checklist inside the item editor.
 
 ## Run
 
@@ -119,27 +140,33 @@ tool list, and opencode setup.
 ```
 
 `start.sh` no longer runs the tests (it just starts the server). Tests live
-under `tests/` and are run separately via `tests/run-tests.sh`. **724 tests
-total, all passing.** See `docs/test.md` for the full guide (fixture
+under `tests/` and are run separately via `tests/run-tests.sh`. The backend
+and frontend node suites pass; the e2e suite has some pre-existing failures
+in other files noted below. See `docs/test.md` for the full guide (fixture
 catalog, how to add a test in each layer, debugging gotchas).
 
-- **`tests/backend/`** — pytest, **149 tests** covering every blueprint
-  (auth, plans, items, uploads, expenses, util). Fresh temp data dir per
-  test; no shared state. Run alone with `./tests/run-tests.sh --backend`
+- **`tests/backend/`** — pytest, **418 tests** covering every blueprint
+  (auth, plans, items, uploads, expenses, todos, util). Fresh temp data dir
+  per test; no shared state. Run alone with `./tests/run-tests.sh --backend`
   or `.venv_$(hostname)/bin/python -m pytest tests/backend -c pytest.ini`.
-- **`tests/e2e/`** — Playwright (Python) browser tests, **71 tests** on a
+- **`tests/e2e/`** — Playwright (Python) browser tests, **96 tests** on a
   real Chromium against a throwaway Flask server. Two device profiles:
   desktop (1280x800, mouse) and iPhone 14 (390x664, touch). Covers setup,
   login, dashboard create/edit/delete, board add/edit/drag/revert items,
   right-click context menu, map sidebar, navigation day bar + swipe,
-  timeline day columns + quick-add, expenses, members, settings.
+  timeline day columns + quick-add, expenses, todos, members, settings.
   Needs `playwright` installed (`pip install playwright`) and a chromium
   binary; on NixOS set `CHROMIUM=/nix/store/.../bin/chromium` (the
   conftest tries a default path). Run with `./tests/run-tests.sh --e2e`.
-- **`frontend/tests/`** — the original node ES-module tests, **504 tests**
-  (itinerary 151, timeline 143, staging 95, navigation 46, map 28,
-  page-utils 23, util 18). Plain node, no npm. Skipped automatically when
-  node is not installed.
+- **`frontend/tests/`** — the original node ES-module tests, **767 tests**
+  (itinerary, timeline, staging, navigation, map, page-utils, util, api,
+  cache, guard, markdown, ai, plan-store, todos). Plain node, no npm.
+  Skipped automatically when node is not installed.
+
+**Known baseline failures.** The backend and frontend node suites are green
+on this tree. The e2e suite still has pre-existing failures in other files
+from stale item-creation helpers and timeouts; `tests/e2e/test_todos.py`
+is green. New work must not add to these; see `docs/test.md`.
 
 The frontend fixtures under `frontend/tests/` run the staging engine's unit
 tests, execute `initItinerary()`, `initTimeline()`, `initNavigation()`, and

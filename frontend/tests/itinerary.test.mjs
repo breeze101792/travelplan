@@ -557,8 +557,10 @@ const ownerStub = await boot('owner');
          'single click selects the card');
   assert(!document.body.querySelector('.item-editor'),
          'single click does not open the editor (double-click does)');
-  // Double-click opens the editor.
+  // Double-click opens the editor. openItemEditor() awaits a fresh fetch of
+  // the item before building its DOM, so let that microtask/macrotask flush.
   activity.dispatch('dblclick', { button: 0, detail: 2, target: activity });
+  await new Promise((r) => setTimeout(r, 0));
   assert(!!document.body.querySelector('.item-editor'),
          'double-click opens the item editor');
   // Close the editor so it doesn't interfere with selection tests below.
@@ -812,7 +814,9 @@ const ownerStub = await boot('owner');
   assert(activity.classList.contains('card-selected'),
          '⌘A put the activity in the selection');
   // Open the editor by double-clicking the card (single click selects).
+  // The editor's construction awaits a fresh item fetch; flush it first.
   activity.dispatch('dblclick', { button: 0, detail: 2, target: activity });
+  await new Promise((r) => setTimeout(r, 0));
   const editor = document.body.querySelector('.item-editor');
   assert(!!editor, 'editor opened on the selected card');
   // The backdrop is the wrapping div around the modal.
@@ -1027,6 +1031,7 @@ const ownerStub = await boot('owner');
 
   // Clean close: open the editor, change nothing, X → closes with no confirm.
   activity.dispatch('dblclick', { button: 0, detail: 2, target: activity });
+  await new Promise((r) => setTimeout(r, 0));
   assert(!!document.body.querySelector('.item-editor'), 'dirty-close: editor opened');
   document.body.querySelector('.item-editor .modal-close').click();
   assert(!document.body.querySelector('.item-editor'),
@@ -1039,6 +1044,7 @@ const ownerStub = await boot('owner');
     c => c.dataset.type === 'activity'
   );
   activity2.dispatch('dblclick', { button: 0, detail: 2, target: activity2 });
+  await new Promise((r) => setTimeout(r, 0));
   const editor = document.body.querySelector('.item-editor');
   assert(!!editor, 'dirty-close: editor reopened');
   const titleInput = [...editor.querySelectorAll('input')].find(i => i.type === 'text');

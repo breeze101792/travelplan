@@ -11,6 +11,7 @@ const VIEWS = {
   map:        () => import('/static/js/views/map.js'),
   navigation: () => import('/static/js/views/navigation.js'),
   expenses:   () => import('/static/js/views/expenses.js'),
+  todos:      () => import('/static/js/views/todos.js'),
   members:    () => import('/static/js/views/members.js'),
 };
 

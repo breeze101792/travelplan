@@ -342,6 +342,65 @@ extracts them into a single source of truth so the two pages can't
 drift — same for the toolbar (range controls, + Buffer day, Quick
 add).
 
+## Plan-level to-dos
+
+The **To-dos** tab (`/plans/<id>/todos`, view
+`frontend/static/js/views/todos.js`) is a plan checklist, distinct from
+the per-item to-do list inside the item editor (`items.details.todos`).
+It renders three kinds of entries from one table, `plan_todos`, whose
+`scope` column (`global` | `project` | `person`) is the discriminator:
+
+- **Project** (`scope='project'`, no assignee) — the trip's own tasks.
+  Owner/editor create, edit, and delete; **any member may toggle one**
+  (`done_by` records who). This is the list for work anyone can pick up.
+- **Global** (`scope='global'`, no assignee) — all members read;
+  owner/editor create, edit, delete, and toggle.
+- **Per-user prep** (`scope='person'`, `assignee_id` set) — owner/editor
+  assign an entry to a plan member; **only the assignee may toggle it**
+  (even when the assignee's plan role is `viewer`). Owner/editor edit,
+  reassign, and delete, but do not tick on the assignee's behalf; if the
+  assignee is unavailable they reassign or delete instead.
+
+`scope` is needed because both project and global entries have no
+assignee — `assignee_id IS NULL` alone cannot tell them apart. Scope is
+set at creation and immutable; a `PATCH` that changes it, or that moves
+an entry between unassigned and assigned, is rejected with 400 ("delete
+and recreate").
+
+Every member sees every list and each section's `done/total` progress.
+Only assignees that have entries get a section. An archived plan is
+read-only. An entry assigned to a member who is later removed from the
+plan is kept, shown as "(removed)", and cannot be ticked by anyone until
+owner/editor reassigns or deletes it.
+
+There is **one** create form for the whole page: a single add bar at the
+top, visible only to owner/editor. Its target select picks the scope —
+Trip tasks, Everyone, or a member — so adding a task never repeats a form
+inside every section. Sections are list-only; each row keeps its own
+inline edit form, which replaces the row while open. On a fresh plan the
+bar defaults to Trip tasks.
+
+The view uses direct API calls (`apiGet`/`apiPost`/`apiPatch`/`apiDel`)
+like the Members page, not the staging/pending-bar engine: a checklist
+is a sequence of small independent mutations, and staged undo/redo buys
+nothing. It subscribes best-effort to `onSSEEvent` for `todo.*` events,
+but correctness does not depend on it (the app-wide SSE pipeline is not
+connected — see the note below).
+
+Server side: `backend/blueprints/todos.py`; access helpers
+`check_todo_access` and `ensure_plan_writable` in `backend/auth.py`.
+The toggle endpoint resolves read-level access first
+(`check_todo_access(write=False)`) and then branches on `scope`, because
+a viewer must be able to tick a project task while being blocked from a
+global one. CSS is `.pt-`-prefixed (`todos.css`) so it cannot collide
+with the existing `.todo-*` item-editor styles.
+
+**Known gap (pre-existing).** `plan-store.js` only opens its
+`EventSource` inside `fetchPlan()`, which no production page calls, so
+no live `onSSEEvent` callbacks fire anywhere in the app. Cross-user
+to-do updates therefore rely on reload; the todo view's SSE listener
+will start working for free once the store connection is fixed.
+
 ## Add toolbar (range + buffer + quick add)
 
 The board has had the `add-toolbar` since the start. The timeline now
