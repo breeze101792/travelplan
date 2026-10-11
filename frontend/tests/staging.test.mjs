@@ -13,6 +13,7 @@ import {
   Staging, createBlankItemOp, createItemsFromClipOp, saveItemOp, updateItemOp,
   updatePlanTitleOp, updatePlanDatesOp, updatePlanBufferDaysOp,
   deleteItemOp, moveItemOp, uploadImageOp, addLinkOp, deleteAttachmentOp, addExpenseOp,
+  applyEditsOp, mergedItemForEdit, addItemsFromExtractionOp,
 } from '/static/js/staging.js';
 
 /* ---------- fake API that records calls and mints ids ---------- */
@@ -461,6 +462,166 @@ const HOTEL = (over = {}) => Object.assign({
   await s.saveAll(api);
   const del = calls.find(c => c.method === 'del' && c.path === '/api/items/10');
   assert(!!del, 'DELETE /api/items/10 is sent on save');
+}
+
+/* ---------- applyEditsOp: a batch of AI edits is one grouped op ---------- */
+{
+  const base = [
+    { id: 1, item_type: 'hotel', title: 'Hotel A', item_date: '2026-09-10', end_date: '2026-09-12',
+      sort_key: 1, status: 'planned', details: {}, attachments: [] },
+    { id: 2, item_type: 'transit', title: 'Flight', item_date: '2026-09-10', end_date: null,
+      sort_key: 2, status: 'planned',
+      details: { when: { start_at: '2026-09-10T09:00', end_at: '2026-09-10T10:00' } }, attachments: [] },
+  ];
+  const s = new Staging({ baseItems: base, basePlan: { id: 99, title: 'P' } });
+  s.add(applyEditsOp({
+    planId: 99, sessionId: 'ai-1',
+    edits: [
+      { item_id: 1, title: 'Hotel B', when: { start_at: '2026-09-24T15:00', end_at: '2026-09-30T11:00' } },
+      { item_id: 2, details: { mode: 'Train' } },
+    ],
+  }));
+  eq(s.pendingCount, 1, 'batch stages as one grouped op (one pending change)');
+  const v = s.viewItems();
+  const it1 = v.find(i => i.id === 1);
+  const it2 = v.find(i => i.id === 2);
+  eq(it1.title, 'Hotel B', 'first edit title applied');
+  eq(it1.item_date, '2026-09-24', 'when start_at updates item_date');
+  eq(it1.end_date, '2026-09-30', 'when end_at updates end_date');
+  eq(it2.details.mode, 'Train', 'second edit detail merged');
+  eq(it2.details.when.start_at, '2026-09-10T09:00', 'untouched detail preserved');
+
+  // One Revert rolls the whole batch back.
+  s.undo();
+  eq(s.viewItems().find(i => i.id === 1).title, 'Hotel A', 'undo reverts the whole batch');
+  s.redo();
+
+  // Save PATCHes each target and syncs the base from updatedItems.
+  const { api, calls } = makeApi();
+  await s.saveAll(api);
+  const patches = calls.filter(c => c.method === 'patch' && /^\/api\/items\/\d+$/.test(c.path));
+  eq(patches.length, 2, 'one PATCH per edited item');
+  eq(patches[0].body.title, 'Hotel B', 'first PATCH carries the merged snapshot');
+  eq(patches[0].body.item_date, '2026-09-24', 'first PATCH carries the new date');
+  eq(patches[1].body.details.mode, 'Train', 'second PATCH carries the merged details');
+  eq(s.base.items.find(i => i.id === 1).title, 'Hotel B', 'base synced from updatedItems');
+  eq(s.base.items.find(i => i.id === 2).details.mode, 'Train', 'base synced for the second item too');
+}
+
+/* ---------- applyEditsOp: repeated edits and a removed target ---------- */
+{
+  const base = [
+    { id: 1, item_type: 'hotel', title: 'Hotel A', item_date: '2026-09-10', end_date: null,
+      sort_key: 1, status: 'planned', details: { address: 'Old' }, attachments: [] },
+    { id: 2, item_type: 'note', title: 'Note', item_date: '2026-09-10', end_date: null,
+      sort_key: 2, status: 'planned', details: {}, attachments: [] },
+  ];
+  const s = new Staging({ baseItems: base, basePlan: { id: 99, title: 'P' } });
+  s.add(applyEditsOp({
+    planId: 99,
+    edits: [
+      { item_id: 1, title: 'Renamed' },
+      { item_id: 1, details: { address: 'New' } },
+      { item_id: 2, title: 'Gone' },
+    ],
+  }));
+  // Another pending op removes item 2 before Save.
+  s.add(deleteItemOp({ itemId: 2, label: 'Delete Note' }));
+
+  const { api, calls } = makeApi();
+  let threw = null;
+  try { await s.saveAll(api); } catch (e) { threw = e; }
+  eq(threw, null, 'save does not abort on an edit whose target another op removed');
+  const patches = calls.filter(c => c.method === 'patch' && /^\/api\/items\/\d+$/.test(c.path));
+  eq(patches.length, 1, 'repeated edits to one item collapse into a single PATCH');
+  eq(patches[0].body.title, 'Renamed', 'the rename survives the collapse');
+  eq(patches[0].body.details.address, 'New', 'the later detail edit also survives');
+  eq(s.base.items.find(i => i.id === 1).title, 'Renamed', 'base reflects the merged edit');
+  eq(s.base.items.find(i => i.id === 2), undefined, 'deleted item is gone from base');
+}
+
+/* ---------- addItemsFromExtractionOp: batch create + id remap ---------- */
+{
+  const s = new Staging({ baseItems: [], basePlan: { id: 99, title: 'P' } });
+  s.add(addItemsFromExtractionOp({
+    planId: 99, sessionId: 'ai-add',
+    items: [
+      { item_type: 'note', title: 'A', item_date: '2026-07-01', details: {} },
+      { item_type: 'hotel', title: 'B', item_date: '2026-07-02', end_date: '2026-07-03',
+        details: { address: 'x' }, geocodes: [{ label: 'g', lat: 1, lng: 2 }] },
+    ],
+  }));
+  eq(s.pendingCount, 1, 'the add batch is one grouped op');
+  eq(s.viewItems().filter(i => i.isNew).length, 2, 'two local drafts inserted');
+
+  const { api, calls } = makeApi();
+  await s.saveAll(api);
+  const posts = calls.filter(c => c.method === 'post' && c.path.endsWith('/items'));
+  eq(posts.length, 2, 'one POST per suggested item');
+  eq(posts[0].body.title, 'A', 'first POST carries its title');
+  eq(posts[1].body.details.address, 'x', 'second POST carries its details');
+  eq(posts[1].body.geocodes[0].lat, 1, 'second POST carries its geocodes');
+  const v = s.viewItems();
+  eq(v.length, 2, 'two items after save');
+  eq(v.every(i => !i.isNew && !i.isLocal), true, 'local flags cleared after save');
+  eq(v.every(i => typeof i.id === 'number'), true, 'local ids remapped to server ids');
+}
+
+/* ---------- addItemsFromExtractionOp honours sibling ops on its drafts ---------- */
+{
+  // A sibling delete removes one draft before Save: only the survivor is POSTed
+  // and the deleted draft is not resurrected.
+  const s = new Staging({ baseItems: [], basePlan: { id: 99, title: 'P' } });
+  s.add(addItemsFromExtractionOp({ planId: 99, sessionId: 's1', items: [
+    { item_type: 'note', title: 'Keep', item_date: '2026-07-01', details: {} },
+    { item_type: 'note', title: 'Drop', item_date: '2026-07-01', details: {} },
+  ]}));
+  const drop = s.viewItems().find(i => i.title === 'Drop');
+  s.add(deleteItemOp({ itemId: drop.id, label: 'Delete Drop' }));
+  eq(s.viewItems().filter(i => i.isNew).length, 1, 'deleted draft is gone from the view');
+
+  const { api, calls } = makeApi();
+  await s.saveAll(api);
+  const posts = calls.filter(c => c.method === 'post' && c.path.endsWith('/items'));
+  eq(posts.length, 1, 'only the surviving draft is POSTed');
+  eq(posts[0].body.title, 'Keep', 'the survivor is the POSTed item');
+  eq(s.viewItems().some(i => i.title === 'Drop'), false, 'the deleted draft is not resurrected');
+}
+{
+  // A sibling move reschedules a draft before Save: the POST carries the new
+  // date, not the snapshot captured when the batch was staged.
+  const s = new Staging({ baseItems: [], basePlan: { id: 99, title: 'P' } });
+  s.add(addItemsFromExtractionOp({ planId: 99, sessionId: 's2', items: [
+    { item_type: 'note', title: 'Moved', item_date: '2026-07-02',
+      details: { when: { start_at: '2026-07-02T09:00', end_at: '2026-07-02T10:00' } } },
+  ]}));
+  const draftId = s.viewItems().find(x => x.isNew).id;
+  s.add(moveItemOp({ itemId: draftId, item_date: '2026-07-05' }));
+  eq(s.viewItems().find(x => x.isNew).item_date, '2026-07-05', 'view shows the moved date');
+
+  const { api, calls } = makeApi();
+  await s.saveAll(api);
+  const post = calls.find(c => c.method === 'post' && c.path.endsWith('/items'));
+  eq(post.body.item_date, '2026-07-05', 'POST uses the moved date');
+  eq(s.base.items.find(i => i.title === 'Moved').item_date, '2026-07-05', 'committed base keeps the moved date');
+}
+
+/* ---------- mergedItemForEdit: pure merge contract ---------- */
+{
+  const item = {
+    id: 1, title: 'Old', item_date: '2026-01-01', end_date: null,
+    details: { address: 'A', when: { start_at: '2026-01-01T09:00' } },
+  };
+  const merged = mergedItemForEdit(item, {
+    item_id: 1, title: 'New', details: { address: 'B' },
+    when: { start_at: '2026-02-02T10:00', end_at: '2026-02-03T11:00' },
+  });
+  eq(merged.title, 'New', 'title replaced');
+  eq(merged.details.address, 'B', 'details merged over the old value');
+  eq(merged.details.when.start_at, '2026-02-02T10:00', 'when replaced');
+  eq(merged.item_date, '2026-02-02', 'item_date derives from when.start_at');
+  eq(merged.end_date, '2026-02-03', 'end_date derives from when.end_at');
+  eq(item.title, 'Old', 'source item is not mutated');
 }
 
 summary('staging.test.mjs');

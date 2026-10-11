@@ -16,6 +16,9 @@ import { renderMarkdown } from '/static/js/markdown.js';
 
 const STORAGE_KEY = 'travelplan.ai-agent';
 const VISIBLE_VIEWS = new Set(['board', 'timeline', 'map']);
+// Below this many suggested edits/items, the per-row buttons already cover the
+// reply and a bulk "Apply all" / "Add all" button would just be noise.
+const MIN_FOR_BULK_ACTION = 2;
 
 const ICON_TITLE = 'Open AI Agent';
 const ICON_SVG =
@@ -38,6 +41,7 @@ let _agentContext = null;   // { createItemFromExtraction } from the active view
 let _history = [];          // [{role, content}] sent to the backend
 let _icon = null;           // small floating icon shown when minimized
 let _minimized = true;      // start minimized (icon shown, window hidden)
+let _latestBulk = [];       // bulk buttons (Apply all / Add all) on the newest reply only
 
 /* ---------- context bridge ---------- */
 
@@ -128,6 +132,14 @@ function makeResizable(handle, win) {
 
 /* ---------- rendering ---------- */
 
+// Bulk buttons belong to the newest reply only. Drop them all when a new turn
+// starts (or the chat clears) so an old reply never keeps an "Apply all" /
+// "Add all" control after newer replies have arrived.
+function clearLatestBulkButtons() {
+  for (const btn of _latestBulk) btn.remove();
+  _latestBulk = [];
+}
+
 function addMessage(role, text, image) {
   const row = el('div', { class: 'ai-msg ai-msg-' + role });
   if (image) {
@@ -153,61 +165,282 @@ function addSuggestions(items) {
   if (!items || !items.length) return;
   const canEdit = !!( _agentContext && _agentContext.canEdit);
   const row = el('div', { class: 'ai-msg ai-msg-assistant' });
-  row.appendChild(el('div', { class: 'ai-msg-text', text: 'Suggested items:' }));
-  const list = el('div', { class: 'ai-suggest' });
-  for (const it of items) {
-    if (!canEdit) {
-      // Read-only (viewer role or archived plan): show the suggestion as
-      // plain text instead of an actionable Add button.
+  row.appendChild(el('div', {
+    class: 'ai-msg-text',
+    text: `Suggested items (${items.length}):`,
+  }));
+
+  // Read-only (viewer / archived): show the suggestions as plain text.
+  if (!canEdit) {
+    const list = el('div', { class: 'ai-suggest' });
+    for (const it of items) {
       list.appendChild(el('div', { class: 'ai-suggest-readonly', text: `${it.item_type}: ${it.title}` }));
-      continue;
     }
-    const btn = el('button', {
-      class: 'ai-suggest-btn',
-      text: `+ ${it.item_type}: ${it.title}`,
-    });
-    btn.addEventListener('click', () => {
-      if (!_agentContext || !_agentContext.createItemFromExtraction) {
-        showToast('Open the board, timeline, or map to add items.', 'warn');
-        return;
-      }
-      _agentContext.createItemFromExtraction(it);
-    });
-    list.appendChild(btn);
+    row.appendChild(list);
+    _messages.appendChild(row);
+    _messages.scrollTop = _messages.scrollHeight;
+    return;
   }
-  row.appendChild(list);
+
+  const canBatch = !!(_agentContext && _agentContext.addItemsFromExtraction);
+  const group = el('div', { class: 'ai-edits-group' });
+  const list = el('ul', { class: 'ai-edit-list' });
+  const pending = new Set(items.map((_, i) => i));   // indices not yet added
+  let addAllBtn = null;
+
+  function markAdded(i, li) {
+    pending.delete(i);
+    li.classList.add('ai-edit-applied');
+    const btn = li.querySelector('.ai-edit-add');
+    if (btn) { btn.textContent = '\u2713 Added'; btn.title = 'Add this item again'; }
+  }
+
+  function refreshAddAll() {
+    if (!addAllBtn) return;
+    // The button stays available after adding so the batch can be re-added
+    // (e.g. after the user reverts); the label shows how many are left.
+    addAllBtn.textContent = pending.size
+      ? `+ Add all ${pending.size} item${pending.size === 1 ? '' : 's'}`
+      : '+ Added \u2014 add all again';
+  }
+
+  function openEditor(it) {
+    if (!_agentContext || !_agentContext.createItemFromExtraction) {
+      showToast('Open the board, timeline, or map to add items.', 'warn');
+      return;
+    }
+    _agentContext.createItemFromExtraction(it);
+  }
+
+  // Add one row: stage it directly when complete, else open its editor. Always
+  // usable, including after the row was added, so a reverted add can be redone.
+  function addOne(it, i, li) {
+    if (!canBatch) { openEditor(it); return; }
+    const wasPending = pending.has(i);
+    const res = _agentContext.addItemsFromExtraction([it]);
+    // An incomplete suggestion is opened in the editor by the view; its row
+    // stays so the user can retry once the fields are filled.
+    if (res && res.staged && res.staged.length) {
+      markAdded(i, li);
+      refreshAddAll();
+      showToast(wasPending
+        ? 'Added 1 item \u2014 review, then Save.'
+        : 'Added 1 item again \u2014 review, then Save.', 'info');
+    }
+  }
+
+  items.forEach((it, i) => {
+    const li = el('li', { class: 'ai-edit-row' });
+    li.appendChild(el('div', { class: 'ai-edit-desc' }, [
+      el('span', { class: 'ai-edit-title', text: it.title || `(${it.item_type})` }),
+      el('span', { class: 'ai-edit-change', text: describeItem(it) }),
+    ]));
+    const openBtn = el('button', {
+      class: 'ai-edit-open', text: 'Edit', title: 'Open the item editor',
+    });
+    openBtn.addEventListener('click', () => openEditor(it));
+    const addBtn = el('button', {
+      class: 'ai-edit-add ai-edit-apply', text: 'Add', title: 'Add this item',
+    });
+    addBtn.addEventListener('click', () => addOne(it, i, li));
+    li.appendChild(openBtn);
+    li.appendChild(addBtn);
+    list.appendChild(li);
+  });
+  group.appendChild(list);
+
+  if (canBatch && items.length >= MIN_FOR_BULK_ACTION) {
+    addAllBtn = el('button', {
+      class: 'ai-suggest-btn ai-suggest-all',
+      text: `+ Add all ${items.length} items`,
+      title: 'Stage this reply\'s complete items as one grouped change; incomplete ones open in the editor',
+    });
+    addAllBtn.addEventListener('click', () => {
+      // Add the not-yet-added items; once all are added, add the whole batch
+      // again so a revert can be redone in one click.
+      const selected = pending.size ? items.filter((_, i) => pending.has(i)) : items.slice();
+      if (!selected.length) return;
+      const res = _agentContext.addItemsFromExtraction(selected);
+      const staged = (res && res.staged) || [];
+      for (const i of [...pending]) {
+        if (staged.indexOf(items[i]) === -1) continue;
+        const li = list.children[i];
+        if (li) markAdded(i, li);
+      }
+      refreshAddAll();
+      const nInvalid = (res && res.invalid && res.invalid.length) || 0;
+      showToast(nInvalid
+        ? `Added ${staged.length} item${staged.length === 1 ? '' : 's'} \u2014 ${nInvalid} need review.`
+        : `Added ${staged.length} item${staged.length === 1 ? '' : 's'} \u2014 review, then Save.`, 'info');
+    });
+    group.appendChild(addAllBtn);
+    _latestBulk.push(addAllBtn);
+  }
+
+  row.appendChild(group);
   _messages.appendChild(row);
   _messages.scrollTop = _messages.scrollHeight;
+}
+
+// Short human summary of a suggested item, shown next to its title.
+function describeItem(it) {
+  const parts = [];
+  const details = it.details || {};
+  const when = it.when || details.when;
+  if (when && when.start_at) parts.push(String(when.start_at).replace('T', ' '));
+  else if (it.item_date) parts.push(it.item_date);
+  for (const [k, v] of Object.entries(details)) {
+    if (k === 'when' || v == null || v === '') continue;
+    parts.push(`${k}: ${v}`);
+  }
+  return parts.join(', ') || it.item_type;
+}
+
+// Short human summary of what one edit changes, shown next to its item title.
+function describeEdit(ed) {
+  const parts = [];
+  if (ed.title) parts.push(`title \u2192 \u201c${ed.title}\u201d`);
+  if (ed.when && ed.when.start_at) {
+    const timeOf = (s) => { const m = String(s).match(/T(\d{2}:\d{2})/); return m ? m[1] : ''; };
+    const day = String(ed.when.start_at).slice(0, 10);
+    const st = timeOf(ed.when.start_at);
+    let w = st ? `${day} ${st}` : day;
+    if (timeOf(ed.when.end_at)) w += `\u2013${timeOf(ed.when.end_at)}`;
+    parts.push(`time \u2192 ${w}`);
+  }
+  if (ed.details) {
+    for (const [k, v] of Object.entries(ed.details)) {
+      if (v == null || v === '') continue;
+      parts.push(`${k}: ${v}`);
+    }
+  }
+  if (ed.geocodes && ed.geocodes.length) parts.push('location updated');
+  return parts.join(', ') || 'update';
+}
+
+function itemTitleFor(ed) {
+  return (_agentContext && _agentContext.getItemTitle)
+    ? (_agentContext.getItemTitle(ed.item_id) || `item #${ed.item_id}`)
+    : `item #${ed.item_id}`;
 }
 
 function addEdits(edits) {
   if (!edits || !edits.length) return;
   const canEdit = !!( _agentContext && _agentContext.canEdit);
   const row = el('div', { class: 'ai-msg ai-msg-assistant' });
-  row.appendChild(el('div', { class: 'ai-msg-text', text: 'Suggested edits:' }));
-  const list = el('div', { class: 'ai-suggest' });
-  for (const ed of edits) {
-    const title = (_agentContext && _agentContext.getItemTitle)
-      ? (_agentContext.getItemTitle(ed.item_id) || `item #${ed.item_id}`)
-      : `item #${ed.item_id}`;
-    if (!canEdit) {
-      list.appendChild(el('div', { class: 'ai-suggest-readonly', text: `Edit ${title}` }));
-      continue;
+  row.appendChild(el('div', {
+    class: 'ai-msg-text',
+    text: `Suggested edits (${edits.length}):`,
+  }));
+
+  // Read-only (viewer / archived): list the edits as plain text.
+  if (!canEdit) {
+    const list = el('div', { class: 'ai-suggest' });
+    for (const ed of edits) {
+      list.appendChild(el('div', {
+        class: 'ai-suggest-readonly',
+        text: `${itemTitleFor(ed)} \u2014 ${describeEdit(ed)}`,
+      }));
     }
-    const btn = el('button', {
-      class: 'ai-suggest-btn',
-      text: `✎ Edit ${title}`,
+    row.appendChild(list);
+    _messages.appendChild(row);
+    _messages.scrollTop = _messages.scrollHeight;
+    return;
+  }
+
+  // Only the newest reply keeps an "Apply all" button; older replies keep
+  // their per-row Apply buttons so the user can still apply one at a time.
+  const group = el('div', { class: 'ai-edits-group' });
+  const list = el('ul', { class: 'ai-edit-list' });
+  const pending = new Set(edits.map((_, i) => i));   // indices not yet applied
+  let allBtn = null;
+
+  // Stage the chosen edits. Returns false when nothing could be staged.
+  function stage(selected) {
+    if (_agentContext && _agentContext.applyEditsFromExtraction) {
+      return _agentContext.applyEditsFromExtraction(selected) !== false;
+    }
+    showToast('Open the board, timeline, or map to apply edits.', 'warn');
+    return false;
+  }
+
+  function markApplied(i, li, btn) {
+    pending.delete(i);
+    li.classList.add('ai-edit-applied');
+    btn.textContent = '\u2713 Applied';
+    btn.title = 'Apply this change again';
+  }
+
+  function refreshApplyAll() {
+    if (!allBtn) return;
+    // The button stays available after applying so the batch can be re-applied
+    // (e.g. after the user reverts); the label shows how many are left.
+    allBtn.textContent = pending.size
+      ? `\u2713 Apply all ${pending.size} edit${pending.size === 1 ? '' : 's'}`
+      : '\u2713 Applied \u2014 apply all again';
+  }
+
+  edits.forEach((ed, i) => {
+    const li = el('li', { class: 'ai-edit-row' });
+    li.appendChild(el('div', { class: 'ai-edit-desc' }, [
+      el('span', { class: 'ai-edit-title', text: itemTitleFor(ed) }),
+      el('span', { class: 'ai-edit-change', text: describeEdit(ed) }),
+    ]));
+    const openBtn = el('button', {
+      class: 'ai-edit-open', text: 'Edit',
+      title: 'Open the full editor for this change',
     });
-    btn.addEventListener('click', () => {
+    openBtn.addEventListener('click', () => {
       if (!_agentContext || !_agentContext.editItemFromExtraction) {
         showToast('Open the board, timeline, or map to edit items.', 'warn');
         return;
       }
       _agentContext.editItemFromExtraction(ed);
     });
-    list.appendChild(btn);
+    const applyBtn = el('button', {
+      class: 'ai-edit-apply', text: 'Apply', title: 'Stage this change',
+    });
+    applyBtn.addEventListener('click', () => {
+      // Always usable, including after the row was applied, so a reverted edit
+      // can be staged again.
+      const wasPending = pending.has(i);
+      if (!stage([ed])) return;
+      markApplied(i, li, applyBtn);
+      refreshApplyAll();
+      showToast(wasPending
+        ? 'Applied 1 edit \u2014 review, then Save.'
+        : 'Applied 1 edit again \u2014 review, then Save.', 'info');
+    });
+    li.appendChild(openBtn);
+    li.appendChild(applyBtn);
+    list.appendChild(li);
+  });
+  group.appendChild(list);
+
+  if (edits.length >= MIN_FOR_BULK_ACTION) {
+    allBtn = el('button', {
+      class: 'ai-suggest-btn ai-suggest-all',
+      text: `\u2713 Apply all ${edits.length} edits`,
+      title: 'Stage this reply\'s edits as one grouped change',
+    });
+    allBtn.addEventListener('click', () => {
+      // Apply the not-yet-applied edits; once all are applied, apply the whole
+      // batch again so a revert can be redone in one click.
+      const selected = pending.size ? edits.filter((_, i) => pending.has(i)) : edits.slice();
+      if (!selected.length || !stage(selected)) return;
+      for (const i of [...pending]) {
+        const li = list.children[i];
+        const btn = li && li.querySelector('.ai-edit-apply');
+        if (li && btn) markApplied(i, li, btn);
+      }
+      refreshApplyAll();
+      showToast(`Applied ${selected.length} edits \u2014 review, then Save.`, 'info');
+    });
+    group.appendChild(allBtn);
+    _latestBulk.push(allBtn);
   }
-  row.appendChild(list);
+
+  row.appendChild(group);
   _messages.appendChild(row);
   _messages.scrollTop = _messages.scrollHeight;
 }
@@ -252,6 +485,7 @@ async function send() {
 
   addMessage('user', text, image ? image.dataUrl : null);
   _history.push({ role: 'user', content: text });
+  clearLatestBulkButtons();
   _input.value = '';
   _pendingImage = null;
   renderAttach();
@@ -441,6 +675,7 @@ function clearChat() {
   }));
   hideTyping();
   _history = [];
+  clearLatestBulkButtons();
 }
 
 export function setAgentVisible(view) {
@@ -471,4 +706,5 @@ export function resetAgent() {
   _history = [];
   _icon = null;
   _minimized = true;
+  _latestBulk = [];
 }

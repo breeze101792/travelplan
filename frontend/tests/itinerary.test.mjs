@@ -37,10 +37,48 @@ const SETTINGS = {
 
 const PLAN = { id: 1, title: 'Japan 2026', start_date: '2026-07-01', end_date: '2026-07-03', base_currency: 'JPY' };
 
+/* Canned assistant reply for the AI-widget integration fixture. It carries two
+ * edits — a date move on the seeded hotel (id 1) and a rename of the seeded
+ * activity (id 2) — so the "Apply all" path can be exercised end to end. */
+const AI_CHAT_RESULT = {
+  reply: 'Updated both items.',
+  items: [],
+  edits: [
+    { item_id: 1, when: { start_at: '2026-07-01T08:00', end_at: '2026-07-01T09:00' } },
+    { item_id: 2, title: 'Fushimi Inari (AI)' },
+  ],
+};
+
+/* Canned reply that suggests two complete new items, so the grouped "Add all"
+ * flow can be exercised end to end. */
+const AI_ITEMS_RESULT = {
+  reply: 'Two suggestions.',
+  items: [
+    { item_type: 'activity', title: 'Ginkaku-ji', details: {},
+      when: { start_at: '2026-07-01T09:00', end_at: '2026-07-01T10:00' },
+      item_date: '2026-07-01', end_date: '2026-07-01', geocodes: [] },
+    { item_type: 'activity', title: 'Philosopher\u2019s Path', details: {},
+      when: { start_at: '2026-07-02T09:00', end_at: '2026-07-02T10:00' },
+      item_date: '2026-07-02', end_date: '2026-07-02', geocodes: [] },
+  ],
+  edits: [],
+};
+
+/* Canned reply with one suggestion missing its required `when` block: adding
+ * it must fall back to the editor instead of staging an invalid item. */
+const AI_INCOMPLETE_RESULT = {
+  reply: 'One suggestion.',
+  items: [
+    { item_type: 'activity', title: 'Kiyomizu-dera', details: {}, geocodes: [] },
+  ],
+  edits: [],
+};
+
 function freshServer() {
   const state = {
     nextItemId: 100,
     nextAttId: 500,
+    chatResult: AI_CHAT_RESULT,
     items: [
       { id: 1, item_type: 'hotel', title: 'Hotel A', item_date: '2026-07-01', end_date: '2026-07-02',
         sort_key: 1, status: 'planned', details: {},
@@ -49,7 +87,7 @@ function freshServer() {
         sort_key: 1, status: 'confirmed', details: {}, attachments: [] },
     ],
   };
-  return installFetch([
+  const stub = installFetch([
     ['GET /api/settings', () => SETTINGS],
     ['GET /api/plans/1', () => ({ plan: PLAN })],
     ['GET /api/plans/1/members', () => ({ owner: { id: 1, username: 'admin', display_name: 'Admin' }, members: [] })],
@@ -88,7 +126,12 @@ function freshServer() {
       for (const it of state.items) it.attachments = (it.attachments || []).filter(a => String(a.id) !== id);
       return { deleted: Number(id) };
     }],
+    // AI chat stub: answers the widget's POST with the canned reply so the
+    // AI flows can be driven without a real LLM. Tests may swap
+    // `stub.state.chatResult` before booting.
+    ['POST /api/plans/:planId/ai/chat', () => state.chatResult],
   ]);
+  return Object.assign(stub, { state: state });
 }
 
 async function boot(role) {
@@ -1158,6 +1201,206 @@ const ownerStub = await boot('owner');
   modeSel.value = 'Flight';
   applyBtn.click();
   assert(!document.body.querySelector('.item-editor'), 'req: Apply succeeds once required fields are filled');
+}
+
+/* =============== owner: AI "Apply all" stages one grouped change =============== */
+// Fixture flow: boot the board, init the chat widget, send a message, and click
+// the reply's "Apply all" button. The chat POST is answered by the
+// AI_CHAT_RESULT stub wired into freshServer(), so no real LLM is involved and
+// the whole path (widget -> staging -> board -> Save) runs for real.
+{
+  const agent = await import('/static/js/ai-agent.js');
+  agent.resetAgent();          // drop any stale widget singleton from earlier sections
+  const stub = await boot('owner');
+  window.__CONTEXT__ = { planId: 1, role: 'owner' };  // boot() replaced the window shim
+  agent.initAgent();
+
+  // The widget starts minimized as the floating icon; open it.
+  document.getElementById('ai-agent-icon').click();
+  const input = document.body.querySelector('.ai-agent-input');
+  const send = document.body.querySelector('.ai-agent-send');
+  input.value = 'move the hotel to 8am and rename Fushimi Inari';
+  send.dispatch('click');
+  await new Promise(r => setTimeout(r, 0));
+
+  const bar = document.getElementById('edit-bar');
+  const allBtn = document.body.querySelector('.ai-suggest-all');
+  assert(!!allBtn, 'AI: apply-all button rendered for a multi-edit reply');
+  eq(document.body.querySelectorAll('.ai-edit-row').length, 2, 'AI: one row per suggested edit');
+  eq(document.body.querySelectorAll('.ai-edit-apply').length, 2, 'AI: each row has its own Apply');
+
+  allBtn.click();
+  const stillBulk = document.body.querySelector('.ai-suggest-all');
+  assert(!!stillBulk && /again/.test(stillBulk.textContent),
+         'AI: apply-all stays available so a revert can be redone');
+  assert(bar.querySelector('.pb-status').textContent.includes('1 pending change'),
+         'AI: apply-all stages ONE grouped change [' + bar.querySelector('.pb-status').textContent + ']');
+
+  const titles = document.getElementById('board')
+    .querySelectorAll('.card .card-title').map(n => n.textContent);
+  assert(titles.includes('Fushimi Inari (AI)'), "AI: the reply's rename is applied to the board");
+
+  // Save commits every edit in the group.
+  const saveBtn = [...bar.querySelectorAll('button.pb-btn')].find(b => b.textContent.includes('Save'));
+  saveBtn.click();
+  await new Promise(r => setTimeout(r, 0));
+  const itemPatches = stub.calls.filter(c => c.method === 'PATCH' && /^\/api\/items\/\d+$/.test(c.url));
+  eq(itemPatches.length, 2, 'AI: Save PATCHes both edited items');
+  assert(bar.querySelector('.pb-status').textContent.includes('All changes saved'),
+         'AI: batch saves in one go');
+  stub.restore();
+}
+
+/* =============== owner: AI edits applied one by one =============== */
+// Same canned reply, but apply the rows individually: pick one, then use
+// apply-all for the remainder. Verifies each row stages only its own edit and
+// the apply-all count tracks what is left.
+{
+  const agent = await import('/static/js/ai-agent.js');
+  agent.resetAgent();
+  const stub = await boot('owner');
+  window.__CONTEXT__ = { planId: 1, role: 'owner' };
+  agent.initAgent();
+
+  document.getElementById('ai-agent-icon').click();
+  const input = document.body.querySelector('.ai-agent-input');
+  input.value = 'apply them one at a time';
+  document.body.querySelector('.ai-agent-send').dispatch('click');
+  await new Promise(r => setTimeout(r, 0));
+
+  const bar = document.getElementById('edit-bar');
+  const rows = document.body.querySelectorAll('.ai-edit-row');
+  eq(rows.length, 2, 'AI one-by-one: two edit rows');
+
+  // Apply the first row (the date move on item 1) on its own.
+  rows[0].querySelector('.ai-edit-apply').click();
+  assert(bar.querySelector('.pb-status').textContent.includes('1 pending change'),
+         'AI one-by-one: first row stages a single pending change');
+  let titles = document.getElementById('board').querySelectorAll('.card .card-title').map(n => n.textContent);
+  assert(!titles.includes('Fushimi Inari (AI)'), 'AI one-by-one: the unapplied rename is not on the board yet');
+
+  // Apply-all now covers only the remaining row.
+  const allBtn = document.body.querySelector('.ai-suggest-all');
+  assert(allBtn.textContent.includes('1'), 'AI one-by-one: apply-all count drops to 1 remaining');
+  allBtn.click();
+  assert(bar.querySelector('.pb-status').textContent.includes('2 pending changes'),
+         'AI one-by-one: remaining edit staged as a second change');
+  titles = document.getElementById('board').querySelectorAll('.card .card-title').map(n => n.textContent);
+  assert(titles.includes('Fushimi Inari (AI)'), 'AI one-by-one: the remainder is applied');
+  const bulkAfter = document.body.querySelector('.ai-suggest-all');
+  assert(!!bulkAfter && /again/.test(bulkAfter.textContent),
+         'AI one-by-one: apply-all stays, offering to apply again');
+
+  stub.restore();
+}
+
+/* =============== owner: AI row "Edit" opens the pre-filled editor =============== */
+// The grouped edit rows offer two actions: Apply (stage directly) and Edit
+// (open the full item editor pre-filled, so the change can be reviewed or
+// adjusted before it is staged).
+{
+  const agent = await import('/static/js/ai-agent.js');
+  agent.resetAgent();
+  const stub = await boot('owner');
+  window.__CONTEXT__ = { planId: 1, role: 'owner' };
+  agent.initAgent();
+
+  document.getElementById('ai-agent-icon').click();
+  const input = document.body.querySelector('.ai-agent-input');
+  input.value = 'open the rename for review';
+  document.body.querySelector('.ai-agent-send').dispatch('click');
+  await new Promise(r => setTimeout(r, 0));
+
+  // Row 1 renames item 2; open its editor.
+  const rows = document.body.querySelectorAll('.ai-edit-row');
+  rows[1].querySelector('.ai-edit-open').click();
+  await new Promise(r => setTimeout(r, 0));
+  await new Promise(r => setTimeout(r, 0));
+  const editor = document.body.querySelector('.item-editor');
+  assert(!!editor, 'AI: row Edit opens the item editor');
+  const titleInput = [...editor.querySelectorAll('input')].find(i => i.type === 'text');
+  eq(titleInput.value, 'Fushimi Inari (AI)', 'AI: editor opens pre-filled with the suggested title');
+
+  // Cancel discards the review and leaves no pending change.
+  [...editor.querySelectorAll('button')].find(b => b.textContent === 'Cancel').click();
+  assert(!document.body.querySelector('.item-editor'), 'AI: Cancel closes the editor');
+  const bar = document.getElementById('edit-bar');
+  assert(bar.querySelector('.pb-status').textContent.includes('All changes saved'),
+         'AI: reviewing an edit stages nothing');
+
+  stub.restore();
+}
+
+/* =============== owner: AI "Add all" stages complete items in one change =============== */
+{
+  const agent = await import('/static/js/ai-agent.js');
+  agent.resetAgent();
+  const stub = await boot('owner');
+  stub.state.chatResult = AI_ITEMS_RESULT;
+  window.__CONTEXT__ = { planId: 1, role: 'owner' };
+  agent.initAgent();
+
+  document.getElementById('ai-agent-icon').click();
+  const input = document.body.querySelector('.ai-agent-input');
+  input.value = 'suggest two activities';
+  document.body.querySelector('.ai-agent-send').dispatch('click');
+  await new Promise(r => setTimeout(r, 0));
+
+  eq(document.body.querySelectorAll('.ai-edit-row').length, 2, 'AI add: one row per suggested item');
+  const addAll = document.body.querySelector('.ai-suggest-all');
+  assert(!!addAll, 'AI add: Add all button rendered');
+
+  addAll.click();
+  const bar = document.getElementById('edit-bar');
+  assert(bar.querySelector('.pb-status').textContent.includes('1 pending change'),
+         'AI add: both items staged as ONE grouped change [' + bar.querySelector('.pb-status').textContent + ']');
+  const titles = document.getElementById('board').querySelectorAll('.card .card-title').map(n => n.textContent);
+  assert(titles.includes('Ginkaku-ji'), 'AI add: first suggested item on the board');
+  assert(titles.includes('Philosopher\u2019s Path'), 'AI add: second suggested item on the board');
+  const bulkAfter = document.body.querySelector('.ai-suggest-all');
+  assert(!!bulkAfter && /again/.test(bulkAfter.textContent),
+         'AI add: Add all stays available so a revert can be redone');
+
+  const saveBtn = [...bar.querySelectorAll('button.pb-btn')].find(b => b.textContent.includes('Save'));
+  saveBtn.click();
+  await new Promise(r => setTimeout(r, 0));
+  const posts = stub.calls.filter(c => c.method === 'POST' && c.url === '/api/plans/1/items');
+  eq(posts.length, 2, 'AI add: Save POSTs both items');
+  assert(bar.querySelector('.pb-status').textContent.includes('All changes saved'), 'AI add: batch saves in one go');
+
+  stub.restore();
+}
+
+/* =============== owner: incomplete suggestion opens the editor =============== */
+{
+  const agent = await import('/static/js/ai-agent.js');
+  agent.resetAgent();
+  const stub = await boot('owner');
+  stub.state.chatResult = AI_INCOMPLETE_RESULT;
+  window.__CONTEXT__ = { planId: 1, role: 'owner' };
+  agent.initAgent();
+
+  document.getElementById('ai-agent-icon').click();
+  const input = document.body.querySelector('.ai-agent-input');
+  input.value = 'suggest one';
+  document.body.querySelector('.ai-agent-send').dispatch('click');
+  await new Promise(r => setTimeout(r, 0));
+
+  const row = document.body.querySelector('.ai-edit-row');
+  row.querySelector('.ai-edit-add').click();
+  await new Promise(r => setTimeout(r, 0));
+  await new Promise(r => setTimeout(r, 0));
+  const editor = document.body.querySelector('.item-editor');
+  assert(!!editor, 'AI add: the incomplete suggestion opens the editor instead of staging');
+
+  // Cancel discards the draft it staged.
+  [...editor.querySelectorAll('button')].find(b => b.textContent === 'Cancel').click();
+  assert(!document.body.querySelector('.item-editor'), 'AI add: Cancel closes the editor');
+  const bar = document.getElementById('edit-bar');
+  assert(bar.querySelector('.pb-status').textContent.includes('All changes saved'),
+         'AI add: cancelling the incomplete suggestion stages nothing');
+
+  stub.restore();
 }
 
 summary('itinerary.test.mjs');

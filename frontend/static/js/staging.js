@@ -78,6 +78,26 @@ function shiftDate(s, newDate) {
   return `${newDate}T${m[1]}`;
 }
 
+// Merge one AI edit into an item, returning a new item. An edit is a partial
+// {item_id, title?, details?, when?, geocodes?}. Shared by the single-edit
+// editor flow (ai-extract.js) and the grouped multi-edit op below so both
+// apply an edit identically: a new ``when`` updates the item_date / end_date
+// columns (the backend treats ``when`` as the source of truth), and geocodes
+// replace the prior list.
+export function mergedItemForEdit(item, edit) {
+  const next = Object.assign({}, item);
+  if (edit.title) next.title = edit.title;
+  if (edit.details) next.details = Object.assign({}, item.details || {}, edit.details);
+  if (edit.when && edit.when.start_at) {
+    next.details = Object.assign({}, next.details || {});
+    next.details.when = edit.when;
+    next.item_date = edit.when.start_at.slice(0, 10);
+    if (edit.when.end_at) next.end_date = edit.when.end_at.slice(0, 10);
+  }
+  if (edit.geocodes && edit.geocodes.length) next.geocodes = edit.geocodes.slice();
+  return next;
+}
+
 /* ---------- op factories ----------
  *
  * Each factory returns a fresh op object with a stable `kind`, a human `label`
@@ -225,6 +245,60 @@ export function updateItemOp({ planId, item, sessionId }) {
       };
       const res = await api.patch(`/api/items/${item.id}`, body);
       return { updatedItem: res.item };
+    },
+  };
+}
+
+/* Apply a batch of AI edits to existing items as one grouped op. A single op
+ * means one pending-change entry and one Revert for the whole batch — the AI
+ * reply's "Apply all" button stages exactly this. Each edit is a partial
+ * {item_id, title?, details?, when?, geocodes?}; execute PATCHes every target
+ * and returns the server-updated items so the engine keeps its base in sync
+ * (later replies may edit the same item again). */
+export function applyEditsOp({ planId, edits, label, sessionId }) {
+  const list = (edits || []).filter(e => e && e.item_id != null);
+  const opLabel = label || (list.length === 1
+    ? `Edit ${list[0].title || 'item'}`
+    : `Edit ${list.length} items`);
+  return {
+    id: null, kind: 'APPLY_EDITS', label: opLabel, sessionId,
+    apply(items) {
+      let working = items;
+      for (const ed of list) {
+        const it = working.find(x => String(x.id) === String(ed.item_id));
+        if (!it) continue;
+        working = patchItem(working, ed.item_id, mergedItemForEdit(it, ed));
+      }
+      return working;
+    },
+    planApply() { return null; },
+    async execute(api, _base) {
+      // PATCH the final merged state once per edited item. `_base.items` is
+      // this save's full view (all pending ops folded in), so repeated edits
+      // to the same item collapse into one PATCH with nothing clobbered, and
+      // an item removed by another pending op is simply skipped.
+      const viewItems = (_base && _base.items) || [];
+      const seen = new Set();
+      const updatedItems = [];
+      for (const ed of list) {
+        const key = String(ed.item_id);
+        if (seen.has(key)) continue;
+        seen.add(key);
+        if (isLocalId(ed.item_id)) continue;
+        const cur = viewItems.find(x => String(x.id) === key);
+        if (!cur) continue;
+        const body = {
+          title: cur.title,
+          item_date: cur.item_date || null,
+          end_date: cur.end_date || null,
+          status: cur.status || 'planned',
+          details: cur.details || {},
+          geocodes: cur.geocodes || [],
+        };
+        const res = await api.patch(`/api/items/${ed.item_id}`, body);
+        if (res && res.item) updatedItems.push(res.item);
+      }
+      return { updatedItems };
     },
   };
 }
@@ -475,6 +549,85 @@ export function createItemsFromClipOp({ planId, item_date, items, sessionId }) {
           } catch (e) { /* best-effort */ }
         }
         created.push({ draftId: draft.id, newId, attachmentMap });
+      }
+      return { created };
+    },
+  };
+}
+
+/* Stage a batch of complete AI-suggested items as one grouped op. Unlike the
+ * blank-draft editor flow, every item here is already valid (callers run the
+ * required-field check first), so execute POSTs them directly. One op means
+ * the pending bar shows a single change and one Revert rolls the whole batch
+ * back; per-item dates and geocodes are carried through. */
+export function addItemsFromExtractionOp({ planId, items, sessionId }) {
+  const drafts = items.map((src) => {
+    const id = _LOCAL_ID();
+    return {
+      id, plan_id: planId,
+      item_type: src.item_type,
+      title: src.title || '(Untitled)',
+      item_date: src.item_date || null,
+      end_date: src.end_date || null,
+      sort_key: 9999,
+      status: src.status || 'planned',
+      details: src.details ? Object.assign({}, src.details) : {},
+      geocodes: (src.geocodes || []).map(g => Object.assign({}, g)),
+      attachments: [],
+      isLocal: true,
+      isNew: true,
+    };
+  });
+  const label = items.length === 1
+    ? `Add ${items[0].item_type || 'item'}`
+    : `Add ${items.length} items`;
+  return {
+    id: null, kind: 'ADD_EXTRACTION_ITEMS', label, sessionId,
+    _draftIds: drafts.map(d => d.id),
+    apply(list, _base, ctx) {
+      // First pass: no server result yet — insert the local drafts.
+      if (!ctx || !ctx.result) return list.concat(drafts);
+      // Second pass: swap each draft's local id for the server id. The commit
+      // starts from the pre-op base (which never saw the first-pass drafts), so
+      // re-attach every created item, using the values the view settled on
+      // (a sibling drag may have rescheduled it after the draft was inserted).
+      const created = (ctx.result && ctx.result.created) || [];
+      const byDraft = new Map(created.map(c => [String(c.draftId), c]));
+      const mapped = list.map((it) => {
+        const c = byDraft.get(String(it.id));
+        if (!c) return it;
+        return Object.assign({}, c.item || it, { id: c.newId, isLocal: false, isNew: false });
+      });
+      for (const c of created) {
+        if (mapped.some(it => String(it.id) === String(c.newId))) continue;
+        mapped.push(Object.assign({}, c.item || {}, { id: c.newId, isLocal: false, isNew: false }));
+      }
+      return mapped;
+    },
+    planApply() { return null; },
+    async execute(api, _base) {
+      // POST the drafts that are still in the save's view, using their current
+      // field values. A draft removed by a sibling delete op is absent from the
+      // view and is skipped; a draft rescheduled by a sibling op is POSTed with
+      // its new date. The returned `item` lets the commit pass re-attach the
+      // settled values (including the server's sort fields) instead of the
+      // stale draft snapshot.
+      const viewItems = (_base && _base.items) || [];
+      const created = [];
+      for (const draft of drafts) {
+        const cur = viewItems.find(x => String(x.id) === String(draft.id));
+        if (!cur) continue;
+        const body = {
+          item_type: cur.item_type,
+          title: cur.title || '(Untitled)',
+          item_date: cur.item_date || null,
+          end_date: cur.end_date || null,
+          status: cur.status || 'planned',
+          details: cur.details || {},
+          geocodes: cur.geocodes || [],
+        };
+        const res = await api.post(`/api/plans/${planId}/items`, body);
+        created.push({ draftId: draft.id, newId: res.item.id, item: Object.assign({}, cur, res.item) });
       }
       return { created };
     },
@@ -849,6 +1002,13 @@ export class Staging {
             const ui = result.updatedItem;
             const idx = this.base.items.findIndex(x => String(x.id) === String(ui.id));
             if (idx >= 0) this.base.items[idx] = Object.assign({}, this.base.items[idx], ui);
+          }
+          // Ops that PATCH several items at once (APPLY_EDITS) return an array.
+          if (result && result.updatedItems) {
+            for (const ui of result.updatedItems) {
+              const idx = this.base.items.findIndex(x => String(x.id) === String(ui.id));
+              if (idx >= 0) this.base.items[idx] = Object.assign({}, this.base.items[idx], ui);
+            }
           }
         } catch (e) {
           this.failedOpIndex = i;

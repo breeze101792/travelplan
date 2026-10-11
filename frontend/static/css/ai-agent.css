@@ -234,6 +234,105 @@
 
 .ai-suggest-btn:hover { background: var(--surface-3, #e2e8f0); }
 
+.ai-suggest-all {
+  border-color: var(--accent, #2563eb);
+  background: var(--accent, #2563eb);
+  color: #fff;
+}
+
+.ai-suggest-all:hover { background: var(--accent-strong, #1d4ed8); }
+
+/* ---------- grouped edits ---------- */
+
+.ai-edits-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 6px;
+}
+
+.ai-edit-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  border: 1px solid var(--line, #e5e7eb);
+  border-radius: var(--radius-sm, 8px);
+  overflow: hidden;
+}
+
+.ai-edit-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-top: 1px solid var(--line, #e5e7eb);
+}
+
+.ai-edit-row:first-child { border-top: none; }
+
+.ai-edit-desc {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.ai-edit-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text, #1f2937);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ai-edit-change {
+  font-size: 11px;
+  color: var(--muted, #6b7280);
+}
+
+.ai-edit-apply {
+  flex: 0 0 auto;
+  padding: 4px 10px;
+  border: 1px solid var(--accent-weak, #dbeafe);
+  background: var(--accent-weak, #dbeafe);
+  color: var(--accent-strong, #1d4ed8);
+  border-radius: var(--radius-sm, 8px);
+  font: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.ai-edit-apply:hover { background: var(--surface-3, #e2e8f0); }
+
+.ai-edit-open {
+  flex: 0 0 auto;
+  padding: 4px 10px;
+  border: 1px solid var(--line, #e5e7eb);
+  background: var(--surface-2, #f1f5f9);
+  color: var(--muted, #6b7280);
+  border-radius: var(--radius-sm, 8px);
+  font: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.ai-edit-open:hover { background: var(--surface-3, #e2e8f0); }
+
+/* Applied rows are tinted but their buttons stay clickable, so a reverted
+ * change can be staged again — keep the pointer cursor. */
+.ai-edit-applied { opacity: 0.75; }
+
+.ai-edit-applied .ai-edit-apply {
+  border-color: var(--line, #e5e7eb);
+  background: var(--surface-2, #f1f5f9);
+  color: var(--muted, #6b7280);
+  cursor: pointer;
+}
+
 .ai-suggest-readonly {
   padding: 6px 10px;
   border: 1px solid var(--line, #e5e7eb);

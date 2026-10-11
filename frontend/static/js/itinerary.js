@@ -22,7 +22,7 @@ import { expandHotelEvents } from '/static/js/hotel-events.js';
 import { enableGrabScroll } from '/static/js/page-utils.js';
 import { createMultiSelect } from '/static/js/multi-select.js';
 import { doSave as sharedSave, showToast, batchSessionId } from '/static/js/page-utils.js';
-import { createItemFromExtraction, editItemFromExtraction } from '/static/js/ai-extract.js';
+import { createItemFromExtraction, editItemFromExtraction, applyEditsFromExtraction, addItemsFromExtraction } from '/static/js/ai-extract.js';
 import { registerAgentContext } from '/static/js/ai-agent.js';
 import { setActiveStaging } from '/static/js/guard.js';
 
@@ -816,6 +816,15 @@ export async function initItinerary(ctx) {
       onApplied: () => { render(); renderEditBarCtl(); },
       onClose: () => { suppressClearOnce = true; },
     }, edit),
+    applyEditsFromExtraction: (edits) => applyEditsFromExtraction({
+      ctx, staging,
+      onApplied: () => { render(); renderEditBarCtl(); },
+    }, edits),
+    addItemsFromExtraction: (exts) => addItemsFromExtraction({
+      ctx, staging, plan, settings, members: allMembers,
+      onApplied: () => { render(); renderEditBarCtl(); },
+      onClose: () => { suppressClearOnce = true; },
+    }, exts),
     getItemTitle: (itemId) => {
       const it = staging.viewItems().find(x => String(x.id) === String(itemId));
       return it ? it.title : null;

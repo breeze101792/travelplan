@@ -6,7 +6,7 @@ import { el, clear } from '/static/js/util.js';
 import { openItemEditor, openGeoPopup } from '/static/js/item-editor.js';
 import { expandHotelEvents } from '/static/js/hotel-events.js';
 import { clipboardGet, clipboardSet, serializeItem } from '/static/js/clipboard.js';
-import { createItemFromExtraction, editItemFromExtraction } from '/static/js/ai-extract.js';
+import { createItemFromExtraction, editItemFromExtraction, applyEditsFromExtraction, addItemsFromExtraction } from '/static/js/ai-extract.js';
 import { registerAgentContext } from '/static/js/ai-agent.js';
 import { setActiveStaging } from '/static/js/guard.js';
 
@@ -732,6 +732,14 @@ export async function initMap(c) {
       ctx, staging, plan, settings, members: [],
       onApplied: () => { refreshFromStaging(); renderEditBarCtl(); },
     }, edit),
+    applyEditsFromExtraction: (edits) => applyEditsFromExtraction({
+      ctx, staging,
+      onApplied: () => { refreshFromStaging(); renderEditBarCtl(); },
+    }, edits),
+    addItemsFromExtraction: (exts) => addItemsFromExtraction({
+      ctx, staging, plan, settings, members: [],
+      onApplied: () => { refreshFromStaging(); renderEditBarCtl(); },
+    }, exts),
     getItemTitle: (itemId) => {
       const it = staging.viewItems().find(x => String(x.id) === String(itemId));
       return it ? it.title : null;

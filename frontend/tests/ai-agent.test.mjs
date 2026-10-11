@@ -161,14 +161,89 @@ async function loadAgent() {
   const texts = [...document.querySelectorAll('.ai-msg-text')].map((n) => n.textContent);
   assert(texts.some((t) => t.includes('Here is a flight suggestion.')), 'assistant reply rendered');
 
-  // suggestion button offered
-  const suggestBtn = document.querySelector('.ai-suggest-btn');
-  assert(suggestBtn != null, 'suggestion button rendered');
-  suggestBtn.dispatch('click');
-  assert(received != null, 'createItemFromExtraction called on suggestion click');
+  // suggestion row offered: an Edit button and an Add button. With no batch
+  // handler registered, Add falls back to opening the editor.
+  const suggestionRow = document.querySelector('.ai-edit-row');
+  assert(suggestionRow != null, 'suggestion row rendered');
+  eq(suggestionRow.querySelector('.ai-edit-title').textContent, 'JL 123', 'row shows the suggested title');
+  assert(suggestionRow.querySelector('.ai-edit-open') != null, 'suggestion row has an Edit button');
+  const addBtn = suggestionRow.querySelector('.ai-edit-add');
+  assert(addBtn != null, 'suggestion row has an Add button');
+  assert(document.querySelector('.ai-suggest-all') == null, 'no Add all without a batch handler');
+
+  addBtn.dispatch('click');
+  assert(received != null, 'createItemFromExtraction called on Add click');
   eq(received.item_type, 'transit', 'suggested item_type passed through');
   eq(received.title, 'JL 123', 'suggested title passed through');
   eq(received.geocodes[0].lat, 35.68, 'suggested geocodes passed through');
+
+  restore();
+}
+
+// ---------- grouped suggestions: Add all stages the complete ones ----------
+
+const TWO_ITEMS_RESULT = {
+  reply: 'Two suggestions.',
+  items: [
+    { item_type: 'transit', title: 'Flight', details: { mode: 'Flight' },
+      when: { start_at: '2026-09-10T09:00', end_at: '2026-09-10T10:00' }, geocodes: [] },
+    { item_type: 'hotel', title: 'Hotel', details: {},
+      when: { start_at: '2026-09-10T15:00', end_at: '2026-09-12T11:00' }, geocodes: [] },
+  ],
+  edits: [],
+};
+
+{
+  installDom({ ids: [] });
+  window.__CONTEXT__ = { planId: 7, role: 'owner' };
+  const { initAgent, registerAgentContext } = await loadAgent();
+  initAgent();
+
+  const { restore } = installFetch([
+    ['POST /api/plans/7/ai/chat', () => TWO_ITEMS_RESULT],
+  ]);
+
+  const batches = [];
+  registerAgentContext({
+    canEdit: true,
+    createItemFromExtraction: () => {},
+    addItemsFromExtraction: (exts) => {
+      batches.push(exts);
+      // Treat the hotel suggestion as incomplete in this test.
+      return {
+        staged: exts.filter(e => e.item_type !== 'hotel'),
+        invalid: exts.filter(e => e.item_type === 'hotel'),
+      };
+    },
+  });
+
+  const input = document.querySelector('.ai-agent-input');
+  const sendBtn = document.querySelector('.ai-agent-send');
+  input.value = 'suggest two';
+  sendBtn.dispatch('click');
+  await new Promise((r) => setTimeout(r, 0));
+
+  const rows = document.querySelectorAll('.ai-edit-row');
+  eq(rows.length, 2, 'one row per suggested item');
+  eq(document.querySelectorAll('.ai-edit-add').length, 2, 'each row has an Add button');
+  const allBtn = document.querySelector('.ai-suggest-all');
+  assert(allBtn != null && allBtn.textContent.includes('2'), 'Add all shows the item count');
+
+  // Add the first (complete) row on its own.
+  rows[0].querySelector('.ai-edit-add').dispatch('click');
+  eq(batches.length, 1, 'row Add calls addItemsFromExtraction');
+  eq(batches[0].length, 1, 'row Add passes only that item');
+  assert(rows[0].classList.contains('ai-edit-applied'), 'complete row marked added');
+  assert(document.querySelector('.ai-suggest-all').textContent.includes('1'),
+         'Add all count drops to the remaining item');
+  assert(!rows[0].querySelector('.ai-edit-add').disabled, 'added row stays clickable for a redo');
+
+  // Add all → the remaining row is incomplete; it stays unmarked.
+  document.querySelector('.ai-suggest-all').dispatch('click');
+  eq(batches.length, 2, 'Add all calls addItemsFromExtraction');
+  eq(batches[1].length, 1, 'Add all passes only the remaining item');
+  assert(!rows[1].classList.contains('ai-edit-applied'), 'incomplete row stays unmarked');
+  assert(document.querySelector('.ai-suggest-all') != null, 'Add all stays while an incomplete row remains');
 
   restore();
 }
@@ -192,11 +267,13 @@ async function loadAgent() {
     ['POST /api/plans/7/ai/chat', () => EDIT_RESULT],
   ]);
 
-  let receivedEdit = null;
+  let opened = null;
+  const batches = [];
   registerAgentContext({
     canEdit: true,
     createItemFromExtraction: () => {},
-    editItemFromExtraction: (ed) => { receivedEdit = ed; },
+    applyEditsFromExtraction: (eds) => { batches.push(eds); },
+    editItemFromExtraction: (ed) => { opened = ed; },
     getItemTitle: (id) => id === 3 ? 'Beverly Hotels Elements' : null,
   });
 
@@ -210,15 +287,31 @@ async function loadAgent() {
   const texts = [...document.querySelectorAll('.ai-msg-text')].map((n) => n.textContent);
   assert(texts.some((t) => t.includes('Moved your checkout')), 'edit reply rendered');
 
-  // edit button offered, labeled with the item title
-  const editBtn = document.querySelector('.ai-suggest-btn');
-  assert(editBtn != null, 'edit button rendered');
-  assert(editBtn.textContent.includes('Edit Beverly Hotels Elements'), 'edit button labels the item title');
-  assert(!editBtn.textContent.includes('item #3'), 'edit button does not show the raw id');
-  editBtn.dispatch('click');
-  assert(receivedEdit != null, 'editItemFromExtraction called on edit click');
-  eq(receivedEdit.item_id, 3, 'edit item_id passed through');
-  eq(receivedEdit.when.end_at, '2026-09-30T11:00', 'edit when passed through');
+  // one grouped row, labeled with the item title and a change summary
+  const row = document.querySelector('.ai-edit-row');
+  assert(row != null, 'edit row rendered');
+  eq(row.querySelector('.ai-edit-title').textContent, 'Beverly Hotels Elements', 'row labels the item title');
+  assert(row.querySelector('.ai-edit-change').textContent.includes('time \u2192'), 'row summarizes the change');
+  assert(document.querySelector('.ai-suggest-all') == null, 'no apply-all for a single edit');
+
+  // The Edit button opens the item editor for this change.
+  row.querySelector('.ai-edit-open').dispatch('click');
+  assert(opened != null, 'editItemFromExtraction called on row Edit');
+  eq(opened.item_id, 3, 'row Edit passes the edit through');
+
+  const applyBtn = row.querySelector('.ai-edit-apply');
+  applyBtn.dispatch('click');
+  eq(batches.length, 1, 'applyEditsFromExtraction called on row Apply');
+  eq(batches[0].length, 1, 'only this row\'s edit is staged');
+  eq(batches[0][0].item_id, 3, 'edit item_id passed through');
+  eq(batches[0][0].when.end_at, '2026-09-30T11:00', 'edit when passed through');
+  assert(!applyBtn.disabled, 'row Apply stays clickable after applying');
+  assert(!row.querySelector('.ai-edit-open').disabled, 'row Edit stays available after applying');
+  eq(applyBtn.textContent, '\u2713 Applied', 'row Apply shows the applied state');
+  applyBtn.dispatch('click');
+  eq(batches.length, 2, 'row Apply can stage the edit again');
+  eq(batches[1][0].item_id, 3, 'the re-applied edit is the same one');
+  assert(row.classList.contains('ai-edit-applied'), 'row marked applied');
 
   restore();
 }
@@ -248,11 +341,10 @@ async function loadAgent() {
   sendBtn.dispatch('click');
   await new Promise((r) => setTimeout(r, 0));
 
-  const editBtn = document.querySelector('.ai-suggest-btn');
-  assert(editBtn == null, 'no edit button when read-only');
+  assert(document.querySelector('.ai-edit-apply') == null, 'no apply button when read-only');
   const readonly = document.querySelector('.ai-suggest-readonly');
   assert(readonly != null, 'read-only edit shown as text');
-  assert(readonly.textContent.includes('Edit Beverly Hotels Elements'), 'read-only edit shows item title');
+  assert(readonly.textContent.includes('Beverly Hotels Elements'), 'read-only edit shows item title');
 
   restore();
 }
@@ -409,6 +501,237 @@ async function loadAgent() {
   const attachName = document.querySelector('.ai-attach-name');
   assert(attachName != null, 'pasted image attached');
   eq(attachName.textContent, 'screenshot.png', 'pasted image name matches');
+}
+
+// ---------- apply-all edits (one grouped click) ----------
+
+const MULTI_EDIT_RESULT = {
+  reply: 'Updated both items.',
+  items: [],
+  edits: [
+    { item_id: 3, when: { start_at: '2026-09-24T15:00', end_at: '2026-09-30T11:00' } },
+    { item_id: 4, title: 'New title' },
+  ],
+};
+
+function editContext(over = {}) {
+  return Object.assign({
+    canEdit: true,
+    createItemFromExtraction: () => {},
+    editItemFromExtraction: () => {},
+    applyEditsFromExtraction: () => {},
+    getItemTitle: (id) => `Item ${id}`,
+  }, over);
+}
+
+{
+  installDom({ ids: [] });
+  window.__CONTEXT__ = { planId: 7, role: 'owner' };
+  const { initAgent, registerAgentContext } = await loadAgent();
+  initAgent();
+
+  const { restore } = installFetch([
+    ['POST /api/plans/7/ai/chat', () => MULTI_EDIT_RESULT],
+  ]);
+
+  const batches = [];
+  registerAgentContext(editContext({
+    applyEditsFromExtraction: (eds) => { batches.push(eds); },
+  }));
+
+  const input = document.querySelector('.ai-agent-input');
+  const sendBtn = document.querySelector('.ai-agent-send');
+  input.value = 'update both';
+  sendBtn.dispatch('click');
+  await new Promise((r) => setTimeout(r, 0));
+
+  const allBtn = document.querySelector('.ai-suggest-all');
+  assert(allBtn != null, 'apply-all button rendered for a multi-edit reply');
+  assert(allBtn.textContent.includes('2'), 'apply-all button shows the edit count');
+  eq(document.querySelectorAll('.ai-edit-apply').length, 2, 'one Apply button per edit row');
+  eq(document.querySelectorAll('.ai-suggest-btn').length, 1, 'the only .ai-suggest-btn is apply-all');
+
+  allBtn.dispatch('click');
+  eq(batches.length, 1, 'applyEditsFromExtraction called on apply-all click');
+  eq(batches[0].length, 2, 'all edits from the reply passed in one call');
+  eq(batches[0][1].item_id, 4, 'second edit passed through');
+  eq([...document.querySelectorAll('.ai-edit-apply')].every(b => b.disabled), false,
+     'rows stay clickable after apply-all (so a revert can be redone)');
+  eq(document.querySelectorAll('.ai-edit-applied').length, 2, 'every row marked applied');
+  const stillAll = document.querySelector('.ai-suggest-all');
+  assert(stillAll != null && /again/.test(stillAll.textContent), 'apply-all stays, offering to apply again');
+
+  // Re-apply one row after (say) a revert: it stages again.
+  document.querySelectorAll('.ai-edit-row')[0].querySelector('.ai-edit-apply').dispatch('click');
+  eq(batches.length, 2, 'a row can be applied again');
+  eq(batches[1].length, 1, 'the re-apply stages only that row');
+  eq(batches[1][0].item_id, 3, 'the re-applied row is the first edit');
+
+  restore();
+}
+
+// ---------- applying one row leaves the rest and updates apply-all ----------
+
+{
+  installDom({ ids: [] });
+  window.__CONTEXT__ = { planId: 7, role: 'owner' };
+  const { initAgent, registerAgentContext } = await loadAgent();
+  initAgent();
+
+  const { restore } = installFetch([
+    ['POST /api/plans/7/ai/chat', () => MULTI_EDIT_RESULT],
+  ]);
+
+  const batches = [];
+  registerAgentContext(editContext({
+    applyEditsFromExtraction: (eds) => { batches.push(eds); },
+  }));
+
+  const input = document.querySelector('.ai-agent-input');
+  const sendBtn = document.querySelector('.ai-agent-send');
+  input.value = 'update both';
+  sendBtn.dispatch('click');
+  await new Promise((r) => setTimeout(r, 0));
+
+  const rows = document.querySelectorAll('.ai-edit-row');
+  rows[0].querySelector('.ai-edit-apply').dispatch('click');
+  eq(batches.length, 1, 'first row Apply stages one batch');
+  eq(batches[0].length, 1, 'the batch holds only the selected edit');
+  eq(batches[0][0].item_id, 3, 'the selected edit is the first row');
+  const allBtn = document.querySelector('.ai-suggest-all');
+  assert(allBtn.textContent.includes('1'), 'apply-all count drops to the one remaining edit');
+
+  // Apply all now stages only the remaining (not-yet-applied) edit.
+  allBtn.dispatch('click');
+  eq(batches.length, 2, 'apply-all stages the remainder');
+  eq(batches[1].length, 1, 'only the remaining edit is staged');
+  eq(batches[1][0].item_id, 4, 'the remaining edit is the second row');
+  const afterAll = document.querySelector('.ai-suggest-all');
+  assert(afterAll != null && /again/.test(afterAll.textContent),
+         'apply-all stays after every row is applied, offering to apply again');
+
+  restore();
+}
+
+// ---------- apply-all appears only on the newest reply ----------
+
+{
+  installDom({ ids: [] });
+  window.__CONTEXT__ = { planId: 7, role: 'owner' };
+  const { initAgent, registerAgentContext } = await loadAgent();
+  initAgent();
+
+  const { restore } = installFetch([
+    ['POST /api/plans/7/ai/chat', () => MULTI_EDIT_RESULT],
+  ]);
+  registerAgentContext(editContext());
+
+  const input = document.querySelector('.ai-agent-input');
+  const sendBtn = document.querySelector('.ai-agent-send');
+  input.value = 'first';
+  sendBtn.dispatch('click');
+  await new Promise((r) => setTimeout(r, 0));
+  eq(document.querySelectorAll('.ai-suggest-all').length, 1, 'apply-all on the first reply');
+
+  const allBtn = document.querySelector('.ai-suggest-all');
+  allBtn.dispatch('click');
+  assert(document.querySelector('.ai-suggest-all') != null, 'apply-all stays after clicking (can apply again)');
+
+  input.value = 'second';
+  sendBtn.dispatch('click');
+  await new Promise((r) => setTimeout(r, 0));
+  eq(document.querySelectorAll('.ai-suggest-all').length, 1, 'only the newest reply keeps apply-all');
+  eq(document.querySelectorAll('.ai-edits-group').length, 2, 'both edit groups remain in the scrollback');
+
+  restore();
+}
+
+// ---------- applying on an older reply must not clear the newest apply-all ----------
+
+{
+  installDom({ ids: [] });
+  window.__CONTEXT__ = { planId: 7, role: 'owner' };
+  const { initAgent, registerAgentContext } = await loadAgent();
+  initAgent();
+
+  const { restore } = installFetch([
+    ['POST /api/plans/7/ai/chat', () => MULTI_EDIT_RESULT],
+  ]);
+  registerAgentContext(editContext());
+
+  const input = document.querySelector('.ai-agent-input');
+  const sendBtn = document.querySelector('.ai-agent-send');
+  input.value = 'first';
+  sendBtn.dispatch('click');
+  await new Promise((r) => setTimeout(r, 0));
+  input.value = 'second';
+  sendBtn.dispatch('click');
+  await new Promise((r) => setTimeout(r, 0));
+
+  const groups = document.querySelectorAll('.ai-edits-group');
+  eq(groups.length, 2, 'two replies with edits');
+  // Apply both rows of the OLDER reply, emptying its pending set.
+  const aRows = groups[0].querySelectorAll('.ai-edit-row');
+  aRows[0].querySelector('.ai-edit-apply').dispatch('click');
+  aRows[1].querySelector('.ai-edit-apply').dispatch('click');
+
+  // The newest reply must keep its own apply-all.
+  const newest = document.querySelectorAll('.ai-suggest-all');
+  eq(newest.length, 1, 'older-reply applies do not remove the newest apply-all');
+  assert(newest[0].textContent.includes('2'), 'newest apply-all still counts its own two edits');
+
+  restore();
+}
+
+// ---------- no apply-all for a single edit ----------
+
+{
+  installDom({ ids: [] });
+  window.__CONTEXT__ = { planId: 7, role: 'owner' };
+  const { initAgent, registerAgentContext } = await loadAgent();
+  initAgent();
+
+  const { restore } = installFetch([
+    ['POST /api/plans/7/ai/chat', () => ({
+      reply: 'ok', items: [], edits: [{ item_id: 3, title: 'Solo' }],
+    })],
+  ]);
+  registerAgentContext(editContext());
+
+  const input = document.querySelector('.ai-agent-input');
+  const sendBtn = document.querySelector('.ai-agent-send');
+  input.value = 'one';
+  sendBtn.dispatch('click');
+  await new Promise((r) => setTimeout(r, 0));
+
+  assert(document.querySelector('.ai-suggest-all') == null, 'no apply-all for a single edit');
+
+  restore();
+}
+
+// ---------- no apply-all when read-only ----------
+
+{
+  installDom({ ids: [] });
+  window.__CONTEXT__ = { planId: 7, role: 'viewer' };
+  const { initAgent, registerAgentContext } = await loadAgent();
+  initAgent();
+
+  const { restore } = installFetch([
+    ['POST /api/plans/7/ai/chat', () => MULTI_EDIT_RESULT],
+  ]);
+  registerAgentContext({ canEdit: false, createItemFromExtraction: () => {}, getItemTitle: () => 'Item' });
+
+  const input = document.querySelector('.ai-agent-input');
+  const sendBtn = document.querySelector('.ai-agent-send');
+  input.value = 'update both';
+  sendBtn.dispatch('click');
+  await new Promise((r) => setTimeout(r, 0));
+
+  assert(document.querySelector('.ai-suggest-all') == null, 'no apply-all when read-only');
+  eq(document.querySelectorAll('.ai-suggest-readonly').length, 2, 'both edits shown as read-only text');
+
+  restore();
 }
 
 summary('ai-agent');

@@ -1,4 +1,4 @@
-const CACHE_PREFIX = 'travelplan-v1';
+const CACHE_PREFIX = 'travelplan-v2';
 const ASSET_CACHE = CACHE_PREFIX + '-assets';
 const PAGE_CACHE = CACHE_PREFIX + '-pages';
 
@@ -39,7 +39,7 @@ self.addEventListener('fetch', event => {
   if (isTargetPage(url)) {
     event.respondWith(networkFirst(event.request, PAGE_CACHE));
   } else if (isStaticAsset(url)) {
-    event.respondWith(cacheFirst(event.request, ASSET_CACHE));
+    event.respondWith(staleWhileRevalidate(event.request, ASSET_CACHE));
   }
 });
 
@@ -56,15 +56,16 @@ async function networkFirst(request, cacheName) {
   }
 }
 
-async function cacheFirst(request, cacheName) {
-  const cached = await caches.match(request);
-  if (cached) return cached;
-  try {
-    const res = await fetch(request);
-    const cache = await caches.open(cacheName);
-    cache.put(request, res.clone());
+// Static assets: serve the cached copy immediately (fast, offline-safe) and
+// refresh it from the network in the background. This is what lets a new
+// deploy's JS/CSS take effect on the next load without the user manually
+// clearing the cache — plain cache-first would pin the old bundle forever.
+async function staleWhileRevalidate(request, cacheName) {
+  const cache = await caches.open(cacheName);
+  const cached = await cache.match(request);
+  const network = fetch(request).then((res) => {
+    if (res && res.ok) cache.put(request, res.clone());
     return res;
-  } catch {
-    return new Response('Offline', { status: 503 });
-  }
+  }).catch(() => null);
+  return cached || (await network) || new Response('Offline', { status: 503 });
 }
