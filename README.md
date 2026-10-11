@@ -114,6 +114,23 @@ exchange rate from each to the plan's *base currency*. The app never fetches or
 assumes rates — you provide them, they are saved, and settlement is computed in
 the base currency using a greedy min-cash-flow ("who owes whom") algorithm.
 
+Each "who pays whom" row has a **Settle** button: the proposed amount is
+pre-filled and editable, so a payment that is not the exact proposed number can
+be recorded in one action. A row whose debt is gone is marked **Settled** and
+loses its button; a partly paid row re-appears pre-filled with what is still
+outstanding. Recorded quick settles show up in the Payments list below.
+
+Settlement can be viewed in **Single currency** (all balances converted to one
+currency and netted into a single "who pays whom") or **Per currency** (each
+currency settled on its own). A payment always keeps the currency and amount
+you actually paid, and records which currency debts it settles, so settling
+from one mode is reflected in the other. When a single-currency row nets debt
+across several currencies, one Settle records your real payment and the app
+splits it across the debts it clears. One rare case cannot be settled by a
+single payment: a row that nets debt between two people who owe each other
+nothing directly in any one currency. That row says so and offers **Settle per
+currency**, which switches to the per-currency view.
+
 ## AI agent & MCP
 
 TravelPlan ships an AI extraction core (`backend/ai.py`), an in-app floating
@@ -145,7 +162,7 @@ and frontend node suites pass; the e2e suite has some pre-existing failures
 in other files noted below. See `docs/test.md` for the full guide (fixture
 catalog, how to add a test in each layer, debugging gotchas).
 
-- **`tests/backend/`** — pytest, **418 tests** covering every blueprint
+- **`tests/backend/`** — pytest, **433 tests** covering every blueprint
   (auth, plans, items, uploads, expenses, todos, util). Fresh temp data dir
   per test; no shared state. Run alone with `./tests/run-tests.sh --backend`
   or `.venv_$(hostname)/bin/python -m pytest tests/backend -c pytest.ini`.
@@ -158,9 +175,9 @@ catalog, how to add a test in each layer, debugging gotchas).
   Needs `playwright` installed (`pip install playwright`) and a chromium
   binary; on NixOS set `CHROMIUM=/nix/store/.../bin/chromium` (the
   conftest tries a default path). Run with `./tests/run-tests.sh --e2e`.
-- **`frontend/tests/`** — the original node ES-module tests, **767 tests**
+- **`frontend/tests/`** — the original node ES-module tests, **791 tests**
   (itinerary, timeline, staging, navigation, map, page-utils, util, api,
-  cache, guard, markdown, ai, plan-store, todos). Plain node, no npm.
+  cache, guard, markdown, ai, plan-store, todos, settlement). Plain node, no npm.
   Skipped automatically when node is not installed.
 
 **Known baseline failures.** The backend and frontend node suites are green

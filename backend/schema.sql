@@ -176,3 +176,14 @@ CREATE TABLE IF NOT EXISTS payments (
   CHECK (from_user_id <> to_user_id)
 );
 CREATE INDEX IF NOT EXISTS idx_payments_plan ON payments(plan_id);
+
+-- Which currency-debt each payment retires. One row per (payment, currency).
+-- The payments row keeps what the user actually paid (amount_cents + currency);
+-- these rows record which per-currency debts that money settled, in each debt
+-- currency's own minor units, so later rate changes cannot move them.
+CREATE TABLE IF NOT EXISTS payment_allocations (
+  payment_id   INTEGER NOT NULL REFERENCES payments(id) ON DELETE CASCADE,
+  currency     TEXT NOT NULL,
+  amount_cents INTEGER NOT NULL CHECK (amount_cents > 0),
+  PRIMARY KEY (payment_id, currency)
+);

@@ -239,6 +239,28 @@ input:disabled { background: #f3f4f6; color: var(--muted, #6b7280); }
 .prop-who { font-size: 0.9rem; }
 .prop-amt { font-weight: 600; font-variant-numeric: tabular-nums; }
 
+.prop-row.settled { background: #ecfdf5; border-color: #a7f3d0; }
+.prop-action { display: inline-flex; align-items: center; gap: 0.5rem; }
+.mixed-note { font-size: 0.8rem; color: var(--muted, #6b7280); }
+.prop-amount-input {
+  width: 90px;
+  padding: 0.25rem 0.5rem;
+  border: 1px solid var(--border, #d1d5db);
+  border-radius: 6px;
+  font-size: 0.875rem;
+  font-family: inherit;
+}
+.settled-badge {
+  display: inline-block;
+  padding: 0.15rem 0.55rem;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  background: #ecfdf5;
+  color: #047857;
+  border: 1px solid #a7f3d0;
+}
+
 .form-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));

@@ -211,6 +211,23 @@ class TestRatesAndSettlement:
             "rates": {"USD": "abc"}})
         assert r.status_code == 400
 
+    def test_set_rates_rejects_non_positive(self, member_client, plan_id):
+        """A zero, negative, or non-finite rate would make the allocation
+        value guard pass trivially and could raise on division."""
+        for bad in (0, -150, 1e400, 1e-400):
+            r = member_client.post(f"/api/plans/{plan_id}/rates", json={
+                "rates": {"USD": bad}})
+            assert r.status_code == 400, f"{bad!r} should be rejected"
+            assert "USD" in r.get_json()["error"]
+        # Nothing was persisted by the rejected attempts.
+        assert member_client.get(
+            f"/api/plans/{plan_id}/rates").get_json()["rates"] == {}
+        # A normal positive rate still succeeds.
+        r = member_client.post(f"/api/plans/{plan_id}/rates", json={
+            "rates": {"USD": 150.0}})
+        assert r.status_code == 200
+        assert r.get_json()["rates"]["USD"] == 150.0
+
     def test_settlement_multi_currency_uses_rates(self, member_client, plan_id, user_ids):
         # Plan base is JPY. Add a USD expense and an exchange rate.
         member_client.post(f"/api/plans/{plan_id}/rates", json={
@@ -237,6 +254,134 @@ class TestRatesAndSettlement:
         balances = body.get("balances") or body.get("remaining_balances") or []
         # No balances when no expenses.
         assert balances == []
+
+    def test_mixed_currency_row_reports_parts(
+            self, member_client, plan_id, user_ids):
+        """A single-mode proposal that nets debt in two currencies reports
+        both currencies in `parts` so the UI can hide the one-tap Settle;
+        each per-currency row reports exactly its own currency."""
+        member_client.post(f"/api/plans/{plan_id}/rates", json={"rates": {"USD": 150.0}})
+        for cur, amt in (("JPY", 3000), ("USD", "20.00")):
+            member_client.post(f"/api/plans/{plan_id}/expenses", json={
+                "description": f"{cur} expense", "currency": cur,
+                "decimals": 0 if cur == "JPY" else 2,
+                "amount": amt, "split_method": "EQUAL",
+                "payers": [{"user_id": user_ids["alice"], "amount": amt}],
+                "participants": [user_ids["alice"], user_ids["bob2"]],
+            })
+        single = member_client.get(f"/api/plans/{plan_id}/settlement").get_json()
+        assert len(single["proposed_settlement"]) == 1
+        parts = single["proposed_settlement"][0]["parts"]
+        assert {p["currency"] for p in parts} == {"JPY", "USD"}
+        per_cur = member_client.get(
+            f"/api/plans/{plan_id}/settlement?mode=per_currency").get_json()
+        for cur in ("JPY", "USD"):
+            rows = per_cur["per_currency"][cur]["proposed_settlement"]
+            assert rows, f"{cur} should have a proposed row"
+            for r in rows:
+                assert r["parts"] == [{"currency": cur,
+                                       "amount_cents": r["amount_cents"],
+                                       "decimals": 0 if cur == "JPY" else 2}]
+
+    def test_single_row_reports_parts_only_in_debt_currency(
+            self, member_client, plan_id, user_ids):
+        """A USD-only debt displayed in the base currency (JPY) reports its
+        parts in USD, not the display currency, so the UI will not offer a
+        one-tap settle that would create debt in JPY."""
+        member_client.post(f"/api/plans/{plan_id}/rates", json={"rates": {"USD": 150.0}})
+        member_client.post(f"/api/plans/{plan_id}/expenses", json={
+            "description": "Hotel", "currency": "USD", "decimals": 2,
+            "amount": "20.00", "split_method": "EQUAL",
+            "payers": [{"user_id": user_ids["alice"], "amount": "20.00"}],
+            "participants": [user_ids["alice"], user_ids["bob2"]],
+        })
+        single = member_client.get(f"/api/plans/{plan_id}/settlement").get_json()
+        assert single["settlement_currency"] == "JPY"
+        parts = single["proposed_settlement"][0]["parts"]
+        assert [p["currency"] for p in parts] == ["USD"]
+        assert parts[0]["amount_cents"] == 1000
+
+    def test_per_currency_settle_keeps_one_record_per_currency(
+            self, member_client, plan_id, user_ids):
+        """Recording the per-currency proposals keeps a payment record in each
+        real currency and clears both the per-currency and single views."""
+        member_client.post(f"/api/plans/{plan_id}/rates", json={"rates": {"USD": 150.0}})
+        for cur, amt in (("JPY", 3000), ("USD", "20.00")):
+            member_client.post(f"/api/plans/{plan_id}/expenses", json={
+                "description": f"{cur} expense", "currency": cur,
+                "decimals": 0 if cur == "JPY" else 2,
+                "amount": amt, "split_method": "EQUAL",
+                "payers": [{"user_id": user_ids["alice"], "amount": amt}],
+                "participants": [user_ids["alice"], user_ids["bob2"]],
+            })
+        per_cur = member_client.get(
+            f"/api/plans/{plan_id}/settlement?mode=per_currency").get_json()
+        settled = []
+        for cur in ("JPY", "USD"):
+            for p in per_cur["per_currency"][cur]["proposed_settlement"]:
+                r = member_client.post(f"/api/plans/{plan_id}/payments", json={
+                    "from_user_id": p["from"], "to_user_id": p["to"],
+                    "amount": p["amount_cents"], "currency": cur,
+                    "decimals": 0 if cur == "JPY" else 2,
+                })
+                assert r.status_code == 200, r.data
+                settled.append(cur)
+        # One record per currency, each remembering its real currency.
+        payments = member_client.get(
+            f"/api/plans/{plan_id}/payments").get_json()["payments"]
+        by_cur = {p["currency"]: p["amount_cents"] for p in payments}
+        assert by_cur == {"JPY": 1500, "USD": 1000}
+        # Both views clear.
+        single = member_client.get(f"/api/plans/{plan_id}/settlement").get_json()
+        assert single["remaining_balances"] == []
+        per_after = member_client.get(
+            f"/api/plans/{plan_id}/settlement?mode=per_currency").get_json()
+        for cur in ("JPY", "USD"):
+            assert per_after["per_currency"][cur]["remaining_balances"] == []
+
+    def test_single_mode_settle_mixed_row_clears_both_modes(
+            self, member_client, plan_id, user_ids):
+        """A single payment recorded against a mixed-currency row — with
+        per-currency allocations — clears remaining balances in BOTH the
+        single and per-currency settlement views, while the stored payment
+        stays the real one the user made (JPY 3000)."""
+        member_client.post(f"/api/plans/{plan_id}/rates", json={"rates": {"USD": 150.0}})
+        for cur, amt in (("JPY", 3000), ("USD", "20.00")):
+            member_client.post(f"/api/plans/{plan_id}/expenses", json={
+                "description": f"{cur} expense", "currency": cur,
+                "decimals": 0 if cur == "JPY" else 2,
+                "amount": amt, "split_method": "EQUAL",
+                "payers": [{"user_id": user_ids["alice"], "amount": amt}],
+                "participants": [user_ids["alice"], user_ids["bob2"]],
+            })
+        single = member_client.get(f"/api/plans/{plan_id}/settlement").get_json()
+        assert len(single["proposed_settlement"]) == 1
+        row = single["proposed_settlement"][0]
+        r = member_client.post(f"/api/plans/{plan_id}/payments", json={
+            "from_user_id": row["from"], "to_user_id": row["to"],
+            "amount": row["amount_cents"], "currency": "JPY", "decimals": 0,
+            "allocations": [
+                {"currency": "JPY", "amount_cents": 1500},
+                {"currency": "USD", "amount_cents": 1000},
+            ],
+        })
+        assert r.status_code == 200, r.data
+        payment = r.get_json()["payment"]
+        assert payment["currency"] == "JPY"
+        assert payment["amount_cents"] == 3000
+        # The stored record is the single real payment, not one row per currency.
+        payments = member_client.get(
+            f"/api/plans/{plan_id}/payments").get_json()["payments"]
+        assert len(payments) == 1
+        assert payments[0]["currency"] == "JPY"
+        assert payments[0]["amount_cents"] == 3000
+        # Both views clear in JPY and USD.
+        single_after = member_client.get(f"/api/plans/{plan_id}/settlement").get_json()
+        assert single_after["remaining_balances"] == []
+        per_after = member_client.get(
+            f"/api/plans/{plan_id}/settlement?mode=per_currency").get_json()
+        for cur in ("JPY", "USD"):
+            assert per_after["per_currency"][cur]["remaining_balances"] == []
 
 
 # ------------------------------------------------------------------ by-item totals
@@ -275,6 +420,8 @@ class TestPayments:
         assert p["from_user_id"] == user_ids["bob2"]
         assert p["to_user_id"] == user_ids["alice"]
         assert p["amount_cents"] == 15
+        # No allocations in the request: default is the payment's own currency.
+        assert p["allocations"] == [{"currency": "JPY", "amount_cents": 15}]
 
     def test_payment_affects_remaining_balances(self, member_client, plan_id, user_ids):
         """A recorded payment must reduce the debtor's balance and
@@ -372,6 +519,35 @@ class TestPayments:
         assert r.status_code == 200
         assert member_client.get(f"/api/plans/{plan_id}/payments").get_json()["payments"] == []
 
+    def test_record_payment_rejects_zero_amount(self, member_client, plan_id, user_ids):
+        r = member_client.post(f"/api/plans/{plan_id}/payments", json={
+            "from_user_id": user_ids["bob2"], "to_user_id": user_ids["alice"],
+            "amount": "0", "currency": "JPY", "decimals": 0,
+        })
+        assert r.status_code == 400
+        assert member_client.get(
+            f"/api/plans/{plan_id}/payments").get_json()["payments"] == []
+
+    def test_record_payment_rejects_negative_amount(self, member_client, plan_id, user_ids):
+        r = member_client.post(f"/api/plans/{plan_id}/payments", json={
+            "from_user_id": user_ids["bob2"], "to_user_id": user_ids["alice"],
+            "amount": "-100", "currency": "JPY", "decimals": 0,
+        })
+        assert r.status_code == 400
+
+    def test_update_payment_rejects_zero_amount(self, member_client, plan_id, user_ids):
+        p = member_client.post(f"/api/plans/{plan_id}/payments", json={
+            "from_user_id": user_ids["bob2"], "to_user_id": user_ids["alice"],
+            "amount": "1500", "currency": "JPY", "decimals": 0,
+        }).get_json()["payment"]
+        r = member_client.patch(f"/api/payments/{p['id']}", json={
+            "amount": "0", "currency": "JPY", "decimals": 0,
+        })
+        assert r.status_code == 400
+        listed = member_client.get(
+            f"/api/plans/{plan_id}/payments").get_json()["payments"]
+        assert listed[0]["amount_cents"] == 1500
+
     def test_update_payment(self, member_client, plan_id, user_ids):
         p = member_client.post(f"/api/plans/{plan_id}/payments", json={
             "from_user_id": user_ids["bob2"], "to_user_id": user_ids["alice"],
@@ -427,6 +603,223 @@ class TestPayments:
         usd_rem = {b["user_id"]: b["balance_cents"]
                    for b in body["per_currency"]["USD"]["remaining_balances"]}
         assert usd_rem[user_ids["bob2"]] == 1000
+
+    def test_payment_allocations_api_rules(self, member_client, plan_id, user_ids, db):
+        """Allocations round-trip, reject bad values/currencies, and follow
+        PATCH semantics (keep on note-only, reset on amount-only)."""
+        member_client.post(f"/api/plans/{plan_id}/rates", json={"rates": {"USD": 150.0}})
+        # (a) allocations are echoed back in the POST response.
+        p = member_client.post(f"/api/plans/{plan_id}/payments", json={
+            "from_user_id": user_ids["bob2"], "to_user_id": user_ids["alice"],
+            "amount": "1500", "currency": "JPY", "decimals": 0,
+            "allocations": [
+                {"currency": "JPY", "amount_cents": 750},
+                {"currency": "USD", "amount_cents": 500},
+            ],
+        })
+        assert p.status_code == 200, p.data
+        body = p.get_json()["payment"]
+        assert body["allocations"] == [
+            {"currency": "JPY", "amount_cents": 750},
+            {"currency": "USD", "amount_cents": 500},
+        ]
+        # (b) allocations worth more than the payment amount -> 400.
+        r = member_client.post(f"/api/plans/{plan_id}/payments", json={
+            "from_user_id": user_ids["bob2"], "to_user_id": user_ids["alice"],
+            "amount": "10", "currency": "JPY", "decimals": 0,
+            "allocations": [{"currency": "USD", "amount_cents": 100}],
+        })
+        assert r.status_code == 400
+        # (c) an allocation in an unrated, non-base currency -> 400.
+        r = member_client.post(f"/api/plans/{plan_id}/payments", json={
+            "from_user_id": user_ids["bob2"], "to_user_id": user_ids["alice"],
+            "amount": "1500", "currency": "JPY", "decimals": 0,
+            "allocations": [{"currency": "EUR", "amount_cents": 500}],
+        })
+        assert r.status_code == 400
+        # (d) PATCH note-only keeps the existing allocations.
+        r = member_client.patch(f"/api/payments/{body['id']}", json={"note": "hi"})
+        assert r.status_code == 200
+        assert r.get_json()["payment"]["allocations"] == [
+            {"currency": "JPY", "amount_cents": 750},
+            {"currency": "USD", "amount_cents": 500},
+        ]
+        # (e) PATCH amount-only (no allocations field) resets to one
+        # own-currency allocation for the new amount.
+        r = member_client.patch(f"/api/payments/{body['id']}", json={
+            "amount": "2000", "currency": "JPY", "decimals": 0})
+        assert r.status_code == 200
+        assert r.get_json()["payment"]["allocations"] == [
+            {"currency": "JPY", "amount_cents": 2000}]
+        # (f) DELETE cascades the allocation rows away.
+        member_client.delete(f"/api/payments/{body['id']}")
+        assert db.all(
+            "SELECT * FROM payment_allocations WHERE payment_id = ?",
+            (body["id"],)) == []
+
+    def test_payment_allocation_cannot_exceed_value_with_zero_rate(
+            self, member_client, plan_id, user_ids):
+        """The zero/negative-rate exploit is closed: the rate POST is rejected,
+        the saved rate is unchanged, and a crafted allocation in that currency
+        cannot be created to mint debt."""
+        # Prime a valid rate, then attempt to overwrite it with a zero.
+        member_client.post(f"/api/plans/{plan_id}/rates", json={"rates": {"USD": 150.0}})
+        r = member_client.post(f"/api/plans/{plan_id}/rates", json={"rates": {"USD": 0}})
+        assert r.status_code == 400
+        assert member_client.get(
+            f"/api/plans/{plan_id}/rates").get_json()["rates"]["USD"] == 150.0
+        # A tiny JPY payment cannot be turned into a huge USD allocation.
+        r = member_client.post(f"/api/plans/{plan_id}/payments", json={
+            "from_user_id": user_ids["bob2"], "to_user_id": user_ids["alice"],
+            "amount": "1", "currency": "JPY", "decimals": 0,
+            "allocations": [{"currency": "USD", "amount_cents": 1_000_000_000}],
+        })
+        assert r.status_code == 400
+        assert member_client.get(
+            f"/api/plans/{plan_id}/payments").get_json()["payments"] == []
+
+    def test_payment_zero_rate_does_not_500(self, member_client, plan_id, user_ids):
+        """A zero rate is rejected, and payments/settlement keep returning 200."""
+        p = member_client.post(f"/api/plans/{plan_id}/payments", json={
+            "from_user_id": user_ids["bob2"], "to_user_id": user_ids["alice"],
+            "amount": "1500", "currency": "JPY", "decimals": 0,
+        })
+        assert p.status_code == 200, p.data
+        # Set a valid rate, then attempt to zero it -> 400, rate unchanged.
+        assert member_client.post(
+            f"/api/plans/{plan_id}/rates",
+            json={"rates": {"USD": 150.0}}).status_code == 200
+        bad = member_client.post(f"/api/plans/{plan_id}/rates", json={"rates": {"USD": 0}})
+        assert bad.status_code == 400
+        assert member_client.get(
+            f"/api/plans/{plan_id}/rates").get_json()["rates"]["USD"] == 150.0
+        # Neither path may 500 after the rejected rate.
+        assert member_client.get(
+            f"/api/plans/{plan_id}/payments").status_code == 200
+        assert member_client.get(
+            f"/api/plans/{plan_id}/settlement").status_code == 200
+
+    def test_allocations_reject_oversize_and_bool(self, member_client, plan_id, user_ids):
+        """Allocation bounds: bool, overlong list, and oversize amount all 400."""
+        member_client.post(f"/api/plans/{plan_id}/rates", json={"rates": {"USD": 150.0}})
+        base = {"from_user_id": user_ids["bob2"], "to_user_id": user_ids["alice"],
+                "amount": "1500", "currency": "JPY", "decimals": 0}
+        # (a) bool is an int subclass but must be rejected.
+        r = member_client.post(f"/api/plans/{plan_id}/payments", json={
+            **base, "allocations": [{"currency": "JPY", "amount_cents": True}]})
+        assert r.status_code == 400
+        # (b) more than MAX_ALLOCATIONS rows.
+        long_list = [{"currency": "JPY", "amount_cents": 1} for _ in range(65)]
+        r = member_client.post(f"/api/plans/{plan_id}/payments", json={
+            **base, "allocations": long_list})
+        assert r.status_code == 400
+        # (c) amount above the business cap.
+        r = member_client.post(f"/api/plans/{plan_id}/payments", json={
+            **base, "allocations": [
+                {"currency": "JPY", "amount_cents": 10 ** 16}]})
+        assert r.status_code == 400
+        # No payment leaked through.
+        assert member_client.get(
+            f"/api/plans/{plan_id}/payments").get_json()["payments"] == []
+
+    def test_update_payment_bad_fields_return_400(self, member_client, plan_id, user_ids):
+        """Null numeric fields must be a clean 400, not an uncaught TypeError."""
+        p = member_client.post(f"/api/plans/{plan_id}/payments", json={
+            "from_user_id": user_ids["bob2"], "to_user_id": user_ids["alice"],
+            "amount": "1500", "currency": "JPY", "decimals": 0,
+        }).get_json()["payment"]
+        for bad in ({"decimals": None}, {"from_user_id": None}, {"to_user_id": None}):
+            r = member_client.patch(f"/api/payments/{p['id']}", json=bad)
+            assert r.status_code == 400, f"{bad} -> {r.status_code}"
+        # The record is untouched.
+        listed = member_client.get(
+            f"/api/plans/{plan_id}/payments").get_json()["payments"]
+        assert listed[0]["amount_cents"] == 1500
+
+    def test_missing_rate_for_allocation_only_currency_is_reported(
+            self, app, member_client, plan_id, user_ids):
+        """An allocation in a currency with no saved rate must be reported in
+        single mode's missing_currencies, and its effect must show in
+        per-currency mode, so the two modes agree."""
+        import sqlite3
+
+        # A JPY expense so the plan has balances; plan base is JPY.
+        member_client.post(f"/api/plans/{plan_id}/expenses", json={
+            "description": "Dinner", "currency": "JPY", "decimals": 0,
+            "amount": 3000, "split_method": "EQUAL",
+            "payers": [{"user_id": user_ids["alice"], "amount": 3000}],
+            "participants": [user_ids["alice"], user_ids["bob2"]],
+        })
+        # An allocation in EUR requires a rate to be created via the API, so
+        # seed a valid rate, record the payment, then remove the rate directly.
+        member_client.post(f"/api/plans/{plan_id}/rates", json={"rates": {"EUR": 160.0}})
+        p = member_client.post(f"/api/plans/{plan_id}/payments", json={
+            "from_user_id": user_ids["bob2"], "to_user_id": user_ids["alice"],
+            "amount": "1500", "currency": "JPY", "decimals": 0,
+            "allocations": [
+                {"currency": "JPY", "amount_cents": 1000},
+                {"currency": "EUR", "amount_cents": 300},
+            ],
+        })
+        assert p.status_code == 200, p.data
+        # Drop the rate to simulate a currency that has allocations but no rate.
+        conn = sqlite3.connect(str(app.config["DB_PATH"]))
+        try:
+            conn.execute(
+                "DELETE FROM plan_rates WHERE plan_id = ? AND currency = 'EUR'",
+                (plan_id,))
+            conn.commit()
+        finally:
+            conn.close()
+
+        single = member_client.get(f"/api/plans/{plan_id}/settlement").get_json()
+        assert "EUR" in single["missing_currencies"]
+        # Per-currency mode still shows the EUR allocation effect.
+        per = member_client.get(
+            f"/api/plans/{plan_id}/settlement?mode=per_currency").get_json()
+        assert "EUR" in per["per_currency"]
+        eur_rem = {b["user_id"]: b["balance_cents"]
+                   for b in per["per_currency"]["EUR"]["remaining_balances"]}
+        assert eur_rem[user_ids["bob2"]] == 300
+        assert eur_rem[user_ids["alice"]] == -300
+
+    def test_migration_backfills_allocations(self, db, plan_id, user_ids):
+        """007 gives every pre-existing payment one own-currency allocation and
+        is idempotent when re-run."""
+        import importlib
+        import sqlite3
+
+        # A scratch connection to the same DB file, as the `db` fixture does.
+        db_path = db.one("PRAGMA database_list")["file"]
+        conn = sqlite3.connect(db_path, check_same_thread=False)
+        conn.row_factory = sqlite3.Row
+        try:
+            payment_id = conn.execute(
+                """INSERT INTO payments (plan_id, from_user_id, to_user_id,
+                   amount_cents, currency, note)
+                   VALUES (?, ?, ?, 1500, 'JPY', 'legacy')""",
+                (plan_id, user_ids["bob2"], user_ids["alice"])).lastrowid
+            conn.commit()
+
+            # The module name starts with a digit, so it must be imported
+            # dynamically rather than with an `import` statement.
+            m = importlib.import_module("backend.migrations.007_payment_allocations")
+            m.run(conn)
+            conn.commit()
+            rows = conn.execute(
+                "SELECT currency, amount_cents FROM payment_allocations WHERE payment_id = ?",
+                (payment_id,)).fetchall()
+            assert [(r["currency"], r["amount_cents"]) for r in rows] == [("JPY", 1500)]
+
+            # A second run must not duplicate the allocation (INSERT OR IGNORE).
+            m.run(conn)
+            conn.commit()
+            rows = conn.execute(
+                "SELECT * FROM payment_allocations WHERE payment_id = ?",
+                (payment_id,)).fetchall()
+            assert len(rows) == 1
+        finally:
+            conn.close()
 
 
 # ------------------------------------------------------------------ access control
@@ -487,3 +880,104 @@ class TestExpenseVersionConflicts:
             "participants": [user_ids["alice"], user_ids["bob2"]],
             "expected_updated_at": row["updated_at"]})
         assert r.status_code == 200
+
+
+# ------------------------------------------------------------------ plan isolation
+class TestPlanIsolation:
+    """A plan's money is per-plan: no expense or payment may reference a user
+    or item that belongs to another plan."""
+
+    def test_expense_rejects_foreign_participant(
+            self, member_client, plan_id, make_user, user_ids):
+        carol = make_user(username="carol3")["id"]  # not a member of plan_id
+        r = member_client.post(f"/api/plans/{plan_id}/expenses", json={
+            "description": "x", "currency": "JPY", "decimals": 0,
+            "amount": 3000, "split_method": "EQUAL",
+            "payers": [{"user_id": user_ids["alice"], "amount": 3000}],
+            "participants": [user_ids["alice"], carol],
+        })
+        assert r.status_code == 400
+        assert "members of this plan" in r.get_json()["error"]
+        assert member_client.get(
+            f"/api/plans/{plan_id}/expenses").get_json()["expenses"] == []
+
+    def test_expense_rejects_foreign_payer(
+            self, member_client, plan_id, make_user, user_ids):
+        carol = make_user(username="carol4")["id"]
+        r = member_client.post(f"/api/plans/{plan_id}/expenses", json={
+            "description": "x", "currency": "JPY", "decimals": 0,
+            "amount": 3000, "split_method": "EQUAL",
+            "payers": [{"user_id": carol, "amount": 3000}],
+            "participants": [user_ids["alice"], user_ids["bob2"]],
+        })
+        assert r.status_code == 400
+        assert "members of this plan" in r.get_json()["error"]
+
+    def test_expense_rejects_item_from_other_plan(
+            self, member_client, plan_id, user_ids, make_plan):
+        other = make_plan(title="Other trip")
+        item = member_client.post(f"/api/plans/{other['id']}/items", json={
+            "item_type": "restaurant", "title": "Elsewhere",
+            "details": {"name": "Elsewhere", "address": "Osaka",
+                        "when": {"start_at": "2026-07-01T19:00",
+                                 "end_at": "2026-07-01T20:00"}}}).get_json()["item"]
+        r = member_client.post(f"/api/plans/{plan_id}/expenses", json={
+            "description": "x", "currency": "JPY", "decimals": 0,
+            "amount": 3000, "split_method": "EQUAL", "item_id": item["id"],
+            "payers": [{"user_id": user_ids["alice"], "amount": 3000}],
+            "participants": [user_ids["alice"], user_ids["bob2"]],
+        })
+        assert r.status_code == 400
+        assert "item does not belong" in r.get_json()["error"]
+
+    def test_update_expense_rejects_foreign_item(
+            self, member_client, plan_id, user_ids, make_plan):
+        e = member_client.post(f"/api/plans/{plan_id}/expenses", json={
+            "description": "x", "currency": "JPY", "decimals": 0,
+            "amount": 3000, "split_method": "EQUAL",
+            "payers": [{"user_id": user_ids["alice"], "amount": 3000}],
+            "participants": [user_ids["alice"], user_ids["bob2"]],
+        }).get_json()["expense"]
+        other = make_plan(title="Other trip")
+        item = member_client.post(f"/api/plans/{other['id']}/items", json={
+            "item_type": "activity", "title": "Elsewhere",
+            "details": {"name": "Elsewhere", "location": "Osaka",
+                        "when": {"start_at": "2026-07-01T19:00",
+                                 "end_at": "2026-07-01T20:00"}}}).get_json()["item"]
+        r = member_client.patch(f"/api/expenses/{e['id']}", json={
+            "description": "x", "currency": "JPY", "decimals": 0,
+            "amount": 3000, "split_method": "EQUAL", "item_id": item["id"],
+            "payers": [{"user_id": user_ids["alice"], "amount": 3000}],
+            "participants": [user_ids["alice"], user_ids["bob2"]],
+        })
+        assert r.status_code == 400
+        assert "item does not belong" in r.get_json()["error"]
+
+    def test_payment_rejects_foreign_user(
+            self, member_client, plan_id, make_user, user_ids):
+        carol = make_user(username="carol5")["id"]
+        r = member_client.post(f"/api/plans/{plan_id}/payments", json={
+            "from_user_id": carol, "to_user_id": user_ids["alice"],
+            "amount": "1500", "currency": "JPY", "decimals": 0,
+        })
+        assert r.status_code == 400
+        assert "members of this plan" in r.get_json()["error"]
+        assert member_client.get(
+            f"/api/plans/{plan_id}/payments").get_json()["payments"] == []
+
+    def test_update_payment_rejects_foreign_user(
+            self, member_client, plan_id, make_user, user_ids):
+        p = member_client.post(f"/api/plans/{plan_id}/payments", json={
+            "from_user_id": user_ids["bob2"], "to_user_id": user_ids["alice"],
+            "amount": "1500", "currency": "JPY", "decimals": 0,
+        }).get_json()["payment"]
+        carol = make_user(username="carol6")["id"]
+        r = member_client.patch(f"/api/payments/{p['id']}", json={
+            "from_user_id": carol, "to_user_id": user_ids["alice"],
+        })
+        assert r.status_code == 400
+        assert "members of this plan" in r.get_json()["error"]
+        # The record is untouched.
+        listed = member_client.get(
+            f"/api/plans/{plan_id}/payments").get_json()["payments"]
+        assert listed[0]["from_user_id"] == user_ids["bob2"]

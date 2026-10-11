@@ -148,3 +148,48 @@ def test_expenses_set_rates_via_api_renders_no_missing_rate(desktop, server):
     p.wait_for_selector("#settlement")
     # No "missing rate" warning because the expense is in the base currency.
     assert "missing rate" not in p.locator("#settlement").text_content().lower()
+
+
+def test_quick_settle_records_payment_and_marks_row(desktop, server):
+    """The Settle button on a who-pays-whom row records a payment and the row
+    becomes Settled with no button left. Base-currency plan, so the proposed
+    amount is exact."""
+    import urllib.request, urllib.parse, http.cookiejar, json
+    cj = http.cookiejar.CookieJar()
+    opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(cj))
+    form = urllib.parse.urlencode({
+        "username": "alice", "password": server["alice"]["password"],
+    }).encode()
+    opener.open(urllib.request.Request(
+        server["base_url"] + "/auth/login", data=form, method="POST"))
+    pid, item_id = _create_plan_with_items(server)
+    current_id = json.loads(opener.open(
+        server["base_url"] + "/api/me").read())["user"]["id"]
+    r = opener.open(server["base_url"] + "/api/members")
+    bob_id = next(m["id"] for m in json.loads(r.read())["members"]
+                 if m["username"] == "bob")
+    # Alice pays $20, split 50/50 with bob -> bob owes alice $10.
+    body = json.dumps({
+        "description": "Dinner", "currency": "USD", "amount": "20.00",
+        "split_method": "EQUAL", "item_id": item_id,
+        "payers": [{"user_id": current_id, "amount": "20.00"}],
+        "participants": [current_id, bob_id],
+    }).encode()
+    opener.open(urllib.request.Request(
+        server["base_url"] + f"/api/plans/{pid}/expenses", data=body,
+        headers={"Content-Type": "application/json"}, method="POST"))
+
+    p = desktop
+    p.goto(server["base_url"] + f"/plans/{pid}/expenses")
+    p.wait_for_selector("#settlement .prop-row")
+    row = p.locator("#settlement .prop-row").first
+    assert row.locator(".prop-amount-input").count() == 1
+    # The input is pre-filled with the outstanding $10, not the $20 expense.
+    assert row.locator(".prop-amount-input").input_value() == "10.00"
+    row.locator("button", has_text="Settle").click()
+    # The row is now settled and no longer offers a button.
+    p.wait_for_selector("#settlement .prop-row.settled")
+    assert p.locator("#settlement .prop-row.settled button").count() == 0
+    # The quick settle is recorded and visible in the payments list.
+    payments_text = p.locator("#settlement .payments-panel").text_content()
+    assert "10.00" in payments_text

@@ -2,8 +2,112 @@
 import { apiGet, apiPost, apiPatch, apiDel } from '/static/js/api.js';
 import { el, clear, money } from '/static/js/util.js';
 
+const QUICK_SETTLE_NOTE = 'Quick settle';
+const AMOUNT_RE = /^\d+(\.\d+)?$/;
+
 function decimalsFor(currency) {
   return (currency === 'JPY' || currency === 'KRW') ? 0 : 2;
+}
+
+// A proposed row from `from` to `to` is settled once the debtor no longer
+// owes the group (remaining >= 0) or the creditor has nothing left to
+// receive (remaining <= 0). `remaining` is the server's remaining_balances,
+// which already includes recorded payments.
+export function isTransferSettled(from, to, remainingByUser) {
+  const remFrom = remainingByUser[from] ?? 0;
+  const remTo = remainingByUser[to] ?? 0;
+  return remFrom >= 0 || remTo <= 0;
+}
+
+// How much of a proposed transfer is still outstanding, in minor units:
+// the smaller of what the debtor owes and what the creditor is owed.
+export function outstandingTransferCents(from, to, remainingByUser) {
+  const remFrom = remainingByUser[from] ?? 0;
+  const remTo = remainingByUser[to] ?? 0;
+  const outstanding = Math.min(-remFrom, remTo);
+  return outstanding > 0 ? outstanding : 0;
+}
+
+// How a proposed transfer row should be settled:
+//   'settled'           — nothing left to pay on this row.
+//   'per_currency_only' — still outstanding, but the row has no direct
+//                         per-currency debt, so a one-tap payment would carry
+//                         no allocations and the server would default it to
+//                         the display currency. Send the user to per-currency
+//                         mode instead.
+//   'quick'             — a real per-currency debt, settleable in one tap.
+export function rowSettleMode(settled, parts) {
+  if (settled) return 'settled';
+  return (parts && parts.length) ? 'quick' : 'per_currency_only';
+}
+
+// The per-currency allocations a settlement payment should record, so one
+// payment settles the real debts in each currency the pair owes. `parts` is
+// the row's real per-currency debt, `displayCents` is the amount the user
+// typed in the displayed currency's minor units, and `valueInDisplay`
+// converts `amountCents` of `currency` into displayed minor units.
+//
+// Returns [] to let the server default to one allocation in the payment
+// currency: that is exactly right when there is no per-currency breakdown or
+// the debt is already all in the displayed currency. For a single part in the
+// display currency, valueInDisplay is the identity, so its value equals its
+// own amount. Otherwise it greedily fills parts in order, taking each part
+// whole while it fits and one partial part to cover the remainder. The server
+// adds the paid residual itself, so no residual is produced here.
+export function computeAllocations(parts, displayCents, valueInDisplay) {
+  const list = parts || [];
+  if (!list.length) return [];
+  if (list.length === 1
+      && valueInDisplay(list[0].currency, list[0].amount_cents, list[0].decimals)
+         === list[0].amount_cents) {
+    return [];
+  }
+  const allocations = [];
+  let budget = displayCents;
+  for (const part of list) {
+    if (budget <= 0) break;
+    const fullValue = valueInDisplay(part.currency, part.amount_cents, part.decimals);
+    if (!(fullValue > 0) || !isFinite(fullValue)) {
+      // Missing/zero rate: skip rather than allocate a currency we cannot
+      // value, so a bad rate never throws or over-allocates.
+      continue;
+    }
+    if (fullValue <= budget) {
+      allocations.push({ currency: part.currency, amount_cents: part.amount_cents });
+      budget -= fullValue;
+    } else {
+      const partial = Math.max(1, Math.round(part.amount_cents * budget / fullValue));
+      allocations.push({ currency: part.currency,
+                         amount_cents: Math.min(part.amount_cents, partial) });
+      budget = 0;
+    }
+  }
+  return allocations;
+}
+
+// Build a `valueInDisplay(currency, amountCents, decimals)` closure from the
+// settlement response's user-supplied `rates` (currency -> base) and base
+// currency. It returns how many minor units of `displayCurrency` the amount is
+// worth, or Infinity when a needed rate is missing so computeAllocations skips
+// (rather than throws on) a currency it cannot value.
+function makeValueInDisplay(rates, baseCurrency, displayCurrency) {
+  const rate = (cur) => {
+    if (cur === baseCurrency) return 1;
+    const r = rates ? Number(rates[cur]) : NaN;
+    return r > 0 ? r : 0;
+  };
+  const displayRate = rate(displayCurrency);
+  const displayDec = decimalsFor(displayCurrency);
+  return (currency, amountCents, decimals) => {
+    const curRate = rate(currency);
+    if (!(curRate > 0) || !(displayRate > 0)) return Infinity;
+    const dec = decimals != null ? decimals : decimalsFor(currency);
+    // minor units -> major -> base major -> display major -> display minor
+    const num = Number(amountCents) * curRate * (10 ** displayDec);
+    const den = (10 ** dec) * displayRate;
+    const value = num / den;
+    return isFinite(value) ? Math.round(value) : Infinity;
+  };
 }
 
 function kids(...xs) {
@@ -47,7 +151,8 @@ export async function initSettlement(ctx, { plan, users }) {
       onclick: () => { render(); } });
   }
 
-  function renderSettlementPanel(label, balances, proposed, remaining, dec, currency) {
+  function renderSettlementPanel(label, balances, proposed, remaining, dec, currency,
+                                 valueInDisplay) {
     const wrap = el('div', { class: 'panel settlement-currency-panel' });
     wrap.append(el('h3', { text: label }));
 
@@ -68,17 +173,81 @@ export async function initSettlement(ctx, { plan, users }) {
     wrap.append(balList);
 
     // proposed settlement
+    const remainingByUser = {};
+    (remaining || []).forEach(b => { remainingByUser[b.user_id] = b.balance_cents || 0; });
+    const factor = 10 ** dec;
+
     const propList = el('ul', { class: 'prop-list' });
     (proposed || []).forEach(p => {
-      propList.append(el('li', { class: 'prop-row' }, [
-        el('span', { class: 'prop-who' }, [
-          el('strong', { text: nameOf(p.from, p.from_name) }),
-          el('span', { text: ' pays ' }),
-          el('strong', { text: nameOf(p.to, p.to_name) }),
-        ]),
-        el('span', { class: 'prop-amt',
-          text: money(p.amount_cents || 0, dec, currency) }),
-      ]));
+      const settled = isTransferSettled(p.from, p.to, remainingByUser);
+      const outstanding = outstandingTransferCents(p.from, p.to, remainingByUser);
+
+      const who = el('span', { class: 'prop-who' }, [
+        el('strong', { text: nameOf(p.from, p.from_name) }),
+        el('span', { text: ' pays ' }),
+        el('strong', { text: nameOf(p.to, p.to_name) }),
+      ]);
+
+      let action;
+      const parts = p.parts || [];
+      const mode = rowSettleMode(settled, parts);
+      if (mode === 'settled') {
+        action = el('span', { class: 'settled-badge', text: 'Settled' });
+      } else if (readOnly) {
+        action = el('span', { class: 'prop-amt',
+          text: money(p.amount_cents || 0, dec, currency) });
+      } else if (mode === 'per_currency_only') {
+        // No direct per-currency debt for this pair: a one-tap payment would
+        // record no allocations and the server would default them to the
+        // display currency. Point the user at per-currency mode instead.
+        const gotoBtn = el('button', { type: 'button',
+          class: 'btn btn-sm', text: 'Settle per currency' });
+        gotoBtn.addEventListener('click', () => {
+          currentMode = 'per_currency';
+          render();
+        });
+        action = el('span', { class: 'prop-action' }, [
+          el('span', { class: 'mixed-note',
+            text: 'This is a net across people, not one debt.' }),
+          gotoBtn,
+        ]);
+      } else {
+        // Pre-fill the pair's outstanding debt in minor units, not the raw
+        // proposal, so a row that is partly paid does not offer the full
+        // amount again. Not settled implies remFrom < 0 and remTo > 0, so
+        // outstanding is already positive.
+        const prefillCents = outstanding;
+        const amtInput = el('input', { type: 'text', inputmode: 'decimal',
+          class: 'prop-amount-input',
+          value: (prefillCents / factor).toFixed(dec) });
+        const settleBtn = el('button', { type: 'button',
+          class: 'btn btn-primary btn-sm', text: 'Settle' });
+        settleBtn.addEventListener('click', async () => {
+          if (!AMOUNT_RE.test(amtInput.value.trim())) { alert('Enter a valid amount.'); return; }
+          if (parseFloat(amtInput.value) <= 0) { alert('Amount must be greater than 0.'); return; }
+          if (p.from === p.to) return;
+          settleBtn.disabled = true;
+          try {
+            const displayCents = Math.round(parseFloat(amtInput.value) * factor);
+            const allocations = computeAllocations(parts, displayCents, valueInDisplay);
+            const body = {
+              from_user_id: p.from, to_user_id: p.to,
+              amount: amtInput.value.trim(), currency, note: QUICK_SETTLE_NOTE,
+            };
+            if (allocations.length) body.allocations = allocations;
+            await apiPost(`/api/plans/${planId}/payments`, body);
+            render();
+          } catch (e) {
+            settleBtn.disabled = false;
+            alert(e.message);
+          }
+        });
+        action = el('span', { class: 'prop-action' }, [amtInput, settleBtn]);
+      }
+
+      propList.append(el('li', {
+        class: 'prop-row' + (settled ? ' settled' : ''),
+      }, [who, action]));
     });
     if (!(proposed || []).length) {
       propList.append(el('li', { class: 'muted', text: 'Everyone is settled up.' }));
@@ -222,7 +391,8 @@ export async function initSettlement(ctx, { plan, users }) {
           data.balances || [],
           data.proposed_settlement || [],
           data.remaining_balances || [],
-          d, cur
+          d, cur,
+          makeValueInDisplay(rates, baseCurrency, cur)
         ));
       });
 
@@ -254,7 +424,8 @@ export async function initSettlement(ctx, { plan, users }) {
       st.balances_base || [],
       st.proposed_settlement || [],
       st.remaining_balances || [],
-      settleDec, settleCur
+      settleDec, settleCur,
+      makeValueInDisplay(rates, baseCurrency, settleCur)
     ));
 
     els.push(await renderPaymentsPanel());
@@ -352,9 +523,16 @@ export async function initSettlement(ctx, { plan, users }) {
 
     // view mode
     const dec = decimalsFor(payment.currency);
+    const allocs = payment.allocations || [];
+    const allocNote = allocs.length > 1
+      ? el('span', { class: 'pay-alloc muted', style: 'font-size: 0.8rem;',
+          text: allocs.map(a => money(a.amount_cents, a.decimals != null
+            ? a.decimals : decimalsFor(a.currency), a.currency)).join(' + ') })
+      : null;
     const row = el('li', { class: 'payment-row' }, [
       el('span', { class: 'pay-who', text: `${payment.from_name} → ${payment.to_name}` }),
       el('span', { class: 'pay-amt', text: money(payment.amount_cents, dec, payment.currency) }),
+      allocNote,
       el('span', { class: 'pay-note muted', text: payment.note || '' }),
       readOnly ? null : el('button', { type: 'button', class: 'btn btn-sm', text: 'Edit',
         onclick: () => { editingPaymentId = payment.id; render(); } }),

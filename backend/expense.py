@@ -4,9 +4,12 @@ All money is integer cents. Split amounts are computed once with largest-remaind
 rounding (deterministic by user_id) and cached immutably. Settlement:
 
     1. per-currency net balances:  paid - owed  per user per currency
-    2. user supplies FX rates (currency -> plan base currency)
-    3. convert each per-currency balance to base cents (Decimal), net across currencies
-    4. greedy min-cash-flow (max-debtor / max-creditor) on the base-currency balances
+    2. recorded payments reduce that debt, applied through ``payment_allocations``
+       (one row per payment per debt currency) so every settlement mode derives
+       remaining balances from the same path
+    3. user supplies FX rates (currency -> plan base currency)
+    4. convert each per-currency balance to base cents (Decimal), net across currencies
+    5. greedy min-cash-flow (max-debtor / max-creditor) on the base-currency balances
 
 The app NEVER decides exchange rates; they are user-supplied and saved in
 ``plan_rates`` so settlement is reproducible.
@@ -15,6 +18,7 @@ from __future__ import annotations
 
 import heapq
 import json
+import math
 from collections import defaultdict
 from decimal import Decimal, ROUND_HALF_UP
 from typing import Iterable
@@ -22,6 +26,13 @@ from typing import Iterable
 from .db import get_db
 
 CENT = Decimal("0.01")
+
+# Business cap on any single money amount (minor units). SQLite INTEGER holds
+# up to ~9.22e18; a smaller cap keeps sums and Decimal conversion bounded.
+MAX_MONEY_CENTS = 10 ** 15
+
+# Most allocation rows a single payment may carry.
+MAX_ALLOCATIONS = 64
 
 # ---------------------------------------------------------------- split math
 
@@ -228,6 +239,21 @@ def currencies_in_plan(plan_id: int) -> list[str]:
     return sorted(r["currency"] for r in rows)
 
 
+def plan_member_ids(plan_id: int) -> set[int]:
+    """User ids allowed to hold money on a plan: its owner plus shared members.
+
+    Expenses and payments are per-plan and must never reference a user from
+    another plan, or one plan's balance would pull in another plan's people."""
+    db = get_db()
+    rows = db.execute(
+        """SELECT owner_id AS uid FROM plans WHERE id = ?
+           UNION
+           SELECT user_id AS uid FROM plan_members WHERE plan_id = ?""",
+        (plan_id, plan_id),
+    ).fetchall()
+    return {r["uid"] for r in rows}
+
+
 def settle_debts(net_balances: dict[int, int]) -> list[dict]:
     """Greedy max-debtor/max-creditor. Returns [{from, to, amount_cents}]."""
     debtors, creditors = [], []  # heaps of (-|amt|, uid)
@@ -255,12 +281,101 @@ def settle_debts(net_balances: dict[int, int]) -> list[dict]:
 def _currency_decimals(cur: str) -> int:
     return 0 if cur in ('JPY', 'KRW') else 2
 
+
+def normalize_allocations(payment_currency: str,
+                          payment_cents: int,
+                          allocations,
+                          rates: dict[str, float],
+                          base_currency: str) -> list[dict]:
+    """Yield the per-currency allocations a payment retires, valued in the
+    payment currency so it never exceeds ``payment_cents``.
+
+    ``allocations`` is an optional list of ``{currency, amount_cents}``. An
+    empty/falsy value means the whole payment settles its own-currency debt and
+    returns a single own-currency row. Each allocation is valued at the saved
+    rate and rounded half-up; any leftover is folded into an own-currency row
+    (the paid remainder). Raises ``ValueError`` on malformed rows, an unknown
+    allocation currency, or allocations worth more than the payment."""
+    if payment_cents <= 0 or payment_cents > MAX_MONEY_CENTS:
+        raise ValueError("invalid payment amount")
+    if not allocations:
+        return [{"currency": payment_currency, "amount_cents": payment_cents}]
+    if not isinstance(allocations, list):
+        raise ValueError("allocations must be a list")
+    if len(allocations) > MAX_ALLOCATIONS:
+        raise ValueError(f"too many allocations (max {MAX_ALLOCATIONS})")
+
+    # Merge duplicate currencies, uppercasing and validating as we go.
+    merged: dict[str, int] = defaultdict(int)
+    for entry in allocations:
+        if not isinstance(entry, dict):
+            raise ValueError("invalid allocation")
+        cur = str(entry.get("currency", "")).upper()
+        if not cur:
+            raise ValueError("allocation currency required")
+        amount = entry.get("amount_cents")
+        # bool is an int subclass; reject it explicitly so true/1.0 cannot pass.
+        if isinstance(amount, bool) or not isinstance(amount, int) or amount <= 0:
+            raise ValueError("allocation amount_cents must be a positive integer")
+        if amount > MAX_MONEY_CENTS:
+            raise ValueError("allocation amount_cents too large")
+        merged[cur] += amount
+        if merged[cur] > MAX_MONEY_CENTS:
+            raise ValueError("allocation amount_cents too large")
+
+    pay_dec = _currency_decimals(payment_currency)
+    pay_rate = _rate_for(payment_currency, rates, base_currency)
+    total = 0
+    for cur, amount in merged.items():
+        rate = _rate_for(cur, rates, base_currency)
+        dec = _currency_decimals(cur)
+        # Value this debt-currency amount in the payment currency, only to
+        # check it fits inside payment_cents. The stored row keeps `amount`
+        # in the debt currency's own minor units (see _payment_allocations_*).
+        value = (Decimal(amount) / Decimal(10 ** dec) * Decimal(str(rate))
+                 / Decimal(str(pay_rate)) * Decimal(10 ** pay_dec))
+        total += int(value.quantize(CENT, rounding=ROUND_HALF_UP))
+
+    residual = payment_cents - total
+    if residual < 0:
+        raise ValueError("allocations exceed payment amount")
+    if residual > 0:
+        merged[payment_currency] += residual
+    return [{"currency": cur, "amount_cents": amt} for cur, amt in merged.items()]
+
+
+def _has_valid_rate(currency: str, rates: dict[str, float], base_currency: str) -> bool:
+    """True when ``currency`` can be converted to base: it is the base currency,
+    or it has a saved finite rate greater than zero."""
+    if currency == base_currency:
+        return True
+    rate = rates.get(currency)
+    return rate is not None and math.isfinite(rate) and rate > 0
+
+
+def _rate_for(currency: str, rates: dict[str, float], base_currency: str) -> float:
+    """Rate from ``currency`` to ``base_currency``; 1.0 for base, else saved.
+
+    Raises ``ValueError`` when the rate is missing or is not a finite number
+    greater than zero."""
+    if currency == base_currency:
+        return 1.0
+    if currency not in rates:
+        raise ValueError(f"no rate for {currency}")
+    rate = rates[currency]
+    if not math.isfinite(rate) or rate <= 0:
+        raise ValueError(f"invalid rate for {currency}")
+    return rate
+
+
 def convert_to_base(per_currency: dict[str, dict[int, int]],
                     rates: dict[str, float],
                     base_currency: str) -> tuple[dict[int, int], list[str]]:
     """Convert per-currency balances to base-currency cents (Decimal).
 
-    Returns (base_balances, missing_currencies)."""
+    Returns (base_balances, missing_currencies). A currency with a missing,
+    non-positive, or non-finite rate is skipped and reported in the missing
+    list so callers can surface it instead of crashing."""
     base: dict[int, int] = defaultdict(int)
     missing = []
     base_decimals = _currency_decimals(base_currency)
@@ -268,7 +383,11 @@ def convert_to_base(per_currency: dict[str, dict[int, int]],
         if currency == base_currency:
             rate = Decimal("1")
         elif currency in rates:
-            rate = Decimal(str(rates[currency]))
+            saved = rates[currency]
+            if not math.isfinite(saved) or saved <= 0:
+                missing.append(currency)
+                continue
+            rate = Decimal(str(saved))
         else:
             missing.append(currency)
             continue
@@ -281,31 +400,24 @@ def convert_to_base(per_currency: dict[str, dict[int, int]],
     return dict(base), missing
 
 
-def recorded_payments_base(plan_id: int, rates: dict[str, float],
-                           base_currency: str) -> dict[int, int]:
-    """Net effect of recorded payments in base-currency cents per user."""
-    db = get_db()
-    rows = db.execute(
-        "SELECT * FROM payments WHERE plan_id = ?", (plan_id,)
-    ).fetchall()
-    base_decimals = _currency_decimals(base_currency)
-    net: dict[int, int] = defaultdict(int)
-    for r in rows:
-        if r["currency"] == base_currency:
-            rate = Decimal("1")
-        elif r["currency"] in rates:
-            rate = Decimal(str(rates[r["currency"]]))
-        else:
-            continue
-        exp_decimals = _currency_decimals(r["currency"])
-        exp_major = Decimal(r["amount_cents"]) / Decimal(10 ** exp_decimals)
-        base_major = exp_major * rate
-        amt = int((base_major * Decimal(10 ** base_decimals)).quantize(CENT, rounding=ROUND_HALF_UP))
-        # A recorded payment settles debt: the payer's debt decreases (balance
-        # rises toward 0), the payee's credit decreases. balance>0 = creditor.
-        net[r["from_user_id"]] += amt
-        net[r["to_user_id"]] -= amt
-    return dict(net)
+def _pair_parts(per_cur: dict[str, dict[int, int]],
+                from_uid: int, to_uid: int) -> list[dict]:
+    """The real per-currency debt from `from_uid` to `to_uid`.
+
+    A single-mode proposal row is a net across currencies, so one row can
+    represent debt in several currencies, and its display currency may differ
+    from the currencies the debt actually lives in. A recorded payment carries
+    only one currency, so the row can be settled by one payment only when its
+    debt is entirely in the displayed currency. Each part is
+    ``{currency, amount_cents, decimals}`` in that currency's minor units."""
+    parts = []
+    for cur in sorted(per_cur):
+        bal = per_cur[cur]
+        if bal.get(from_uid, 0) < 0 and bal.get(to_uid, 0) > 0:
+            amount = min(-bal[from_uid], bal[to_uid])
+            parts.append({"currency": cur, "amount_cents": amount,
+                          "decimals": _currency_decimals(cur)})
+    return parts
 
 
 def _convert_balances(balances: dict[int, int],
@@ -318,7 +430,10 @@ def _convert_balances(balances: dict[int, int],
         return dict(balances)
     from_dec = _currency_decimals(from_currency)
     to_dec = _currency_decimals(to_currency)
-    rate = Decimal(str(rates[to_currency]))
+    _rate = rates.get(to_currency)
+    if _rate is None or not math.isfinite(_rate) or _rate <= 0:
+        raise ValueError(f"invalid rate for {to_currency}")
+    rate = Decimal(str(_rate))
     result = {}
     for uid, cents in balances.items():
         from_major = Decimal(cents) / Decimal(10 ** from_dec)
@@ -328,12 +443,19 @@ def _convert_balances(balances: dict[int, int],
     return result
 
 
-def _recorded_payments_by_currency(plan_id: int) -> dict[str, dict[int, int]]:
-    """Net effect of recorded payments per currency.
-    Returns {currency: {user_id: net_cents}}."""
+def _payment_allocations_by_currency(plan_id: int) -> dict[str, dict[int, int]]:
+    """Net effect of recorded payments per debt currency.
+
+    Returns {currency: {user_id: net_cents}} from ``payment_allocations``,
+    the single path by which payment effects enter balances. A recorded
+    payment settles debt: the payer's debt decreases (balance rises toward 0),
+    the payee's credit decreases (balance>0 = creditor)."""
     db = get_db()
     rows = db.execute(
-        "SELECT * FROM payments WHERE plan_id = ?", (plan_id,)
+        """SELECT pa.currency, pa.amount_cents, p.from_user_id, p.to_user_id
+           FROM payment_allocations pa JOIN payments p ON pa.payment_id = p.id
+           WHERE p.plan_id = ?""",
+        (plan_id,),
     ).fetchall()
     net: dict[str, dict[int, int]] = defaultdict(lambda: defaultdict(int))
     for r in rows:
@@ -351,7 +473,7 @@ def _per_currency_settlement(plan_id: int,
                               users: dict[int, str],
                               base_currency: str) -> dict:
     """Settlement view per original currency (no FX conversion needed)."""
-    payment_effects = _recorded_payments_by_currency(plan_id)
+    payment_effects = _payment_allocations_by_currency(plan_id)
 
     per_currency_result = {}
     all_currencies = sorted(set(per_cur.keys()) | set(payment_effects.keys()))
@@ -375,7 +497,10 @@ def _per_currency_settlement(plan_id: int,
             "proposed_settlement": [
                 {"from": s["from"], "from_name": users.get(s["from"], str(s["from"])),
                  "to": s["to"], "to_name": users.get(s["to"], str(s["to"])),
-                 "amount_cents": s["amount_cents"]} for s in proposed
+                 "amount_cents": s["amount_cents"],
+                 "parts": [{"currency": cur, "amount_cents": s["amount_cents"],
+                            "decimals": _currency_decimals(cur)}]}
+                for s in proposed
             ],
             "remaining_balances": [{"user_id": uid, "username": users.get(uid, str(uid)),
                                     "balance_cents": v} for uid, v in sorted(remaining.items())],
@@ -410,8 +535,13 @@ def plan_settlement(plan_id: int,
     ).fetchall()}
 
     per_cur = per_currency_balances(plan_id)
-    currencies = sorted(set(per_cur.keys()) | set(rates.keys()))
-    missing = [c for c in currencies if c != base_currency and c not in rates]
+    alloc_net = _payment_allocations_by_currency(plan_id)
+    # Allocation-only currencies (payments in a currency with no expense) must
+    # be part of both the present set and the missing-rate set, or single mode
+    # silently drops them while per-currency mode still shows them.
+    currencies = sorted(set(per_cur) | set(rates) | set(alloc_net))
+    missing = [c for c in currencies
+               if c != base_currency and not _has_valid_rate(c, rates, base_currency)]
 
     users = {u["id"]: u["username"] for u in db.execute(
         """SELECT u.id, u.username FROM users u
@@ -427,11 +557,12 @@ def plan_settlement(plan_id: int,
 
     # ---- single-currency mode ----
     cur = (settlement_currency or base_currency).upper()
-    if cur not in rates and cur != base_currency:
+    if cur != base_currency and not _has_valid_rate(cur, rates, base_currency):
         missing.append(cur)
         cur = base_currency
 
-    base_balances, _ = convert_to_base(per_cur, rates, base_currency)
+    base_balances, conv_missing = convert_to_base(per_cur, rates, base_currency)
+    missing.extend(c for c in conv_missing if c not in missing)
 
     if cur == base_currency:
         settle_balances = base_balances
@@ -439,15 +570,22 @@ def plan_settlement(plan_id: int,
         settle_balances = _convert_balances(base_balances, base_currency, cur, rates)
 
     proposed = settle_debts(settle_balances)
-    paid_base = recorded_payments_base(plan_id, rates, base_currency)
 
-    if cur != base_currency:
-        paid_eff = _convert_balances(paid_base, base_currency, cur, rates)
+    # Payments enter balances through payment_allocations only. Merge the
+    # per-currency expense balances with the allocation effects, then derive
+    # remaining in one pass. A proposal's amount still comes from per_cur
+    # (its parts are capped against R by _pair_parts).
+    R: dict[str, dict[int, int]] = {}
+    for c in set(per_cur) | set(alloc_net):
+        users_in_cur = set(per_cur.get(c, {})) | set(alloc_net.get(c, {}))
+        R[c] = {u: per_cur.get(c, {}).get(u, 0) + alloc_net.get(c, {}).get(u, 0)
+                for u in users_in_cur}
+    rem_base, rem_missing = convert_to_base(R, rates, base_currency)
+    missing.extend(c for c in rem_missing if c not in missing)
+    if cur == base_currency:
+        remaining = rem_base
     else:
-        paid_eff = paid_base
-
-    remaining = {uid: settle_balances.get(uid, 0) + paid_eff.get(uid, 0)
-                 for uid in set(settle_balances) | set(paid_eff)}
+        remaining = _convert_balances(rem_base, base_currency, cur, rates)
     remaining = {uid: v for uid, v in remaining.items() if v != 0}
 
     return {
@@ -462,7 +600,9 @@ def plan_settlement(plan_id: int,
         "proposed_settlement": [
             {"from": s["from"], "from_name": users.get(s["from"], str(s["from"])),
              "to": s["to"], "to_name": users.get(s["to"], str(s["to"])),
-             "amount_cents": s["amount_cents"]} for s in proposed
+             "amount_cents": s["amount_cents"],
+             "parts": _pair_parts(R, s["from"], s["to"])}
+            for s in proposed
         ],
         "remaining_balances": [{"user_id": uid, "username": users.get(uid, str(uid)),
                                 "balance_cents": v} for uid, v in sorted(remaining.items())],

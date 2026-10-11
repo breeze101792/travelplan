@@ -11,8 +11,8 @@ change done.
 
 | Layer | Path | Count | What it catches |
 | --- | --- | --- | --- |
-| Backend | `tests/backend/` | 418 | route handlers, auth, plan/item/expense/upload/todo logic, util, access control. Hits Flask over the test client with a real DB in a temp dir. |
-| Frontend node | `frontend/tests/` | 767 | staging engine ops, itinerary/timeline/navigation/map page boot under a DOM shim, viewport-responsive rendering, touch swipe, `fmtDate` parity with the server, the unsaved-changes guard, to-do scope grouping/permissions. No browser, no npm. |
+| Backend | `tests/backend/` | 433 | route handlers, auth, plan/item/expense/upload/todo logic, util, access control. Hits Flask over the test client with a real DB in a temp dir. |
+| Frontend node | `frontend/tests/` | 791 | staging engine ops, itinerary/timeline/navigation/map page boot under a DOM shim, viewport-responsive rendering, touch swipe, `fmtDate` parity with the server, the unsaved-changes guard, to-do scope grouping/permissions, settlement settled/outstanding rules and cross-currency allocation splitting. No browser, no npm. |
 | E2E browser | `tests/e2e/` | 96 | what the user actually sees: setup, login, dashboard, board, timeline, map sidebar, navigation day bar + swipe, expenses, todos, members, settings, touch long-press on iPhone. Real Chromium via Playwright. |
 
 **Baseline failures.** The backend and frontend node suites are green on

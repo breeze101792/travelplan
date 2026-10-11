@@ -11,6 +11,8 @@ API (all plan-scoped routes require owner/shared access; write routes block view
 """
 from __future__ import annotations
 
+import math
+
 from flask import Blueprint, request, g, abort, jsonify
 
 from ..auth import plan_access, login_required, check_item_access, check_expense_access, check_payment_access
@@ -22,6 +24,71 @@ from ..sse import publish_event
 expenses_bp = Blueprint("expenses", __name__)
 
 VALID_METHODS = {"EQUAL", "EXACT", "PERCENTAGE", "SHARES"}
+
+
+def _load_rates(plan_id: int) -> dict:
+    """Saved FX rates for a plan: {currency: rate} (rate -> base currency)."""
+    return {r["currency"]: r["rate"] for r in get_db().execute(
+        "SELECT currency, rate FROM plan_rates WHERE plan_id = ?", (plan_id,)).fetchall()}
+
+
+def _expense_user_ids(payers, method: str, split_data) -> list[int]:
+    """Every user an expense references: its payers plus split participants."""
+    ids = [uid for uid, _ in payers]
+    if method == "EQUAL":
+        ids += [int(u) for u in split_data]
+    else:
+        ids += [uid for uid, _ in split_data]
+    return ids
+
+
+def _foreign_user_ids(plan_id: int, user_ids) -> list[int]:
+    """Referenced user ids that do not belong to this plan (owner or member)."""
+    allowed = ex.plan_member_ids(plan_id)
+    return sorted({int(u) for u in user_ids} - allowed)
+
+
+def _item_belongs_to_plan(item_id, plan_id: int) -> bool:
+    """An expense may only link to an item of its own plan. ``None`` is fine."""
+    if item_id is None:
+        return True
+    row = get_db().execute(
+        "SELECT plan_id FROM items WHERE id = ?", (item_id,)).fetchone()
+    return row is not None and row["plan_id"] == plan_id
+
+
+def _allocations_for(payment_ids) -> dict[int, list[dict]]:
+    """Grouped allocations for a batch of payments: {payment_id: [{currency,
+    amount_cents}, ...]}, ordered by currency."""
+    if not payment_ids:
+        return {}
+    placeholders = ",".join("?" * len(payment_ids))
+    rows = get_db().execute(
+        f"""SELECT payment_id, currency, amount_cents FROM payment_allocations
+            WHERE payment_id IN ({placeholders}) ORDER BY currency""",
+        tuple(payment_ids)).fetchall()
+    out: dict[int, list[dict]] = {}
+    for r in rows:
+        out.setdefault(r["payment_id"], []).append(
+            {"currency": r["currency"], "amount_cents": r["amount_cents"]})
+    return out
+
+
+def _insert_allocations(payment_id: int, allocations: list[dict]) -> None:
+    db = get_db()
+    for a in allocations:
+        db.execute(
+            """INSERT INTO payment_allocations (payment_id, currency, amount_cents)
+               VALUES (?, ?, ?)""",
+            (payment_id, a["currency"], a["amount_cents"]))
+
+
+def _serialize_payment(payment_id: int) -> dict:
+    db = get_db()
+    row = dict(db.execute("SELECT * FROM payments WHERE id = ?", (payment_id,)).fetchone())
+    row["allocations"] = _allocations_for([payment_id]).get(payment_id, [])
+    return row
+
 
 
 def _serialize_expense(eid) -> dict:
@@ -87,10 +154,17 @@ def create_expense(plan_id):
     else:
         return jsonify({"error": "invalid method"}), 400
 
+    if _foreign_user_ids(plan_id, _expense_user_ids(payers, method, sd)):
+        return jsonify(
+            {"error": "expense participants must be members of this plan"}), 400
+    item_id = data.get("item_id")
+    if not _item_belongs_to_plan(item_id, plan_id):
+        return jsonify({"error": "item does not belong to this plan"}), 400
+
     try:
         eid = ex.create_expense(
             plan_id, description, currency, total_cents, method, payers, sd,
-            item_id=data.get("item_id"), created_by=g.current_user["id"], decimals=decimals)
+            item_id=item_id, created_by=g.current_user["id"], decimals=decimals)
     except ValueError as ve:
         return jsonify({"error": str(ve)}), 400
     publish_event(plan_id, {"type": "expense.created", "entity_id": eid})
@@ -104,7 +178,8 @@ def item_expenses(item_id):
     check_item_access(item_id)
     db = get_db()
     rows = db.execute(
-        "SELECT id FROM expenses WHERE item_id = ? ORDER BY created_at DESC", (item_id,)).fetchall()
+        "SELECT id FROM expenses WHERE item_id = ? AND plan_id = ? ORDER BY created_at DESC",
+        (item_id, g.plan["id"])).fetchall()
     return jsonify({"expenses": [_serialize_expense(r["id"]) for r in rows]})
 
 
@@ -155,9 +230,17 @@ def update_expense(expense_id):
     else:
         return jsonify({"error": "invalid method"}), 400
 
+    plan_id = row["plan_id"]
+    if _foreign_user_ids(plan_id, _expense_user_ids(payers, method, sd)):
+        return jsonify(
+            {"error": "expense participants must be members of this plan"}), 400
+    item_id = data.get("item_id")
+    if not _item_belongs_to_plan(item_id, plan_id):
+        return jsonify({"error": "item does not belong to this plan"}), 400
+
     try:
         ex.update_expense(expense_id, description, currency, total_cents, method, payers, sd,
-                          item_id=data.get("item_id"), decimals=decimals)
+                          item_id=item_id, decimals=decimals)
     except ValueError as ve:
         return jsonify({"error": str(ve)}), 400
     # Fetch plan_id for the event (expense may belong to a different plan context)
@@ -241,8 +324,11 @@ def set_rates(plan_id):
     for cur, rate in rates.items():
         try:
             r = float(rate)
-        except (ValueError, TypeError):
+        except (ValueError, TypeError, OverflowError):
             return jsonify({"error": f"invalid rate for {cur}"}), 400
+        if not math.isfinite(r) or r <= 0:
+            return jsonify(
+                {"error": f"rate for {cur} must be a finite number greater than zero"}), 400
         db.execute(
             """INSERT INTO plan_rates (plan_id, currency, rate, updated_at)
                VALUES (?, ?, ?, datetime('now'))
@@ -270,6 +356,9 @@ def list_payments(plan_id):
            JOIN users u1 ON u1.id = p.from_user_id
            JOIN users u2 ON u2.id = p.to_user_id
            WHERE p.plan_id = ? ORDER BY p.created_at DESC""", (plan_id,)).fetchall()]
+    allocations = _allocations_for([r["id"] for r in rows])
+    for r in rows:
+        r["allocations"] = allocations.get(r["id"], [])
     return jsonify({"payments": rows})
 
 
@@ -287,16 +376,32 @@ def record_payment(plan_id):
         currency = (data.get("currency") or g.plan["base_currency"]).upper()
         decimals = int(data.get("decimals", 2 if currency not in ("JPY", "KRW") else 0))
         amount = parse_amount_to_cents(data.get("amount", data.get("amount_cents")), decimals)
-    except (KeyError, ValueError, TypeError) as e:
+    except (KeyError, ValueError, TypeError, ArithmeticError, OverflowError) as e:
         return jsonify({"error": f"invalid payment: {e}"}), 400
-    cur = get_db().execute(
-        """INSERT INTO payments (plan_id, from_user_id, to_user_id, amount_cents, currency, note)
-           VALUES (?, ?, ?, ?, ?, ?)""",
-        (plan_id, from_user, to_user, amount, currency, data.get("note")))
-    get_db().commit()
+    if amount <= 0:
+        return jsonify({"error": "amount must be positive"}), 400
+    if _foreign_user_ids(plan_id, [from_user, to_user]):
+        return jsonify(
+            {"error": "payment users must be members of this plan"}), 400
+    try:
+        allocations = ex.normalize_allocations(
+            currency, amount, data.get("allocations"),
+            _load_rates(plan_id), g.plan["base_currency"])
+    except (ValueError, ArithmeticError, OverflowError) as e:
+        return jsonify({"error": str(e)}), 400
+    db = get_db()
+    try:
+        cur = db.execute(
+            """INSERT INTO payments (plan_id, from_user_id, to_user_id, amount_cents, currency, note)
+               VALUES (?, ?, ?, ?, ?, ?)""",
+            (plan_id, from_user, to_user, amount, currency, data.get("note")))
+        _insert_allocations(cur.lastrowid, allocations)
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
     publish_event(plan_id, {"type": "payment.created", "entity_id": cur.lastrowid})
-    return jsonify({"payment": dict(get_db().execute(
-        "SELECT * FROM payments WHERE id = ?", (cur.lastrowid,)).fetchone())})
+    return jsonify({"payment": _serialize_payment(cur.lastrowid)})
 
 
 @expenses_bp.route("/api/payments/<int:payment_id>", methods=["PATCH"])
@@ -306,23 +411,60 @@ def update_payment(payment_id):
     data = request.get_json(force=True, silent=True) or {}
     db = get_db()
     row = dict(db.execute("SELECT * FROM payments WHERE id = ?", (payment_id,)).fetchone())
-    from_user = int(data.get("from_user_id", row["from_user_id"]))
-    to_user = int(data.get("to_user_id", row["to_user_id"]))
+    try:
+        from_user = int(data.get("from_user_id", row["from_user_id"]))
+        to_user = int(data.get("to_user_id", row["to_user_id"]))
+        currency = (data.get("currency") or row["currency"]).upper()
+        decimals = int(data.get("decimals", 2 if currency not in ("JPY", "KRW") else 0))
+        amount = parse_amount_to_cents(
+            data.get("amount", data.get("amount_cents", row["amount_cents"])), decimals)
+    except (KeyError, ValueError, TypeError, ArithmeticError, OverflowError) as e:
+        return jsonify({"error": f"invalid payment: {e}"}), 400
     if from_user == to_user:
         return jsonify({"error": "from and to must differ"}), 400
-    currency = (data.get("currency") or row["currency"]).upper()
-    decimals = int(data.get("decimals", 2 if currency not in ("JPY", "KRW") else 0))
-    amount = parse_amount_to_cents(
-        data.get("amount", data.get("amount_cents", row["amount_cents"])), decimals)
+    if amount <= 0:
+        return jsonify({"error": "amount must be positive"}), 400
+    if _foreign_user_ids(row["plan_id"], [from_user, to_user]):
+        return jsonify(
+            {"error": "payment users must be members of this plan"}), 400
     note = data.get("note") if "note" in data else row["note"]
-    db.execute(
-        """UPDATE payments SET from_user_id=?, to_user_id=?, amount_cents=?, currency=?, note=?
-           WHERE id=?""",
-        (from_user, to_user, amount, currency, note, payment_id))
-    db.commit()
+
+    # allocations present -> replace. Absent -> keep when amount and currency
+    # are unchanged; otherwise reset to the new payment's own-currency default.
+    # The reset is intended: a changed amount/currency no longer corresponds to
+    # the old per-currency allocations, so a single own-currency row is correct.
+    value_changed = amount != row["amount_cents"] or currency != row["currency"]
+    if "allocations" in data:
+        try:
+            allocations = ex.normalize_allocations(
+                currency, amount, data.get("allocations"),
+                _load_rates(row["plan_id"]), g.plan["base_currency"])
+        except (ValueError, ArithmeticError, OverflowError) as e:
+            return jsonify({"error": str(e)}), 400
+    elif value_changed:
+        try:
+            allocations = ex.normalize_allocations(
+                currency, amount, None, _load_rates(row["plan_id"]),
+                g.plan["base_currency"])
+        except (ValueError, ArithmeticError, OverflowError) as e:
+            return jsonify({"error": str(e)}), 400
+    else:
+        allocations = None
+
+    try:
+        db.execute(
+            """UPDATE payments SET from_user_id=?, to_user_id=?, amount_cents=?, currency=?, note=?
+               WHERE id=?""",
+            (from_user, to_user, amount, currency, note, payment_id))
+        if allocations is not None:
+            db.execute("DELETE FROM payment_allocations WHERE payment_id=?", (payment_id,))
+            _insert_allocations(payment_id, allocations)
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
     publish_event(row["plan_id"], {"type": "payment.updated", "entity_id": payment_id})
-    return jsonify({"payment": dict(db.execute(
-        "SELECT * FROM payments WHERE id = ?", (payment_id,)).fetchone())})
+    return jsonify({"payment": _serialize_payment(payment_id)})
 
 
 @expenses_bp.route("/api/payments/<int:payment_id>", methods=["DELETE"])
