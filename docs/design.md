@@ -362,10 +362,9 @@ It renders three kinds of entries from one table, `plan_todos`, whose
   assignee is unavailable they reassign or delete instead.
 
 `scope` is needed because both project and global entries have no
-assignee — `assignee_id IS NULL` alone cannot tell them apart. Scope is
-set at creation and immutable; a `PATCH` that changes it, or that moves
-an entry between unassigned and assigned, is rejected with 400 ("delete
-and recreate").
+assignee — `assignee_id IS NULL` alone cannot tell them apart. A `PATCH` may
+retarget an entry by sending `scope` and/or `assignee_id`, moving it between
+the three scopes; `person` requires an assignee and any other scope clears it.
 
 Every member sees every list and each section's `done/total` progress.
 Only assignees that have entries get a section. An archived plan is

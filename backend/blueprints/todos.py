@@ -3,7 +3,7 @@
 API:
   GET    /api/plans/<id>/todos        list (all roles, viewer included)
   POST   /api/plans/<id>/todos        create (owner/editor)
-  PATCH  /api/todos/<id>              edit title/note/assignee (owner/editor)
+  PATCH  /api/todos/<id>              edit title/note/target (owner/editor)
   POST   /api/todos/<id>/toggle       set done (rules depend on scope)
   DELETE /api/todos/<id>              delete (owner/editor)
 
@@ -14,8 +14,9 @@ API:
   'person'  — a member's preparation item (``assignee_id`` set). Only the
               assignee may toggle it, even when their role is viewer.
 
-Scope is set at creation and immutable; a PATCH that changes it, or moves an
-entry between unassigned and assigned, is rejected.
+A PATCH may also retarget an entry: sending ``scope`` and/or ``assignee_id``
+moves it between the three scopes. ``person`` requires an assignee; any other
+scope clears it.
 """
 from __future__ import annotations
 
@@ -220,24 +221,24 @@ def update_todo(todo_id):
         if note_err:
             return note_err
         sets.append("note = ?"); args.append(note)
-    if "scope" in data:
-        new_scope = data.get("scope")
-        if new_scope not in SCOPES:
-            return err("scope must be global, project, or person")
-        if new_scope != row["scope"]:
-            return err("cannot change an entry's scope; delete and recreate")
-    if "assignee_id" in data:
+    if "scope" in data or "assignee_id" in data:
         new_assignee, assignee_err = _parse_assignee(data)
         if assignee_err:
             return assignee_err
-        if row["scope"] != "person" or new_assignee is None:
-            # An unassigned <-> assigned move is a scope change, not an edit.
-            return err("cannot change between global, project, and assigned; "
-                       "delete and recreate")
-        validation_err = _validate_assignee(row["plan_id"], new_assignee)
-        if validation_err:
-            return err(validation_err)
-        sets.append("assignee_id = ?"); args.append(new_assignee)
+        new_scope, scope_err = _parse_scope(data, new_assignee)
+        if scope_err:
+            return scope_err
+        # A target identical to the row's is a no-op: leave ``sets`` empty so
+        # no SSE event fires and ``updated_at`` does not move. Otherwise write
+        # both fields together; ``_parse_scope`` guarantees the assignee is
+        # NULL for every non-person scope.
+        if new_scope != row["scope"] or new_assignee != row["assignee_id"]:
+            if new_scope == "person":
+                validation_err = _validate_assignee(row["plan_id"], new_assignee)
+                if validation_err:
+                    return err(validation_err)
+            sets.append("scope = ?"); args.append(new_scope)
+            sets.append("assignee_id = ?"); args.append(new_assignee)
     if not sets:
         return jsonify({"todo": _serialize_todo(todo_id)})
     sets.append("updated_at = datetime('now')")

@@ -9,7 +9,7 @@
  * (no DOM, no fetch) so no fetch-stub is needed.
  */
 import { assert, eq, summary } from './lib/t.mjs';
-import { sectionsFor, targetToBody } from '/static/js/views/todos.js';
+import { sectionsFor, targetToBody, targetValueOf } from '/static/js/views/todos.js';
 
 const OWNER = { id: 1, username: 'ada', display_name: 'Ada', role: 'owner' };
 const BOB = { id: 2, username: 'bob', display_name: 'bob', role: 'editor' };
@@ -203,6 +203,19 @@ function entryIds(section) {
     'a person target carries the assignee id as a number');
   eqArr(targetToBody('person:007'), { scope: 'person', assignee_id: 7 },
     'a person id with leading zeros is normalised to a number');
+}
+
+// ---------- row -> target-select value ----------
+
+{
+  eq(targetValueOf(todo(1, null, { scope: 'project' })), 'project',
+    'a project row maps to the project target');
+  eq(targetValueOf(todo(1, null, { scope: 'global' })), 'global',
+    'a global row maps to the global target');
+  eq(targetValueOf(todo(1, 42, { scope: 'person', assignee_id: 42 })), 'person:42',
+    'a person row maps to its assignee target');
+  eq(targetValueOf(todo(1, '007', { scope: 'person', assignee_id: '007' })), 'person:7',
+    'a leading-zero assignee id is normalised');
 }
 
 // ---------- pre-scope rows (no scope column) ----------

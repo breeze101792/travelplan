@@ -20,7 +20,6 @@ const ADD_PLACEHOLDER = 'Add a to-do...';
 const NOTE_PLACEHOLDER = 'Note (optional)';
 const TITLE_LABEL = 'To-do title';
 const NOTE_LABEL = 'Note';
-const ASSIGNEE_LABEL = 'Assignee';
 const TARGET_LABEL = 'Who is this for?';
 const EDIT_TITLE_LABEL = 'Edit to-do title';
 const DELETE_CONFIRM = 'Delete this to-do?';
@@ -40,6 +39,18 @@ function scopeOf(todo) {
     return todo.scope;
   }
   return todo.assignee_id == null ? GLOBAL_SCOPE : PERSON_SCOPE;
+}
+
+/* Target-select value for a member id, e.g. 'person:42'. Normalises the id so
+ * a stored string id and a select option compare equal. */
+function personTarget(id) {
+  return PERSON_SCOPE + ':' + Number(id);
+}
+
+/* The target-select value that represents a row's current scope+assignee. */
+export function targetValueOf(todo) {
+  const scope = scopeOf(todo);
+  return scope === PERSON_SCOPE ? personTarget(todo.assignee_id) : scope;
 }
 
 function byId(a, b) {
@@ -239,15 +250,17 @@ export async function init(container, ctx) {
       placeholder: NOTE_PLACEHOLDER, value: todo.note || '',
       maxlength: NOTE_MAX_LENGTH, 'aria-label': NOTE_LABEL,
     });
-    // Scope is immutable, so only a person entry edits its assignee; a
-    // project/global entry has none.
-    const assigneeSel = scopeOf(todo) === PERSON_SCOPE
-      ? buildAssigneeSelect(todo.assignee_id, todo.assignee_name)
+    const currentTarget = targetValueOf(todo);
+    // A person entry whose assignee left the plan keeps a removed option so
+    // the stored value still round-trips.
+    const removed = scopeOf(todo) === PERSON_SCOPE
+        && !members.some(m => m.id === todo.assignee_id)
+      ? { id: todo.assignee_id, name: todo.assignee_name }
       : null;
+    const targetSel = buildTargetSelect(currentTarget, removed);
     const cancelBtn = el('button', { class: 'btn btn-sm', type: 'button', text: 'Cancel' });
     cancelBtn.addEventListener('click', () => load());
-    const controls = [titleIn, noteIn];
-    if (assigneeSel) controls.push(assigneeSel);
+    const controls = [titleIn, noteIn, targetSel];
     controls.push(el('div', { class: 'pt-item-actions' }, [
       el('button', { class: 'btn btn-primary btn-sm', type: 'submit', text: 'Save' }),
       cancelBtn,
@@ -258,11 +271,10 @@ export async function init(container, ctx) {
       const title = titleIn.value.trim();
       if (!title) return;
       const payload = { title, note: noteIn.value.trim() || null };
-      // Send assignee_id only when it actually changed: an unchanged removed
-      // assignee is no longer a valid member and would be rejected.
-      if (assigneeSel) {
-        const chosen = assigneeSel.value === '' ? null : Number(assigneeSel.value);
-        if (chosen !== todo.assignee_id) payload.assignee_id = chosen;
+      // Send the target only when it changed: re-sending an unchanged removed
+      // assignee would fail the backend's membership check.
+      if (targetSel.value !== currentTarget) {
+        Object.assign(payload, targetToBody(targetSel.value));
       }
       try {
         await apiPatch(`/api/todos/${todo.id}`, payload);
@@ -283,16 +295,7 @@ export async function init(container, ctx) {
       class: 'pt-input', type: 'text', placeholder: NOTE_PLACEHOLDER,
       maxlength: NOTE_MAX_LENGTH, 'aria-label': NOTE_LABEL,
     });
-    const targetSel = el('select', { class: 'pt-assignee-select', 'aria-label': TARGET_LABEL });
-    targetSel.append(el('option', { value: PROJECT_SCOPE, text: PROJECT_TITLE }));
-    targetSel.append(el('option', { value: GLOBAL_SCOPE, text: GLOBAL_TITLE }));
-    for (const m of members) {
-      targetSel.append(el('option', {
-        value: PERSON_SCOPE + ':' + m.id,
-        text: (m.display_name || m.username) + ' (' + m.username + ')',
-      }));
-    }
-    targetSel.value = PROJECT_SCOPE;
+    const targetSel = buildTargetSelect(PROJECT_SCOPE, null);
 
     return el('form', { class: 'pt-add-bar', onsubmit: async (ev) => {
       ev.preventDefault();
@@ -314,23 +317,26 @@ export async function init(container, ctx) {
     ]);
   }
 
-  /* Assignee select for a person entry. A member who has left the plan stays
-   * as an option (marked removed) so an unchanged value can be re-sent. */
-  function buildAssigneeSelect(defaultId, removedName) {
-    const sel = el('select', { class: 'pt-assignee-select', 'aria-label': ASSIGNEE_LABEL });
+  /* The one target select shared by the add bar and the edit row: the two
+   * shared lists plus one option per member. A removed assignee gets a
+   * trailing option (marked removed) so an unchanged value round-trips. */
+  function buildTargetSelect(selected, removedAssignee) {
+    const sel = el('select', { class: 'pt-assignee-select', 'aria-label': TARGET_LABEL });
+    sel.append(el('option', { value: PROJECT_SCOPE, text: PROJECT_TITLE }));
+    sel.append(el('option', { value: GLOBAL_SCOPE, text: GLOBAL_TITLE }));
     for (const m of members) {
       sel.append(el('option', {
-        value: m.id,
+        value: personTarget(m.id),
         text: (m.display_name || m.username) + ' (' + m.username + ')',
       }));
     }
-    if (defaultId != null && !members.some(m => m.id === defaultId)) {
+    if (removedAssignee) {
       sel.append(el('option', {
-        value: defaultId,
-        text: (removedName || REMOVED_FALLBACK_NAME) + REMOVED_TITLE_SUFFIX,
+        value: personTarget(removedAssignee.id),
+        text: (removedAssignee.name || REMOVED_FALLBACK_NAME) + REMOVED_TITLE_SUFFIX,
       }));
     }
-    sel.value = defaultId == null ? '' : String(defaultId);
+    sel.value = selected;
     return sel;
   }
 

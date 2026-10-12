@@ -230,21 +230,58 @@ class TestTodoProjectScope:
         todos = todo_env["owner_client"].get(f"/api/plans/{pid}/todos").get_json()["todos"]
         assert [t["id"] for t in todos] == [p["id"], g["id"], v["id"]]
 
-    def test_patch_rejects_scope_change(self, todo_env):
-        pid = todo_env["plan_id"]
-        todo = _make(todo_env["owner_client"], pid, "Project", scope="project")
-        r = todo_env["owner_client"].patch(
-            f"/api/todos/{todo['id']}", json={"scope": "global"})
-        assert r.status_code == 400
-        assert "scope" in r.get_json()["error"].lower()
-
-    def test_patch_rejects_assignee_on_project_entry(self, todo_env):
+    def test_patch_moves_project_to_person(self, todo_env):
         pid = todo_env["plan_id"]
         todo = _make(todo_env["owner_client"], pid, "Project", scope="project")
         r = todo_env["owner_client"].patch(
             f"/api/todos/{todo['id']}",
+            json={"scope": "person", "assignee_id": todo_env["viewer"]["id"]})
+        assert r.status_code == 200
+        body = r.get_json()["todo"]
+        assert body["scope"] == "person"
+        assert body["assignee_id"] == todo_env["viewer"]["id"]
+
+    def test_patch_moves_project_to_global(self, todo_env):
+        pid = todo_env["plan_id"]
+        todo = _make(todo_env["owner_client"], pid, "Project", scope="project")
+        r = todo_env["owner_client"].patch(
+            f"/api/todos/{todo['id']}", json={"scope": "global"})
+        assert r.status_code == 200
+        body = r.get_json()["todo"]
+        assert body["scope"] == "global"
+        assert body["assignee_id"] is None
+
+    def test_patch_moves_person_to_global(self, todo_env):
+        pid = todo_env["plan_id"]
+        todo = _make(todo_env["owner_client"], pid, "Vicky",
+                     assignee_id=todo_env["viewer"]["id"])
+        r = todo_env["owner_client"].patch(
+            f"/api/todos/{todo['id']}", json={"assignee_id": None})
+        assert r.status_code == 200
+        body = r.get_json()["todo"]
+        assert body["scope"] == "global"
+        assert body["assignee_id"] is None
+
+    def test_patch_moves_global_to_person(self, todo_env):
+        pid = todo_env["plan_id"]
+        todo = _make(todo_env["owner_client"], pid, "Global")
+        r = todo_env["owner_client"].patch(
+            f"/api/todos/{todo['id']}",
             json={"assignee_id": todo_env["viewer"]["id"]})
-        assert r.status_code == 400
+        assert r.status_code == 200
+        body = r.get_json()["todo"]
+        assert body["scope"] == "person"
+        assert body["assignee_id"] == todo_env["viewer"]["id"]
+
+    def test_patch_moves_global_to_project(self, todo_env):
+        pid = todo_env["plan_id"]
+        todo = _make(todo_env["owner_client"], pid, "Global")
+        r = todo_env["owner_client"].patch(
+            f"/api/todos/{todo['id']}", json={"scope": "project"})
+        assert r.status_code == 200
+        body = r.get_json()["todo"]
+        assert body["scope"] == "project"
+        assert body["assignee_id"] is None
 
     def test_archived_project_entry_cannot_toggle(self, todo_env):
         pid = todo_env["plan_id"]
@@ -560,21 +597,29 @@ class TestTodoPatch:
         assert todo_env["viewer_client"].post(
             f"/api/todos/{todo['id']}/toggle", json={"done": True}).status_code == 403
 
-    def test_patch_rejects_global_to_assigned(self, todo_env):
+    def test_patch_move_to_person_requires_assignee(self, todo_env):
+        todo = _make(todo_env["owner_client"], todo_env["plan_id"], "Global")
+        r = todo_env["owner_client"].patch(
+            f"/api/todos/{todo['id']}", json={"scope": "person"})
+        assert r.status_code == 400
+        assert "assignee" in r.get_json()["error"]
+
+    def test_patch_move_to_non_member_assignee_is_400(self, todo_env, make_user):
+        outsider = make_user(username="outsider")
         todo = _make(todo_env["owner_client"], todo_env["plan_id"], "Global")
         r = todo_env["owner_client"].patch(
             f"/api/todos/{todo['id']}",
-            json={"assignee_id": todo_env["viewer"]["id"]})
+            json={"scope": "person", "assignee_id": outsider["id"]})
         assert r.status_code == 400
-        assert "global" in r.get_json()["error"]
+        assert "member" in r.get_json()["error"]
 
-    def test_patch_rejects_assigned_to_global(self, todo_env):
-        todo = _make(todo_env["owner_client"], todo_env["plan_id"], "Assigned",
-                     assignee_id=todo_env["viewer"]["id"])
+    def test_patch_non_person_scope_with_assignee_is_400(self, todo_env):
+        todo = _make(todo_env["owner_client"], todo_env["plan_id"], "Global")
         r = todo_env["owner_client"].patch(
-            f"/api/todos/{todo['id']}", json={"assignee_id": None})
+            f"/api/todos/{todo['id']}",
+            json={"scope": "project", "assignee_id": todo_env["viewer"]["id"]})
         assert r.status_code == 400
-        assert "global" in r.get_json()["error"]
+        assert "assignee" in r.get_json()["error"].lower()
 
     def test_patch_rejects_non_member_assignee(self, todo_env, make_user):
         outsider = make_user(username="outsider")
